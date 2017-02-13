@@ -1,0 +1,26 @@
+apply plugin: 'java'
+apply plugin: 'maven-publish'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
+}
+
+task wrapper(type: Wrapper)
+
+dependencies {
+    compile ('org.fiolino:annotations:' +libAnnotationsVersion)
+
+   	compile	('org.reflections:reflections:'+libReflectionsVersion)
+    compile ('org.slf4j:slf4j-api:'+libSlf4jVersion)
+        
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+}

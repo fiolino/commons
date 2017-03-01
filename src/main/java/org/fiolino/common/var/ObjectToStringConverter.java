@@ -22,10 +22,10 @@ final class ObjectToStringConverter {
     private static final int INVISIBLE_MODIFIERS = Modifier.STATIC | Modifier.TRANSIENT;
 
     private static final Map<Class<?>, MethodHandle> converterMethods;
-    
+
     static {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
-        
+
         converterMethods = new HashMap<>();
         for (Method m : ObjectToStringConverter.class.getDeclaredMethods()) {
             // if (m.isAnnotationPresent(Appender.class)) { -- Java8
@@ -62,7 +62,7 @@ final class ObjectToStringConverter {
     StringBuilder append(StringBuilder stringBuilder, Object toAppend) {
         return append(stringBuilder, toAppend, 0);
     }
-    
+
     StringBuilder append(StringBuilder stringBuilder, Object toAppend, int indent) {
         if (toAppend == null) {
             return stringBuilder.append("<null>");
@@ -98,9 +98,9 @@ final class ObjectToStringConverter {
             return stringBuilder.append("<<").append(ex.getMessage()).append(">>");
         }
     }
-    
+
     private void appendFields(StringBuilder stringBuilder, Object toAppend, Class<?> clazz, int indent) {
-        
+
         Class<?> currentClass = clazz;
         do {
             for (Field f : currentClass.getDeclaredFields()) {
@@ -111,7 +111,7 @@ final class ObjectToStringConverter {
     }
 
     private void appendField(StringBuilder stringBuilder, Object toAppend, Field f, int indent) {
-        
+
         Debugged debugState = f.getAnnotation(Debugged.class);
         int m = f.getModifiers();
         if (debugState == null) {
@@ -131,11 +131,11 @@ final class ObjectToStringConverter {
                 if (f.getType().isPrimitive()) {
                     stringBuilder.append(x2).append(';');
                 } else {
-                    append(stringBuilder, x2, indent+1).append(';'); 
+                    append(stringBuilder, x2, indent + 1).append(';');
                 }
             }
         } catch (IllegalAccessException ex) {
-            indent(stringBuilder, indent+1);
+            indent(stringBuilder, indent + 1);
             stringBuilder.append('<').append(f).append(" not accessible>");
         }
     }
@@ -204,7 +204,7 @@ final class ObjectToStringConverter {
             } else {
                 needsComma = true;
             }
-            append(sb, x2, indent+1);
+            append(sb, x2, indent + 1);
         }
         sb.append(']');
     }
@@ -228,15 +228,15 @@ final class ObjectToStringConverter {
                 needsComma = true;
             }
             append(
-                sb.append(e.getKey()).append('='),
-                e.getValue(),
-                indent+1);
+                    sb.append(e.getKey()).append('='),
+                    e.getValue(),
+                    indent + 1);
         }
         sb.append('}');
     }
 
     private void appendArray(StringBuilder sb, Object toConvert, int indent) {
-        
+
         int n = Array.getLength(toConvert);
         sb.append('<').append(n).append(">[");
         boolean needsComma = false;
@@ -253,9 +253,9 @@ final class ObjectToStringConverter {
             }
             if (toConvert instanceof Object[]) {
                 append(
-                    sb,
-                    Array.get(toConvert, i),
-                    indent+1);
+                        sb,
+                        Array.get(toConvert, i),
+                        indent + 1);
             } else {
                 sb.append(Array.get(toConvert, i));
             }
@@ -266,18 +266,18 @@ final class ObjectToStringConverter {
     @SuppressWarnings("unused")
     @Appender
     private void appendString(StringBuilder sb, String toConvert) {
-      Strings.appendQuotedString(sb, toConvert);
+        Strings.appendQuotedString(sb, toConvert);
     }
 
     @SuppressWarnings("unused")
     @Appender
     private void appendClass(StringBuilder sb, Class<?> toConvert, int indent) {
-        
+
         if (toConvert.isArray()) {
             append(
-                sb,
-                toConvert.getComponentType(),
-                indent).append("[]");
+                    sb,
+                    toConvert.getComponentType(),
+                    indent).append("[]");
         } else {
             sb.append(toConvert.getName());
         }
@@ -285,5 +285,6 @@ final class ObjectToStringConverter {
 
     @Retention(RetentionPolicy.RUNTIME)
     @Target(ElementType.METHOD)
-    private @interface Appender {}
+    private @interface Appender {
+    }
 }

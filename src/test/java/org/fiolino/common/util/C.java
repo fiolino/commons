@@ -8,34 +8,34 @@ import org.fiolino.data.annotation.SerializeEmbedded;
  */
 public class C {
 
-  @SerialFieldIndex(0)
-  private String name;
-  @SerializeEmbedded(1)
-  private A a;
-  @SerialFieldIndex(2)
-  private String text;
+    @SerialFieldIndex(0)
+    private String name;
+    @SerializeEmbedded(1)
+    private A a;
+    @SerialFieldIndex(2)
+    private String text;
 
-  public String getName() {
-    return name;
-  }
+    public String getName() {
+        return name;
+    }
 
-  public void setName(String name) {
-    this.name = name;
-  }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-  public A getA() {
-    return a;
-  }
+    public A getA() {
+        return a;
+    }
 
-  public void setA(A a) {
-    this.a = a;
-  }
+    public void setA(A a) {
+        this.a = a;
+    }
 
-  public String getText() {
-    return text;
-  }
+    public String getText() {
+        return text;
+    }
 
-  public void setText(String text) {
-    this.text = text;
-  }
+    public void setText(String text) {
+        this.text = text;
+    }
 }

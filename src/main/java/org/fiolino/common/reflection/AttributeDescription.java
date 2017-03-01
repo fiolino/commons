@@ -7,8 +7,11 @@ import java.lang.invoke.MethodHandle;
  */
 public interface AttributeDescription extends AnnotationProvider {
 
-  String name();
-  Class<?> type();
-  MethodHandle createGetter();
-  MethodHandle createSetter();
+    String name();
+
+    Class<?> type();
+
+    MethodHandle createGetter();
+
+    MethodHandle createSetter();
 }

@@ -21,15 +21,15 @@ public interface FieldMatcher {
             return matchers[0];
         }
         return (r, w) -> {
-                int rank = 0;
-                for (FieldMatcher m : matchers) {
-                    int inner = m.rank(r, w);
-                    if (inner < 0) {
-                        return inner;
-                    }
-                    rank += inner;
+            int rank = 0;
+            for (FieldMatcher m : matchers) {
+                int inner = m.rank(r, w);
+                if (inner < 0) {
+                    return inner;
                 }
-                return rank;
+                rank += inner;
+            }
+            return rank;
         };
     }
 }

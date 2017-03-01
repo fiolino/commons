@@ -5,20 +5,20 @@ package org.fiolino.common.reflection;
  */
 public class TooManyArgumentsExpectedException extends IllegalArgumentException {
 
-  private static final long serialVersionUID = 6011795841043005055L;
+    private static final long serialVersionUID = 6011795841043005055L;
 
-  public TooManyArgumentsExpectedException() {
-  }
+    public TooManyArgumentsExpectedException() {
+    }
 
-  public TooManyArgumentsExpectedException(String s) {
-    super(s);
-  }
+    public TooManyArgumentsExpectedException(String s) {
+        super(s);
+    }
 
-  public TooManyArgumentsExpectedException(String message, Throwable cause) {
-    super(message, cause);
-  }
+    public TooManyArgumentsExpectedException(String message, Throwable cause) {
+        super(message, cause);
+    }
 
-  public TooManyArgumentsExpectedException(Throwable cause) {
-    super(cause);
-  }
+    public TooManyArgumentsExpectedException(Throwable cause) {
+        super(cause);
+    }
 }

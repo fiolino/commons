@@ -13,14 +13,14 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  * or no argument if the handle just creates exactly one type.
  * <p>
  * If the type argument is expected, then the value() must be specified.
- *
+ * <p>
  * Created by Michael Kuhlmann on 14.12.2015.
  */
 @Retention(RUNTIME)
 @Target(METHOD)
 public @interface MethodHandleFactory {
-  /**
-   * The top level result type.
-   */
-  Class<?> value() default void.class;
+    /**
+     * The top level result type.
+     */
+    Class<?> value() default void.class;
 }

@@ -11,13 +11,13 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.PARAMETER)
 public @interface Property {
-  /**
-   * The property key
-   */
-  String value();
+    /**
+     * The property key
+     */
+    String value();
 
-  /**
-   * The default value, if nothing is configured.
-   */
-  String defaultValue() default "";
+    /**
+     * The default value, if nothing is configured.
+     */
+    String defaultValue() default "";
 }

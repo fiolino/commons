@@ -5,11 +5,11 @@ package org.fiolino.common.reflection;
  */
 public interface AttributeChooser {
 
-  boolean accepts(String name, Class<?> type, AnnotationProvider annotationProvider);
+    boolean accepts(String name, Class<?> type, AnnotationProvider annotationProvider);
 
-  AttributeChooser or(AttributeChooser alternative);
+    AttributeChooser or(AttributeChooser alternative);
 
-  AttributeChooser and(AttributeChooser alternative);
+    AttributeChooser and(AttributeChooser alternative);
 
-  AttributeChooser complement();
+    AttributeChooser complement();
 }

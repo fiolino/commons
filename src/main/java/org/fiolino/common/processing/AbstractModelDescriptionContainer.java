@@ -31,7 +31,7 @@ public abstract class AbstractModelDescriptionContainer implements ModelDescript
     @Override
     public boolean equals(Object obj) {
         return obj != null && obj.getClass().equals(getClass())
-                && modelDescription.equals(((ModelDescriptionContainer)obj).getModelDescription());
+                && modelDescription.equals(((ModelDescriptionContainer) obj).getModelDescription());
     }
 
     @Override

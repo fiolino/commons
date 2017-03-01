@@ -1,20 +1,44 @@
-apply plugin: 'java'
-apply plugin: 'maven-publish'
+plugins {
+    id 'java'
+    id 'maven'
+    id 'maven-publish'
+    id "net.linguica.maven-settings" version "0.5"
+}
 
-repositories {
-    mavenLocal()
-    mavenCentral()
+task sourceJar(type: Jar, dependsOn: classes) {
+    classifier 'sources'
+    from sourceSets.main.allSource
 }
 
 publishing {
     publications {
         mavenJava(MavenPublication) {
             from components.java
+
+            artifact sourceJar {
+                classifier "sources"
+            }
         }
     }
 }
 
-task wrapper(type: Wrapper)
+publishing {
+    repositories {
+        maven {
+            name "default"
+            url publicUrl
+        }
+    }
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven {
+		name "default"
+        url publicUrl
+    }
+}
 
 dependencies {
     compile ('org.fiolino:annotations:' +libAnnotationsVersion)

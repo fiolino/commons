@@ -7,12 +7,13 @@ import javax.annotation.concurrent.ThreadSafe;
  */
 @ThreadSafe
 public abstract class ThreadsafeChainedSink<S, T> extends ChainedSink<S, T> implements ThreadsafeSink<S> {
-  ThreadsafeChainedSink(ThreadsafeSink<T> target) {
-    super(target);
-  }
+    ThreadsafeChainedSink(ThreadsafeSink<T> target) {
+        super(target);
+    }
 
-  @Override @SuppressWarnings("unchecked")
-  public ThreadsafeSink<T> getTarget() {
-    return (ThreadsafeSink<T>) super.getTarget();
-  }
+    @Override
+    @SuppressWarnings("unchecked")
+    public ThreadsafeSink<T> getTarget() {
+        return (ThreadsafeSink<T>) super.getTarget();
+    }
 }

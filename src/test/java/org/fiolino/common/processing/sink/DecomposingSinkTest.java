@@ -11,43 +11,43 @@ import static org.junit.Assert.*;
  * Created by kuli on 06.04.16.
  */
 public class DecomposingSinkTest {
-  @Test
-  public void test() throws Throwable {
-    final boolean[] finished = new boolean[] {
-            false
-    };
+    @Test
+    public void test() throws Throwable {
+        final boolean[] finished = new boolean[] {
+                false
+        };
 
-    Sink<String> sink = new Sink<String>() {
-      int count;
+        Sink<String> sink = new Sink<String>() {
+            int count;
 
-      @Override
-      public void accept(String value, Container metadata) {
-        switch (count++) {
-          case 0:
-            assertEquals("One", value);
-            return;
-          case 1:
-            assertEquals("Two", value);
-            return;
-          case 2:
-            assertEquals("Three", value);
-            return;
-          default:
-            fail("Shouldn't reach here.");
-        }
-      }
+            @Override
+            public void accept(String value, Container metadata) {
+                switch (count++) {
+                    case 0:
+                        assertEquals("One", value);
+                        return;
+                    case 1:
+                        assertEquals("Two", value);
+                        return;
+                    case 2:
+                        assertEquals("Three", value);
+                        return;
+                    default:
+                        fail("Shouldn't reach here.");
+                }
+            }
 
-      @Override
-      public void commit(Container metadata) {
-        finished[0] = true;
-        assertEquals(3, count);
-      }
-    };
+            @Override
+            public void commit(Container metadata) {
+                finished[0] = true;
+                assertEquals(3, count);
+            }
+        };
 
-    Sink<Iterable<String>> listSink = new DecomposingSink<>(sink);
-    listSink.accept(Arrays.asList("One", "Two", "Three"), Container.empty());
-    listSink.commit(Container.empty());
-    assertTrue(finished[0]);
-  }
+        Sink<Iterable<String>> listSink = new DecomposingSink<>(sink);
+        listSink.accept(Arrays.asList("One", "Two", "Three"), Container.empty());
+        listSink.commit(Container.empty());
+        assertTrue(finished[0]);
+    }
 
 }

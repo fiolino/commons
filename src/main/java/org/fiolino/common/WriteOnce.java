@@ -8,11 +8,11 @@ import java.lang.annotation.Target;
 /**
  * This annotation marks semi-final fields that are once initialized
  * and then never changed.
- * 
+ *
  * @author Michael Kuhlmann <michael@kuhlmann.org>
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.FIELD)
 public @interface WriteOnce {
-    
+
 }

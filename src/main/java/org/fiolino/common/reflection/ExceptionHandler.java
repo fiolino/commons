@@ -8,8 +8,8 @@ public interface ExceptionHandler<E extends Throwable> {
      * This is called when a converter created by Methods().convertStringToEnum() accepts
      * an invalid value.
      *
-     * @param exception The exception that is called from the converting method
-     * @param valueType The accepted parameter type
+     * @param exception  The exception that is called from the converting method
+     * @param valueType  The accepted parameter type
      * @param outputType The return value of that method
      * @param inputValue The input value from the call
      * @throws Throwable If the original exception shall be rethrown

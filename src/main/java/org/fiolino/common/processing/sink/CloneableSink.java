@@ -7,13 +7,13 @@ import org.fiolino.common.container.Container;
  */
 public interface CloneableSink<T, S extends Sink<T>> extends Sink<T> {
 
-  /**
-   * This is called for each parallel thread before the real commit is triggered.
-   */
-  void partialCommit(Container metadata) throws Exception;
+    /**
+     * This is called for each parallel thread before the real commit is triggered.
+     */
+    void partialCommit(Container metadata) throws Exception;
 
-  /**
-   * Creates a clone of myself.
-   */
-  S createClone();
+    /**
+     * Creates a clone of myself.
+     */
+    S createClone();
 }

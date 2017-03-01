@@ -12,13 +12,19 @@ import org.fiolino.common.analyzing.ModelInconsistencyException;
 public interface ValueDescription extends ConfigurationContainer {
 
     String getName();
+
     ModelDescription owningModel();
+
     Class<?> getValueType();
+
     Type getGenericType();
+
     Class<?> getTargetType() throws ModelInconsistencyException;
+
     <A extends Annotation> A getAnnotation(Class<A> annotationType);
 
     MethodHandle createGetter();
+
     MethodHandle createSetter();
 
     ModelDescription getRelationTarget() throws ModelInconsistencyException;

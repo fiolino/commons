@@ -11,8 +11,8 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.PARAMETER)
 public @interface Bean {
-  /**
-   * The property key
-   */
-  String value() default "";
+    /**
+     * The property key
+     */
+    String value() default "";
 }

@@ -7,19 +7,19 @@ import org.fiolino.common.container.Container;
  */
 public abstract class ThreadsafeModifyingSink<T> extends ThreadsafeChainedSink<T, T> {
 
-  protected ThreadsafeModifyingSink(ThreadsafeSink<T> target) {
-    super(target);
-  }
+    protected ThreadsafeModifyingSink(ThreadsafeSink<T> target) {
+        super(target);
+    }
 
-  /**
-   * Handles the individual element.
-   */
-  protected abstract void touch(T element, Container metadata) throws Exception;
+    /**
+     * Handles the individual element.
+     */
+    protected abstract void touch(T element, Container metadata) throws Exception;
 
-  @Override
-  public void accept(T value, Container metadata) throws Exception {
-    touch(value, metadata);
+    @Override
+    public void accept(T value, Container metadata) throws Exception {
+        touch(value, metadata);
 
-    getTarget().accept(value, metadata);
-  }
+        getTarget().accept(value, metadata);
+    }
 }

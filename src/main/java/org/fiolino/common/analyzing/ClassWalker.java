@@ -14,91 +14,91 @@ import java.util.function.Predicate;
  */
 public class ClassWalker<E extends Exception> {
 
-  private final List<ClassVisitor<E>> visitors = new ArrayList<>();
+    private final List<ClassVisitor<E>> visitors = new ArrayList<>();
 
-  public static final class ClassVisitor<E extends Exception> {
-    private final Predicate<? super Class<?>> classTest;
-    private final List<Consumer<? super Field>> fieldActions = new ArrayList<>();
-    private final List<Consumer<? super Method>> methodActions = new ArrayList<>();
+    public static final class ClassVisitor<E extends Exception> {
+        private final Predicate<? super Class<?>> classTest;
+        private final List<Consumer<? super Field>> fieldActions = new ArrayList<>();
+        private final List<Consumer<? super Method>> methodActions = new ArrayList<>();
 
-    private ClassVisitor(Predicate<? super Class<?>> classTest) {
-      this.classTest = classTest;
+        private ClassVisitor(Predicate<? super Class<?>> classTest) {
+            this.classTest = classTest;
+        }
+
+        private ClassVisitor() {
+            this(c -> true);
+        }
+
+        private boolean startClass(Class<?> type) {
+            return classTest.test(type);
+        }
+
+        private void visitField(Field f) {
+            for (Consumer<? super Field> c : fieldActions) {
+                c.accept(f);
+            }
+        }
+
+        private void visitMethod(Method m) {
+            for (Consumer<? super Method> c : methodActions) {
+                c.accept(m);
+            }
+        }
+
+        public ClassVisitor<E> onField(Consumer<? super Field> action) {
+            fieldActions.add(action);
+            return this;
+        }
+
+        public ClassVisitor<E> onMethod(Consumer<? super Method> action) {
+            methodActions.add(action);
+            return this;
+        }
     }
 
-    private ClassVisitor() {
-      this(c -> true);
+    private ClassVisitor<E> addVisitor(ClassVisitor<E> visitor) {
+        visitors.add(visitor);
+        return visitor;
     }
 
-    private boolean startClass(Class<?> type) {
-      return classTest.test(type);
-    }
-
-    private void visitField(Field f) {
-      for (Consumer<? super Field> c : fieldActions) {
-        c.accept(f);
-      }
-    }
-
-    private void visitMethod(Method m) {
-      for (Consumer<? super Method> c : methodActions) {
-        c.accept(m);
-      }
+    public ClassVisitor<E> forClasses(Predicate<? super Class<?>> classTest) {
+        return addVisitor(new ClassVisitor<E>(classTest));
     }
 
     public ClassVisitor<E> onField(Consumer<? super Field> action) {
-      fieldActions.add(action);
-      return this;
+        return addVisitor(new ClassVisitor<E>()).onField(action);
     }
 
     public ClassVisitor<E> onMethod(Consumer<? super Method> action) {
-      methodActions.add(action);
-      return this;
-    }
-  }
-
-  private ClassVisitor<E> addVisitor(ClassVisitor<E> visitor) {
-    visitors.add(visitor);
-    return visitor;
-  }
-
-  public ClassVisitor<E> forClasses(Predicate<? super Class<?>> classTest) {
-    return addVisitor(new ClassVisitor<E>(classTest));
-  }
-
-  public ClassVisitor<E> onField(Consumer<? super Field> action) {
-    return addVisitor(new ClassVisitor<E>()).onField(action);
-  }
-
-  public ClassVisitor<E> onMethod(Consumer<? super Method> action) {
-    return addVisitor(new ClassVisitor<E>()).onMethod(action);
-  }
-
-  public void analyze(Class<?> model) throws E {
-    for (ClassVisitor<E> v : visitors) {
-      if (v.startClass(model)) {
-        analyzeUsing(model, v);
-      }
-    }
-  }
-
-  private void analyzeUsing(Class<?> modelClass, ClassVisitor<E> visitor) throws E {
-    Class<?> supertype = modelClass.getSuperclass();
-    if (supertype != null && supertype != Object.class) {
-      analyzeUsing(supertype, visitor);
+        return addVisitor(new ClassVisitor<E>()).onMethod(action);
     }
 
-    for (Field f : modelClass.getDeclaredFields()) {
-      visitor.visitField(f);
+    public void analyze(Class<?> model) throws E {
+        for (ClassVisitor<E> v : visitors) {
+            if (v.startClass(model)) {
+                analyzeUsing(model, v);
+            }
+        }
     }
-    for (Method m : modelClass.getDeclaredMethods()) {
-      visitor.visitMethod(m);
-    }
-  }
 
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + " with " +
-            visitors.size() + " visitors.";
-  }
+    private void analyzeUsing(Class<?> modelClass, ClassVisitor<E> visitor) throws E {
+        Class<?> supertype = modelClass.getSuperclass();
+        if (supertype != null && supertype != Object.class) {
+            analyzeUsing(supertype, visitor);
+        }
+
+        for (Field f : modelClass.getDeclaredFields()) {
+            visitor.visitField(f);
+        }
+        for (Method m : modelClass.getDeclaredMethods()) {
+            visitor.visitMethod(m);
+        }
+    }
+
+    @Override
+    public String toString() {
+        return getClass().getSimpleName() + " with " +
+                visitors.size() + " visitors.";
+    }
 
 }

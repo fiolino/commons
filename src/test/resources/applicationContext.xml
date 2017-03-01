@@ -8,9 +8,9 @@
         http://www.springframework.org/schema/session/spring-session.xsd">
 
     <!-- Scans within the base package of the application for @Component classes to configure as beans -->
-    <session:component-scan base-package="org.fiolino" />
-    <session:annotation-config />
-        
-<!--    <session:property-placeholder location="indexer.properties"/> -->
+    <session:component-scan base-package="org.fiolino"/>
+    <session:annotation-config/>
+
+    <!--    <session:property-placeholder location="indexer.properties"/> -->
 
 </beans>

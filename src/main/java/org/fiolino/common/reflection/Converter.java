@@ -8,7 +8,7 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
  * Methods annotated with this will be used for converting values.
- *
+ * <p>
  * Created by Kuli on 6/21/2016.
  */
 @Retention(RUNTIME)

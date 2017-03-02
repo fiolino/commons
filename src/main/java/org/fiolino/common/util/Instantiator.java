@@ -21,16 +21,12 @@ import static java.lang.invoke.MethodType.methodType;
  * <p>
  * Created by kuli on 10.02.15.
  */
-public abstract class Instantiator<T> {
+public final class Instantiator<T> {
 
     private static final MethodHandles.Lookup ownLookup = lookup();
 
-    private final MethodHandle constructor;
-    private final Class<T> type;
-
-    private Instantiator(Class<T> type, MethodHandle constructor) {
-        this.type = type;
-        this.constructor = constructor;
+    private Instantiator() {
+        throw new AssertionError("Static class");
     }
 
     /**
@@ -114,13 +110,6 @@ public abstract class Instantiator<T> {
         return function;
     }
 
-    /**
-     * Gets the underlying type.
-     */
-    public final Class<T> getType() {
-        return type;
-    }
-
     private static MethodHandle findEmptyConstructor(MethodHandles.Lookup lookup, Class<?> type) {
         MethodHandle constructor;
         try {
@@ -139,22 +128,6 @@ public abstract class Instantiator<T> {
         } catch (Throwable t) {
             throw new InstantiationException("Cannot construct " + type.getName(), t);
         }
-    }
-
-    @Override
-    public String toString() {
-        return getClass().getSimpleName() + " on " + type.getName();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        return obj != null && obj.getClass().equals(getClass())
-                && type.equals(((Instantiator<?>) obj).type);
-    }
-
-    @Override
-    public int hashCode() {
-        return type.hashCode() * 31 + 11;
     }
 
     private static MethodHandle findConstructor(MethodHandles.Lookup lookup, Class<?> type, Class<?> expectedParameterType) {

@@ -232,7 +232,7 @@ public class MethodsVisitorTest {
     @Test
     public void testStaticMethods() throws Throwable {
         MethodHandle h = Methods.visitMethodsWithStaticContext(
-                MethodHandles.lookup(), Uninstantiable.class, null, (v, m, handleSupplier) -> {
+                MethodHandles.lookup(), Uninstantiable.class, Uninstantiable::new, null, (v, m, handleSupplier) -> {
                     if (m.getName().equals("staticMethod")) {
                         return handleSupplier.get();
                     }
@@ -290,7 +290,7 @@ public class MethodsVisitorTest {
         // Now check with given class
         instanceRef.set(null);
         staticRef.set(null);
-        Methods.visitMethodsWithStaticContext(MethodHandles.lookup(), Instantiable.class, null, (v, m, handleSupplier) -> {
+        Methods.visitMethodsWithStaticContext(MethodHandles.lookup(), Instantiable.class, Instantiable::new, null, (v, m, handleSupplier) -> {
             if (m.getName().equals("staticMethod")) {
                 staticRef.set(handleSupplier.get());
             }

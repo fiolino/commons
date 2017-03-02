@@ -4,12 +4,17 @@ import org.fiolino.common.ioc.PostProcessor;
 import org.fiolino.common.reflection.Methods;
 import org.fiolino.data.annotation.Mandatory;
 
+import javax.annotation.Nullable;
 import javax.annotation.PostConstruct;
 import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandleInfo;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -21,12 +26,47 @@ import static java.lang.invoke.MethodType.methodType;
  * <p>
  * Created by kuli on 10.02.15.
  */
-public final class Instantiator<T> {
+public final class Instantiator {
 
-    private static final MethodHandles.Lookup ownLookup = lookup();
+    private static final Instantiator DEFAULT = new Instantiator();
 
-    private Instantiator() {
-        throw new AssertionError("Static class");
+    public static Instantiator getDefault() {
+        return DEFAULT;
+    }
+
+    private final MethodHandles.Lookup lookup;
+    private final Map<Class<?>, MethodHandle> emptyFactories = new HashMap<>();
+    private final Map<Class<?>, Map<Class<?>, MethodHandle>> argumentFactories = new HashMap<>();
+
+    public Instantiator(MethodHandles.Lookup lookup) {
+        this.lookup = lookup;
+    }
+
+    public Instantiator() {
+        this(lookup());
+    }
+
+    public <T> void registerFactory(Class<T> factoryClass) {
+        Supplier<T> metaFactory = creatorFor(factoryClass);
+        Methods.visitMethodsWithStaticContext(lookup, factoryClass, metaFactory, null, (v, m, supp) -> {
+            if (!m.isAnnotationPresent(Factory.class)) return null;
+            
+            Class<?> r = m.getReturnType();
+            if (r.isPrimitive()) {
+                throw new AssertionError("Factory " + m + " returns a primitive");
+            }
+            switch (m.getParameterCount()) {
+                case 0:
+                    emptyFactories.put(r, supp.get());
+                    return null;
+                case 1:
+                    Map<Class<?>, MethodHandle> factoryPerArgumentType = argumentFactories.computeIfAbsent(r, x -> new HashMap<>());
+                    factoryPerArgumentType.put(m.getParameterTypes()[0], supp.get());
+                    return null;
+                default:
+                    throw new AssertionError(m + " has too many parameters; currently only one is supported.");
+            }
+        });
     }
 
     /**
@@ -37,21 +77,8 @@ public final class Instantiator<T> {
      * @param <T>  The type
      * @return The newly created instance
      */
-    public static <T> T instantiate(Class<T> type) {
-        return instantiate(ownLookup, type);
-    }
-
-    /**
-     * Static methods to directly instantiate a type.
-     * Esp. good for a one-time usage.
-     *
-     * @param lookup Use this to find the empty constructor
-     * @param type   The type to instantiate; needs an empty constructor visible to the given Lookup
-     * @param <T>    The type
-     * @return The newly created instance
-     */
-    public static <T> T instantiate(MethodHandles.Lookup lookup, Class<T> type) {
-        MethodHandle handle = findEmptyConstructor(lookup, type);
+    public <T> T instantiate(Class<T> type) {
+        MethodHandle handle = findEmptyConstructor(type);
         return createInstance(type, handle);
     }
 
@@ -62,8 +89,11 @@ public final class Instantiator<T> {
      * @param <T>  The type
      * @return The Supplier
      */
-    public static <T> Supplier<T> creatorFor(Class<T> type) {
-        return creatorFor(ownLookup, type);
+    public <T> Supplier<T> creatorFor(Class<T> type) {
+        MethodHandle constructor = findEmptyConstructor(type);
+        @SuppressWarnings("unchecked")
+        Supplier<T> supplier = Methods.lambdafy(lookup, constructor, Supplier.class);
+        return supplier;
     }
 
     /**
@@ -74,53 +104,39 @@ public final class Instantiator<T> {
      * @param <T>  The type
      * @return The Function that accepts the only parameter and returns a freshly intantiated object
      */
-    public static <T, P> Function<P, T> creatorWithArgument(Class<T> type, Class<P> parameterType) {
-        return creatorWithArgument(ownLookup, type, parameterType);
-    }
-
-    /**
-     * Creates a {@link Supplier} that will return a new instance on every call.
-     *
-     * @param lookup Use this to find the empty constructor
-     * @param type   The type to instantiate; needs an empty constructor visible to the given Lookup
-     * @param <T>    The type
-     * @return The Supplier
-     */
-    public static <T> Supplier<T> creatorFor(MethodHandles.Lookup lookup, Class<T> type) {
-        MethodHandle constructor = findEmptyConstructor(lookup, type);
+    public <T, P> Function<P, T> creatorWithArgument(Class<T> type, Class<P> parameterType) {
+        MethodHandle constructor = findConstructor(type, parameterType);
         @SuppressWarnings("unchecked")
-        Supplier<T> supplier = (Supplier<T>) Methods.lambdafy(lookup, constructor, Supplier.class);
-        return supplier;
-    }
-
-    /**
-     * Creates a {@link Function} that will return a new instance on every call.
-     *
-     * @param lookup Use this to find the constructor that must be either empty or accept exactly one argument
-     *               of type parameterType; if both are available, the latter one is favored,
-     * @param type   The type to instantiate; needs a constructor visible to the given Lookup with exactly one argument
-     *               of type parameterType, or an empty one as an alternative
-     * @param <T>    The type
-     * @return The Function that accepts the only parameter and returns a freshly instantiated object
-     */
-    public static <T, P> Function<P, T> creatorWithArgument(MethodHandles.Lookup lookup, Class<T> type, Class<P> parameterType) {
-        MethodHandle constructor = findConstructor(lookup, type, parameterType);
-        @SuppressWarnings("unchecked")
-        Function<P, T> function = (Function<P, T>) Methods.lambdafy(lookup, constructor, Function.class);
+        Function<P, T> function = Methods.lambdafy(lookup, constructor, Function.class);
         return function;
     }
 
-    private static MethodHandle findEmptyConstructor(MethodHandles.Lookup lookup, Class<?> type) {
-        MethodHandle constructor;
-        try {
-            constructor = lookup.findConstructor(type, methodType(void.class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
+    private MethodHandle findEmptyConstructor(Class<?> type) {
+        MethodHandle constructor = findEmptyConstructorOrNull(type);
+        if (constructor == null) {
             throw new AssertionError("Model class " + type.getName() + " has no empty public constructor!");
         }
-        return insertPostProcessor(lookup, constructor, type);
+        return withPostProcessor(constructor, type);
     }
 
-    private static <T> T createInstance(Class<T> type, MethodHandle constructor) {
+    private MethodHandle findEmptyConstructorOrNull(Class<?> type) {
+        MethodHandle c = emptyFactories.get(type);
+        if (c != null) return c;
+        return findConstructor(type, methodType(void.class));
+    }
+
+    @Nullable
+    private MethodHandle findConstructor(Class<?> type, MethodType methodType) {
+        MethodHandle constructor;
+        try {
+            constructor = lookup.findConstructor(type, methodType);
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            return null;
+        }
+        return constructor;
+    }
+
+    private <T> T createInstance(Class<T> type, MethodHandle constructor) {
         try {
             return type.cast(constructor.invoke());
         } catch (RuntimeException | Error e) {
@@ -130,8 +146,31 @@ public final class Instantiator<T> {
         }
     }
 
-    private static MethodHandle findConstructor(MethodHandles.Lookup lookup, Class<?> type, Class<?> expectedParameterType) {
-        Constructor<?> empty = null;
+    private MethodHandle findConstructor(Class<?> type, Class<?> expectedParameterType) {
+        MethodHandle fromFactory = argumentFactories.getOrDefault(type, Collections.emptyMap()).get(expectedParameterType);
+        if (fromFactory != null) return fromFactory;
+
+        MethodHandle exactMatch = findConstructor(type, methodType(void.class, expectedParameterType));
+        if (exactMatch != null) {
+            MethodHandleInfo info = lookup.revealDirect(exactMatch);
+            Constructor<?> c = info.reflectAs(Constructor.class, lookup);
+            return checkMandatoryArgument(type, exactMatch, c, false);
+        }
+
+        MethodHandle constructorWithParameterInHierarchy = findConstructorWithParameterInHierarchy(type, expectedParameterType);
+        if (constructorWithParameterInHierarchy != null) {
+            return constructorWithParameterInHierarchy;
+        }
+
+        MethodHandle empty = findEmptyConstructorOrNull(type);
+        if (empty == null) {
+            throw new AssertionError("No public constructor found for " + type.getName());
+        }
+        empty = MethodHandles.dropArguments(empty, 0, expectedParameterType);
+        return withPostProcessor(empty, type);
+    }
+
+    private MethodHandle findConstructorWithParameterInHierarchy(Class<?> type, Class<?> expectedParameterType) {
         Constructor<?> matched = null;
         int foundDistance = Integer.MAX_VALUE;
 
@@ -140,42 +179,27 @@ public final class Instantiator<T> {
                 continue;
             }
             Class<?>[] parameterTypes = c.getParameterTypes();
-            switch (parameterTypes.length) {
-                case 0:
-                    empty = c;
-                    continue;
-                case 1:
-                    Class<?> p = parameterTypes[0];
-                    try {
-                        int d = Types.getDistance(expectedParameterType, p);
-                        if (Math.abs(d) > Math.abs(foundDistance)) {
-                            continue;
-                        }
-                        foundDistance = d;
-                        matched = c;
-                    } catch (NotAssignableException ex) {
-                        // continue...
+            if (parameterTypes.length == 1) {
+                Class<?> p = parameterTypes[0];
+                try {
+                    int d = Types.getDistance(expectedParameterType, p);
+                    if (Math.abs(d) > Math.abs(foundDistance)) {
+                        continue;
                     }
+                    foundDistance = d;
+                    matched = c;
+                } catch (NotAssignableException ex) {
+                    // continue...
+                }
             }
         }
         if (matched != null) {
-            return getConstructorWithArgument(lookup, type, matched, foundDistance < 0);
+            return getConstructorWithArgument(type, matched, foundDistance < 0);
         }
-        if (empty == null) {
-            throw new AssertionError("No public constructor found for " + type.getName());
-        }
-
-        MethodHandle constructor;
-        try {
-            constructor = lookup.unreflectConstructor(empty);
-        } catch (IllegalAccessException ex) {
-            throw new AssertionError(ex);
-        }
-        constructor = MethodHandles.dropArguments(constructor, 0, Object.class);
-        return insertPostProcessor(lookup, constructor, type);
+        return null;
     }
 
-    private static MethodHandle getConstructorWithArgument(MethodHandles.Lookup lookup, Class<?> type,
+    private MethodHandle getConstructorWithArgument(Class<?> type,
                                                            Constructor<?> c, boolean needsTypeCheck) {
 
         MethodHandle constructor;
@@ -184,10 +208,14 @@ public final class Instantiator<T> {
         } catch (IllegalAccessException ex) {
             throw new AssertionError(ex);
         }
+        return checkMandatoryArgument(type, constructor, c, needsTypeCheck);
+    }
+
+    private MethodHandle checkMandatoryArgument(Class<?> type, MethodHandle constructor, Constructor<?> c, boolean needsTypeCheck) {
         Class<?> realParameterType = c.getParameterTypes()[0];
         boolean isMandatory = hasReadOnlyAnnotation(c.getParameterAnnotations()[0]);
         if (!needsTypeCheck && (realParameterType.isPrimitive() || !isMandatory)) {
-            return insertPostProcessor(lookup, constructor, type);
+            return withPostProcessor(constructor, type);
         }
 
         MethodHandle argumentGuardHandle;
@@ -199,10 +227,10 @@ public final class Instantiator<T> {
             argumentGuardHandle = argumentGuard.createHandle(isMandatory);
         }
         constructor = MethodHandles.filterArguments(constructor, 0, argumentGuardHandle);
-        return insertPostProcessor(lookup, constructor, type);
+        return withPostProcessor(constructor, type);
     }
 
-    private static boolean hasReadOnlyAnnotation(Annotation... annos) {
+    private boolean hasReadOnlyAnnotation(Annotation... annos) {
         for (Annotation a : annos) {
             if (a.annotationType().equals(Mandatory.class)) {
                 return true;
@@ -211,11 +239,11 @@ public final class Instantiator<T> {
         return false;
     }
 
-    private static boolean isPostProcessor(Class<?> type) {
+    private boolean isPostProcessor(Class<?> type) {
         return PostProcessor.class.isAssignableFrom(type);
     }
 
-    private static MethodHandle insertPostProcessor(MethodHandles.Lookup lookup, MethodHandle handle, Class<?> type) {
+    private MethodHandle withPostProcessor(MethodHandle handle, Class<?> type) {
         MethodHandle fullConstructor;
         if (isPostProcessor(type)) {
             MethodHandle postConstruct;
@@ -252,7 +280,7 @@ public final class Instantiator<T> {
         });
     }
 
-    private static class ArgumentGuard {
+    private static final class ArgumentGuard {
         private final String beanType;
         private final Class<?> expected;
 

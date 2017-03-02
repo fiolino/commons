@@ -13,6 +13,7 @@ import java.lang.invoke.*;
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import static java.lang.invoke.MethodHandles.*;
 import static java.lang.invoke.MethodType.methodType;
@@ -477,15 +478,51 @@ public class Methods {
      */
     public static <V> V visitMethodsWithStaticContext(Lookup lookup, Object reference,
                                                       V initialValue, MethodVisitor<V> visitor) {
-        final Class<?> type;
-        final Object[] instance = new Object[1];
+        return visitMethodsWithStaticContext0(lookup, reference, initialValue, visitor);
+    }
+
+    private static <T, V> V visitMethodsWithStaticContext0(Lookup lookup, T reference,
+                                                           V initialValue, MethodVisitor<V> visitor) {
+        Class<? extends T> type;
+        Supplier<T> factory;
         if (reference instanceof Class) {
-            type = (Class<?>) reference;
+            @SuppressWarnings("unchecked")
+            Class<T> t = (Class<T>) reference;
+            factory = Instantiator.getDefault().creatorFor(t);
+            type = t;
         } else {
-            type = reference.getClass();
-            instance[0] = reference;
+            @SuppressWarnings("unchecked")
+            Class<? extends T> t = (Class<? extends T>) reference.getClass();
+            type = t;
+            factory = () -> reference;
         }
-        final Lookup l = lookup.in(type);
+        return visitMethodsWithStaticContext(lookup, type, factory, initialValue, visitor);
+    }
+
+    /**
+     * Iterates over all methods of the given type.
+     * The visitor's MethodHandle will be static, that means, all MethodHandles are exactly of the Method's type
+     * without any instance context.
+     * <p>
+     * If the Method is an instance method, then the given factory should create an instance of the given type.
+     * This is bound to that handle then.
+     * <p>
+     * That means, the visitor doesn't have to care whether the method is static or not.
+     * <p>
+     * This will visit all methods that the given lookup is able to find.
+     * If some method overrides another, then only the overriding method gets visited.
+     *
+     * @param lookup       The lookup
+     * @param type         Iterates over this type's methods
+     * @param factory      Used to instantiate a member if the created method handle is of an instance method
+     * @param initialValue The visitor's first value
+     * @param visitor      The method visitor
+     * @return The return value of the last visitor's run
+     */
+    public static <T, V> V visitMethodsWithStaticContext(Lookup lookup, Class<? extends T> type, Supplier<T> factory,
+                                                         V initialValue, MethodVisitor<V> visitor) {
+        Object[] instance = new Object[1];
+        Lookup l = lookup.in(type);
         return iterateOver(l, type, initialValue, visitor, (m) -> {
             MethodHandle handle;
             try {
@@ -498,7 +535,7 @@ public class Methods {
             }
             Object ref = instance[0];
             if (ref == null) {
-                ref = Instantiator.instantiate(l, type);
+                ref = factory.get();
                 instance[0] = ref;
             }
             return handle.bindTo(ref);
@@ -1253,7 +1290,7 @@ public class Methods {
         }
         if (object instanceof Class) {
             // Then inject a new instance now
-            object = Instantiator.instantiate(lookup, (Class<?>) object);
+            object = Instantiator.getDefault().instantiate((Class<?>) object);
         }
         return handle.bindTo(object);
     }

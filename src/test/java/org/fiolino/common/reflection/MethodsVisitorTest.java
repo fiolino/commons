@@ -181,12 +181,8 @@ public class MethodsVisitorTest {
         void method() {
         }
 
-        ;
-
         void another() {
         }
-
-        ;
     }
 
     static class B extends A {

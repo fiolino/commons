@@ -49,11 +49,11 @@ public final class Instantiator {
     public <T> void registerFactory(Class<T> factoryClass) {
         Supplier<T> metaFactory = creatorFor(factoryClass);
         Methods.visitMethodsWithStaticContext(lookup, factoryClass, metaFactory, null, (v, m, supp) -> {
-            if (!m.isAnnotationPresent(Factory.class)) return null;
+            if (!m.isAnnotationPresent(Provider.class)) return null;
             
             Class<?> r = m.getReturnType();
             if (r.isPrimitive()) {
-                throw new AssertionError("Factory " + m + " returns a primitive");
+                throw new AssertionError("Provider " + m + " returns a primitive");
             }
             switch (m.getParameterCount()) {
                 case 0:

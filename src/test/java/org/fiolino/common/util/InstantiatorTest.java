@@ -299,12 +299,12 @@ public class InstantiatorTest {
     }
 
     static class StringFactory {
-        @Factory
+        @Provider
         static String sayHello() {
             return "Hello!";
         }
 
-        @Factory
+        @Provider
         static String sayHelloTo(String name) {
             return "Hello " + name + "!";
         }
@@ -324,7 +324,7 @@ public class InstantiatorTest {
     static class Counter {
         private int c;
 
-        @Factory
+        @Provider
         AtomicInteger createNext() {
             return new AtomicInteger(++c);
         }

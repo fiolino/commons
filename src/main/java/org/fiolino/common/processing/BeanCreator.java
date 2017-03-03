@@ -33,7 +33,7 @@ public class BeanCreator<S, T> implements ValueSupplier<S, T> {
     }
 
     protected BeanCreator(Class<? extends T> modelType) {
-        this(Instantiator.getDefault().creatorFor(modelType));
+        this(Instantiator.getDefault().createSupplierFor(modelType));
     }
 
     protected T newInstance() {

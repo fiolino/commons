@@ -488,7 +488,7 @@ public class Methods {
         if (reference instanceof Class) {
             @SuppressWarnings("unchecked")
             Class<T> t = (Class<T>) reference;
-            factory = Instantiator.getDefault().creatorFor(t);
+            factory = Instantiator.getDefault().createSupplierFor(t);
             type = t;
         } else {
             @SuppressWarnings("unchecked")
@@ -601,13 +601,23 @@ public class Methods {
     }
 
     private static final MethodHandle nullCheck;
+    private static final MethodHandle notNullCheck;
 
     static {
         try {
             nullCheck = MethodHandles.lookup().findStatic(Objects.class, "isNull", methodType(boolean.class, Object.class));
+            notNullCheck = MethodHandles.lookup().findStatic(Objects.class, "nonNull", methodType(boolean.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new AssertionError("Objects.isNull()", ex);
         }
+    }
+
+    public static MethodHandle nullCheck() {
+        return nullCheck;
+    }
+
+    public static MethodHandle notNullCheck() {
+        return notNullCheck;
     }
 
     /**
@@ -800,6 +810,15 @@ public class Methods {
         }
     }
 
+    /**
+     * Drops all incoming arguments from referenceType starting with index.
+     * The target handle must implement the referenceType except all arguments that start at index.
+     *
+     * @param target This will be exwecuted
+     * @param referenceType Describes the returning handle's type
+     * @param index In index in the referenceType's parameter array
+     * @return A handle that calls target but drops all trailing arguments
+     */
     public static MethodHandle dropAllOf(MethodHandle target, MethodType referenceType, int index) {
         if (index == referenceType.parameterCount()) {
             return target;
@@ -815,6 +834,13 @@ public class Methods {
         return MethodHandles.dropArguments(target, index, parameterTypes);
     }
 
+    /**
+     * Modifies the given target handle so that it will return a value of the given type which will always be null.
+     *
+     * @param target Some target to execute = the return type must be void
+     * @param returnType The type to return
+     * @return A handle with the same arguments as the target, but which returns a null value or a zero=like value if returnType is a primitive
+     */
     public static MethodHandle returnEmptyValue(MethodHandle target, Class<?> returnType) {
         if (target.type().returnType() != void.class) {
             throw new IllegalArgumentException("Expected void method, but it's " + target);
@@ -836,9 +862,21 @@ public class Methods {
         return MethodHandles.filterReturnValue(target, returnHandle);
     }
 
+    /**
+     * A handle that checks the given argument (which is of type Object) for being an instance of the given type.
+     *
+     * @param check The type to check
+     * @return A handle of type (Object)boolean
+     */
     public static MethodHandle instanceCheck(Class<?> check) {
+        if (check.isPrimitive()) {
+            throw new IllegalArgumentException(check.getName() + " must be a reference type.");
+        }
+        if (Object.class.equals(check)) {
+            return notNullCheck;
+        }
         try {
-            return publicLookup().bind(check, "isInstance", methodType(boolean.class, Object.class));
+            return publicLookup().in(check).bind(check, "isInstance", methodType(boolean.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new AssertionError("No isInstance for " + check.getName() + "?");
         }
@@ -1362,29 +1400,28 @@ public class Methods {
         });
     }
 
-    private static Method findOnlyMethod(Lookup lookup, Class<?> type) {
-        return doInClassHierarchy(type, c -> {
-            Method found = null;
-            for (Method m : c.getDeclaredMethods()) {
-                if (!wouldBeVisible(lookup, m)) {
-                    continue;
-                }
-                if (found != null) {
-                    throw new AmbiguousMethodException(type.getName() + " has more than one eligible method, e.e. " + found
-                            + " and " + m);
-                }
-                found = m;
-            }
-
-            return found;
-        });
+    /**
+     * Finds the only method in the given interface that doesn\t have a default implementation, i.e. it's the functional interface's only method.
+     *
+     * @param lambdaType The interface type
+     * @return The found method
+     */
+    public static Method findLambdaMethod(Class<?> lambdaType) {
+        return findLambdaMethod(publicLookup().in(lambdaType), lambdaType);
     }
 
-    private static Method findLambdaMethod(Lookup lookup, Class<?> lambdaType) {
+    /**
+     * Finds the only method in the given interface that doesn\t have a default implementation, i.e. it's the functional interface's only method.
+     *
+     * @param lookup Used to iterate over all methods visible from here
+     * @param lambdaType The interface type
+     * @return The found method
+     */
+    public static Method findLambdaMethod(Lookup lookup, Class<?> lambdaType) {
         if (!lambdaType.isInterface()) {
             throw new IllegalArgumentException(lambdaType.getName() + " should be an interface!");
         }
-        return visitAllMethods(lookup, lambdaType, null, (v, m, ignored) -> {
+        Method found = visitAllMethods(lookup, lambdaType, null, (v, m, ignored) -> {
             int modifiers = m.getModifiers();
             if (Modifier.isStatic(modifiers) || !Modifier.isAbstract(modifiers)) {
                 return v;
@@ -1392,9 +1429,17 @@ public class Methods {
             if (v == null) {
                 return m;
             } else {
-                throw new IllegalArgumentException(lambdaType.getName() + " has multiple methods.");
+                throw notAFunctionalType(lambdaType);
             }
         });
+        if (found == null) {
+            throw notAFunctionalType(lambdaType);
+        }
+        return found;
+    }
+
+    private static RuntimeException notAFunctionalType(Class<?> lambdaType) {
+        return new IllegalArgumentException(lambdaType.getName() + " is not a functional interface.");
     }
 
     /**

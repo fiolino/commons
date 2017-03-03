@@ -1,14 +1,18 @@
 package org.fiolino.common.util;
 
 import org.fiolino.common.ioc.PostProcessor;
-import org.fiolino.data.annotation.Mandatory;
+import org.fiolino.data.annotation.Facet;
 import org.junit.Test;
 
+import javax.annotation.Nullable;
 import javax.annotation.PostConstruct;
+import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.function.Supplier;
 
 import static java.lang.invoke.MethodHandles.lookup;
@@ -33,7 +37,7 @@ public class InstantiatorTest {
 
     @Test
     public void testNormal() {
-        Supplier<Normal> instantiator = Instantiator.getDefault().creatorFor(Normal.class);
+        Supplier<Normal> instantiator = Instantiator.getDefault().createSupplierFor(Normal.class);
         checkIsLambda(instantiator);
         Normal result = instantiator.get();
 
@@ -50,7 +54,7 @@ public class InstantiatorTest {
 
     @Test
     public void testPostProcessor() {
-        Supplier<WithPostProcessor> instantiator = Instantiator.getDefault().creatorFor(WithPostProcessor.class);
+        Supplier<WithPostProcessor> instantiator = Instantiator.getDefault().createSupplierFor(WithPostProcessor.class);
         checkIsNotLambda(instantiator);
         Normal result = instantiator.get();
 
@@ -72,8 +76,8 @@ public class InstantiatorTest {
         WithVoidPostConstruct sample = new WithVoidPostConstruct();
         assertEquals("Initial", sample.content);
 
-        Instantiator i = new Instantiator(lookup());
-        Supplier<WithVoidPostConstruct> supplier = i.creatorFor(WithVoidPostConstruct.class);
+        Instantiator i = Instantiator.forLookup(lookup());
+        Supplier<WithVoidPostConstruct> supplier = i.createSupplierFor(WithVoidPostConstruct.class);
         checkIsNotLambda(supplier);
         sample = supplier.get();
         assertEquals("Changed", sample.content);
@@ -81,9 +85,9 @@ public class InstantiatorTest {
 
     @Test
     public void testWithArgument() {
-        Function<String, WithPostProcessor> instantiator = Instantiator.getDefault().creatorWithArgument(WithPostProcessor.class, String.class);
+        Supplier<WithPostProcessor> instantiator = Instantiator.getDefault().createSupplierFor(WithPostProcessor.class);
         checkIsNotLambda(instantiator);
-        Normal result = instantiator.apply("Hello!");
+        Normal result = instantiator.get();
 
         assertNotNull(result);
         assertTrue(result.flag);
@@ -91,7 +95,7 @@ public class InstantiatorTest {
 
     @Test
     public void testCorrectArgument() {
-        Function<String, StringBuilder> instantiator = Instantiator.getDefault().creatorWithArgument(StringBuilder.class, String.class);
+        Function<String, StringBuilder> instantiator = Instantiator.getDefault().createFunctionFor(StringBuilder.class, String.class);
         checkIsLambda(instantiator);
         StringBuilder result = instantiator.apply("Hello!");
 
@@ -124,8 +128,8 @@ public class InstantiatorTest {
 
     @Test
     public void testPostConstructFunction() {
-        Instantiator i = new Instantiator(lookup());
-        Function<Integer, WithPostConstructAndConstructor> factory = i.creatorWithArgument(WithPostConstructAndConstructor.class, int.class);
+        Instantiator i = Instantiator.forLookup(lookup());
+        Function<Integer, WithPostConstructAndConstructor> factory = i.createFunctionFor(WithPostConstructAndConstructor.class, int.class);
         checkIsNotLambda(factory);
         WithPostConstructAndConstructor sample = factory.apply(100);
         assertEquals("Changed", sample.content);
@@ -152,8 +156,8 @@ public class InstantiatorTest {
 
     @Test
     public void testModifiedPostConstruct() {
-        Instantiator i = new Instantiator(lookup());
-        Function<String, ModifiedPostConstruct> factory = i.creatorWithArgument(ModifiedPostConstruct.class, String.class);
+        Instantiator i = Instantiator.forLookup(lookup());
+        Function<String, ModifiedPostConstruct> factory = i.createFunctionFor(ModifiedPostConstruct.class, String.class);
         checkIsNotLambda(factory);
         ModifiedPostConstruct sample = factory.apply("innocent");
         assertEquals("innocent", sample.value);
@@ -183,8 +187,8 @@ public class InstantiatorTest {
 
     @Test
     public void testModifiedPostConstructStatic() {
-        Instantiator i = new Instantiator(lookup());
-        Function<String, ModifiedPostConstructWithStatic> factory = i.creatorWithArgument(ModifiedPostConstructWithStatic.class, String.class);
+        Instantiator i = Instantiator.forLookup(lookup());
+        Function<String, ModifiedPostConstructWithStatic> factory = i.createFunctionFor(ModifiedPostConstructWithStatic.class, String.class);
         checkIsNotLambda(factory);
         ModifiedPostConstruct sample = factory.apply("hit");
         assertNotEquals("fallback", sample.value); // original check is not called any more because the return type does not match
@@ -203,21 +207,12 @@ public class InstantiatorTest {
 
     @Test
     public void testPrimitiveInsteadOfObject() {
-        Function<Object, ExpectNumber> instantiator = Instantiator.getDefault().creatorWithArgument(ExpectNumber.class, Object.class);
-        checkIsNotLambda(instantiator);
+        Function<Number, ExpectNumber> instantiator = Instantiator.getDefault().createFunctionFor(ExpectNumber.class, Number.class);
+        checkIsLambda(instantiator);
         ExpectNumber result = instantiator.apply(123);
 
         assertNotNull(result);
         assertEquals(123, result.num);
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testWrongArgument() {
-        Function<Object, ExpectNumber> instantiator = Instantiator.getDefault().creatorWithArgument(ExpectNumber.class, Object.class);
-        checkIsNotLambda(instantiator);
-        ExpectNumber result = instantiator.apply("Hello!");
-
-        fail("Shouldn't reach this");
     }
 
     public static class WithOptionalArgument {
@@ -227,34 +222,11 @@ public class InstantiatorTest {
 
     @Test
     public void testNotMandatory() {
-        Function<String, WithOptionalArgument> instantiator = Instantiator.getDefault().creatorWithArgument(WithOptionalArgument.class, String.class);
+        Function<String, WithOptionalArgument> instantiator = Instantiator.getDefault().createFunctionFor(WithOptionalArgument.class, String.class);
         checkIsLambda(instantiator);
         WithOptionalArgument result = instantiator.apply(null);
 
         assertNotNull(result);
-    }
-
-    public static class WithMandatoryArgument {
-        public WithMandatoryArgument(@Mandatory String unused) {
-        }
-    }
-
-    @Test
-    public void testMandatory() {
-        Function<String, WithMandatoryArgument> instantiator = Instantiator.getDefault().creatorWithArgument(WithMandatoryArgument.class, String.class);
-        checkIsNotLambda(instantiator);
-        WithMandatoryArgument result = instantiator.apply("Hello!");
-
-        assertNotNull(result);
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testFailedMandatory() {
-        Function<String, WithMandatoryArgument> instantiator = Instantiator.getDefault().creatorWithArgument(WithMandatoryArgument.class, String.class);
-        checkIsNotLambda(instantiator);
-        instantiator.apply(null);
-
-        fail("Shouldn't reach this");
     }
 
     public static class Hidden {
@@ -269,8 +241,8 @@ public class InstantiatorTest {
 
     @Test
     public void testPrivateAccess() {
-        Instantiator i = new Instantiator(Hidden.lookup());
-        Supplier<Hidden> supplier = i.creatorFor(Hidden.class);
+        Instantiator i = Instantiator.forLookup(Hidden.lookup());
+        Supplier<Hidden> supplier = i.createSupplierFor(Hidden.class);
         Hidden result = supplier.get();
         assertNotNull(result);
     }
@@ -287,13 +259,13 @@ public class InstantiatorTest {
 
     @Test
     public void testPrivateAccessWithArgument() {
-        Instantiator i = new Instantiator(Hidden.lookup());
-        Function<String, Hidden> function1 = i.creatorWithArgument(Hidden.class, String.class);
-        Hidden result1 = function1.apply("Hello!");
+        Instantiator i = Instantiator.forLookup(Hidden.lookup());
+        Supplier<Hidden> function1 = i.createSupplierFor(Hidden.class);
+        Hidden result1 = function1.get();
         assertNotNull(result1);
 
-        Instantiator i2 = new Instantiator(HiddenWithArgument.lookup());
-        Function<String, HiddenWithArgument> function2 = i2.creatorWithArgument(HiddenWithArgument.class, String.class);
+        Instantiator i2 = Instantiator.forLookup(HiddenWithArgument.lookup());
+        Function<String, HiddenWithArgument> function2 = i2.createFunctionFor(HiddenWithArgument.class, String.class);
         HiddenWithArgument result2 = function2.apply("Hello!");
         assertNotNull(result2);
     }
@@ -312,12 +284,11 @@ public class InstantiatorTest {
 
     @Test
     public void testFactory() {
-        Instantiator i = new Instantiator(lookup());
-        i.registerFactory(StringFactory.class);
-        Supplier<String> hello = i.creatorFor(String.class);
+        Instantiator i = Instantiator.withProviders(lookup(), StringFactory.class);
+        Supplier<String> hello = i.createSupplierFor(String.class);
         assertEquals("Hello!", hello.get());
 
-        Function<String, String> helloWithName = i.creatorWithArgument(String.class, String.class);
+        Function<String, String> helloWithName = i.createFunctionFor(String.class, String.class);
         assertEquals("Hello John!", helloWithName.apply("John"));
     }
 
@@ -332,16 +303,83 @@ public class InstantiatorTest {
 
     @Test
     public void testFactoryInstance() {
-        Instantiator i = new Instantiator(lookup());
-        i.registerFactory(Counter.class);
-        Supplier<AtomicInteger> source = i.creatorFor(AtomicInteger.class);
+        Instantiator i = Instantiator.withProviders(lookup(), Counter.class);
+        Supplier<AtomicInteger> source = i.createSupplierFor(AtomicInteger.class);
         for (int x = 1; x < 100; x++) {
             assertEquals(x, source.get().get());
         }
-
-        Function<String, AtomicInteger> ignoreParameter = i.creatorWithArgument(AtomicInteger.class, String.class);
-        assertEquals(100, ignoreParameter.apply("unused").get());
     }
 
+    static class NotOptionalFactory {
+        @Provider
+        static AtomicInteger createOnlyEven(int num) {
+            if ((num & 1) == 0) return new AtomicInteger(num);
+            return null;
+        }
+    }
 
+    @Test
+    public void testNotOptional() {
+        Instantiator i = Instantiator.withProviders(lookup(), new NotOptionalFactory());
+        @SuppressWarnings("unchecked")
+        IntFunction<AtomicInteger> func = i.createProviderFor(IntFunction.class, AtomicInteger.class);
+        checkIsLambda(func);
+        AtomicInteger r1 = func.apply(2);
+        assertNotNull(r1);
+        assertEquals(2, r1.get());
+
+        AtomicInteger r2 = func.apply(3);
+        assertNull(r2);
+    }
+
+    static class OptionalFactory {
+        @Provider @Nullable
+        AtomicInteger createOnlyEven(int num) {
+            if ((num & 1) == 0) return new AtomicInteger(99);
+            return null;
+        }
+    }
+
+    @Test
+    public void testOptional() {
+        Instantiator i = Instantiator.withProviders(lookup(), new OptionalFactory());
+        @SuppressWarnings("unchecked")
+        IntFunction<AtomicInteger> func = i.createProviderFor(IntFunction.class, AtomicInteger.class);
+        checkIsNotLambda(func);
+        AtomicInteger r1 = func.apply(2);
+        assertNotNull(r1);
+        assertEquals(99, r1.get());
+
+        // Now the default constructor
+        AtomicInteger r2 = func.apply(3);
+        assertNotNull(r2);
+        assertEquals(3, r2.get());
+    }
+
+    private static AtomicInteger getConstant(int num) {
+        return num < 0 ? new AtomicInteger(2046) : null;
+    }
+
+    @Test
+    public void testHandle() throws NoSuchMethodException, IllegalAccessException {
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle provider = lookup.findStatic(lookup.lookupClass(), "getConstant", MethodType.methodType(AtomicInteger.class, int.class));
+        Instantiator i = Instantiator.withProviders(lookup, OptionalFactory.class, provider);
+        @SuppressWarnings("unchecked")
+        IntFunction<AtomicInteger> func = i.createProviderFor(IntFunction.class, AtomicInteger.class);
+        checkIsNotLambda(func);
+
+        AtomicInteger r0 = func.apply(-100);
+        assertNotNull(r0);
+        assertEquals(2046, r0.get());
+
+        AtomicInteger r1 = func.apply(2);
+        assertNotNull(r1);
+        assertEquals(99, r1.get());
+
+        // Now the default constructor
+        AtomicInteger r2 = func.apply(3);
+        assertNotNull(r2);
+        assertEquals(3, r2.get());
+    }
 }

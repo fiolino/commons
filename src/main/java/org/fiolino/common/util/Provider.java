@@ -14,4 +14,12 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Retention(RUNTIME)
 @Target(METHOD)
 public @interface Provider {
+
+    /**
+     * If this is set to true, then this is an optional provider for that type, which means it can return null.
+     * In that case, the previously installed provider will be invoked, if there is any, or the bean's constructor.
+     *
+     * The same happens if the provider method is marked with {@link javax.annotation.Nullable}.
+     */
+    boolean optional() default false;
 }

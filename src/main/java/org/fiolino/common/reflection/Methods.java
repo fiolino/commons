@@ -41,6 +41,7 @@ public class Methods {
      * @param field  The field
      * @return The found {@link MethodHandle} of type (&lt;owner&gt;)&lt;type&gt;, or null otherwise
      */
+    @Nullable
     public static MethodHandle findGetter(Lookup lookup, Field field) {
         if (Modifier.isStatic(field.getModifiers())) {
             return null;
@@ -66,6 +67,7 @@ public class Methods {
      * @param type      The getter's expected return type
      * @return The found {@link MethodHandle} of type (&lt;owner&gt;)&lt;type&gt;, or null otherwise
      */
+    @Nullable
     public static MethodHandle findGetter(Lookup lookup, Class<?> owner, String fieldName, Class<?> type) {
         String name = Strings.addLeading(fieldName, "get");
         MethodHandle handle = findGetter0(lookup, owner, name, type);
@@ -108,6 +110,7 @@ public class Methods {
      * @param field  The field to look for
      * @return The found {@link MethodHandle} of type (&lt;owner&gt;,&lt;type&gt;)void, or null otherwise
      */
+    @Nullable
     public static MethodHandle findSetter(Lookup lookup, Field field) {
         if (Modifier.isStatic(field.getModifiers())) {
             return null;
@@ -135,6 +138,7 @@ public class Methods {
      * @param types     The setter's expected argument types (can be multiple or none as well)
      * @return The found {@link MethodHandle} of type (&lt;owner&gt;,&lt;type&gt;)void, or null otherwise
      */
+    @Nullable
     public static MethodHandle findSetter(Lookup lookup, Class<?> owner, String fieldName, Class<?>... types) {
         String name = Strings.addLeading(fieldName, "set");
         MethodHandle handle = findSetter0(lookup, owner, name, types);
@@ -173,6 +177,7 @@ public class Methods {
         return null;
     }
 
+    @Nullable
     private static MethodHandle findSetter0(Lookup lookup, Class<?> owner, String name, Class<?>... types) {
         try {
             return lookup.findVirtual(owner, name, methodType(void.class, types));
@@ -184,6 +189,7 @@ public class Methods {
         }
     }
 
+    @Nullable
     private static MethodHandle findGetter0(Lookup lookup, Class<?> owner, String name, Class<?> type) {
         try {
             return lookup.findVirtual(owner, name, methodType(type));

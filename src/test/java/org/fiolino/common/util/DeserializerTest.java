@@ -19,16 +19,17 @@ public class DeserializerTest {
 
     private MethodHandle create(Class<?> type, String... fieldNames) throws NoSuchFieldException, IllegalAccessException,
             NoSuchMethodException {
-        Deserializer d = new Deserializer();
-        addFieldsTo(d, type, fieldNames);
         MethodHandle constructor = lookup().findConstructor(type, methodType(void.class));
-        return d.createDeserializerFor(constructor);
+        Deserializer d = new Deserializer(constructor);
+        addFieldsTo(d, type, fieldNames);
+        return d.createDeserializer();
     }
 
     private void addFieldsTo(Deserializer d, Class<?> type, String... fieldNames) throws NoSuchFieldException {
+        int index = 0;
         for (String f : fieldNames) {
             if (f == null) {
-                d.ignoreNext();
+                index++;
             } else {
                 Field field;
                 try {
@@ -37,7 +38,7 @@ public class DeserializerTest {
                     field = type.getSuperclass().getDeclaredField(f);
                 }
                 MethodHandle setter = Methods.findSetter(lookup(), field);
-                d.addSetter(setter, field.getGenericType());
+                d.setField(setter, field.getGenericType(), index++, field::getName);
             }
         }
     }
@@ -124,7 +125,8 @@ public class DeserializerTest {
 
     @Test
     public void testBuilder() throws Throwable {
-        MethodHandle factory = DeserializerBuilder.getDeserializer(B.class);
+        DeserializerBuilder builder = new DeserializerBuilder(Instantiator.getDefault());
+        MethodHandle factory = builder.getDeserializer(B.class);
         B b = (B) factory.invokeExact("Hello World!:222:500:DAYS:9999999999999999:50.9:1,2,3:MILLISECONDS,NANOSECONDS");
         assertEquals((Integer) 500, b.getIntegerValue());
         assertEquals("Hello World!", b.getString());
@@ -135,13 +137,14 @@ public class DeserializerTest {
         assertEquals((Double) 50.9, b.getDoubleValue());
         assertEquals(9999999999999999L, b.getLongValue());
 
-        MethodHandle factory2 = DeserializerBuilder.getDeserializer(B.class);
+        MethodHandle factory2 = builder.getDeserializer(B.class);
         assertTrue(factory == factory2);
     }
 
     @Test
     public void testContainer() throws Throwable {
-        MethodHandle factory = DeserializerBuilder.getDeserializer(C.class);
+        DeserializerBuilder b = new DeserializerBuilder(Instantiator.getDefault());
+        MethodHandle factory = b.getDeserializer(C.class);
         C c = (C) factory.invokeExact("My name:(\"Hello World!\":222:500:DAYS):Some text");
         assertEquals("My name", c.getName());
         A a = c.getA();
@@ -155,12 +158,12 @@ public class DeserializerTest {
 
     @Test
     public void testContainer2() throws Throwable {
-        Deserializer forA = new Deserializer();
+        Deserializer forA = new Deserializer(Instantiator.getDefault().findProvider(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
-        Deserializer forC = new Deserializer();
+        Deserializer forC = new Deserializer(Instantiator.getDefault().findProvider(C.class));
         addFieldsTo(forC, C.class, "name", "text");
-        forC.addEmbedded(Methods.findSetter(lookup(), C.class, "a", A.class), forA);
-        MethodHandle factory = forC.createDeserializerFor(C.class);
+        forC.setEmbeddedField(Methods.findSetter(lookup(), C.class, "a", A.class), forA.createDeserializer(), 2, () -> "a");
+        MethodHandle factory = forC.createDeserializer();
 
         C c = (C) factory.invokeExact("My name:\"some text\":(425:\"Hello ::: World!\")");
         assertEquals("My name", c.getName());
@@ -173,12 +176,12 @@ public class DeserializerTest {
 
     @Test
     public void testContainerWithParenthesis() throws Throwable {
-        Deserializer forA = new Deserializer();
+        Deserializer forA = new Deserializer(Instantiator.getDefault().findProvider(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
-        Deserializer forC = new Deserializer();
+        Deserializer forC = new Deserializer(Instantiator.getDefault().findProvider(C.class));
         addFieldsTo(forC, C.class, "name", "text");
-        forC.addEmbedded(Methods.findSetter(lookup(), C.class, "a", A.class), forA);
-        MethodHandle factory = forC.createDeserializerFor(C.class);
+        forC.setEmbeddedField(Methods.findSetter(lookup(), C.class, "a", A.class), forA.createDeserializer(), 2, () -> "a");
+        MethodHandle factory = forC.createDeserializer();
 
         C c = (C) factory.invokeExact("My (name):\"(some text)\":(425:\"With (some) \\\"parenthesises\\\"\")");
         assertEquals("My (name)", c.getName());

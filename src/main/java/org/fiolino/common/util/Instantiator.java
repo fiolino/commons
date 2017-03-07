@@ -136,6 +136,10 @@ public final class Instantiator {
         return new Instantiator(lookup, new ArrayList<>(providers)).registerAllTypes(anything);
     }
 
+    final MethodHandles.Lookup getLookup() {
+        return lookup;
+    }
+
     private Instantiator registerAllTypes(Object... providers) {
         for (Object p : providers) {
             if (p instanceof Class) {
@@ -287,7 +291,7 @@ public final class Instantiator {
      */
     public <T> T createProviderFor(Class<T> functionalInterface) {
         Method lambdaMethod = Methods.findLambdaMethod(lookup, functionalInterface);
-        MethodHandle provider = findProvider(methodType(lambdaMethod.getReturnType(), lambdaMethod.getParameterTypes()));
+        MethodHandle provider = findProvider(lambdaMethod.getReturnType(), lambdaMethod.getParameterTypes());
         return Methods.lambdafy(lookup, provider, functionalInterface);
     }
 
@@ -309,8 +313,12 @@ public final class Instantiator {
                     Arrays.toString(lambdaTypes) + ", given " + Arrays.toString(parameterTypes));
         }
         System.arraycopy(parameterTypes, 0, lambdaTypes, 0, parameterTypes.length);
-        MethodHandle provider = findProvider(methodType(returnType, lambdaTypes));
+        MethodHandle provider = findProvider(returnType, lambdaTypes);
         return Methods.lambdafy(lookup, provider, functionalInterface);
+    }
+
+    public MethodHandle findProvider(Class<?> returnType, Class<?>... parameterTypes) {
+        return findProvider(methodType(returnType, parameterTypes));
     }
 
     private MethodHandle findProviderOrGeneric(MethodType methodType) {
@@ -318,7 +326,7 @@ public final class Instantiator {
                 .orElseGet(() -> findConstructor(methodType));
     }
 
-    private MethodHandle findProvider(MethodType methodType) {
+    public MethodHandle findProvider(MethodType methodType) {
         return withPostProcessor(findProviderOrGeneric(methodType));
     }
 

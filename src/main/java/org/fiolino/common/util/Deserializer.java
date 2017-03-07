@@ -1,16 +1,18 @@
 package org.fiolino.common.util;
 
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.reflect.Type;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-
 import org.fiolino.common.reflection.Converters;
 import org.fiolino.common.reflection.Methods;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.function.Supplier;
 
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
@@ -24,6 +26,8 @@ import static java.lang.invoke.MethodType.methodType;
 public final class Deserializer {
 
     private static final Logger logger = LoggerFactory.getLogger(Deserializer.class);
+
+    private static final MethodHandle POINTER_CONSTRUCTOR;
 
     private static final MethodHandle EMPTY_STRING_CHECK;
 
@@ -42,6 +46,8 @@ public final class Deserializer {
         MethodHandle stringToStringArray;
         MethodHandles.Lookup lookup = lookup();
         try {
+            POINTER_CONSTRUCTOR = lookup.findConstructor(Pointer.class, methodType(void.class, String.class));
+
             EMPTY_STRING_CHECK = lookup.findVirtual(String.class, "isEmpty", methodType(boolean.class));
             stringToList = lookup.findStatic(Deserializer.class, "stringToList", methodType(List.class, MethodHandle.class, String[].class));
             stringToStringArray = lookup.findVirtual(String.class, "split", methodType(String[].class, String.class));
@@ -60,9 +66,80 @@ public final class Deserializer {
         LIST_ADD_HANDLE = handle;
     }
 
+    private abstract static class FieldInfo {
+        abstract void process(Deserializer deserializer);
+        abstract void checkForIndex(int index, Supplier<String> name);
+    }
+
+    private static class IgnoreNext extends FieldInfo {
+        @Override
+        void process(Deserializer deserializer) {
+            deserializer.ignoreNext();
+        }
+
+        @Override
+        void checkForIndex(int index, Supplier<String> name) {
+            // All okay
+        }
+    }
+
+    private abstract static class SetterWithSomething extends FieldInfo {
+        final MethodHandle setter;
+
+        SetterWithSomething(MethodHandle setter) {
+            this.setter = setter;
+        }
+
+        @Override
+        void checkForIndex(int index, Supplier<String> name) {
+            logger.info("Overwriting serial field " + index + " with " + name.get());
+        }
+    }
+
+    private static class SetterWithType extends SetterWithSomething {
+        private final Type type;
+
+        SetterWithType(MethodHandle setter, Type type) {
+            super(setter);
+            this.type = type;
+        }
+
+        @Override
+        void process(Deserializer deserializer) {
+            deserializer.addSetter(setter, type);
+        }
+    }
+
+    private static class SetterWithEmbedded extends SetterWithSomething {
+        private final MethodHandle deserializer;
+
+        SetterWithEmbedded(MethodHandle setter, MethodHandle deserializer) {
+            super(setter);
+            this.deserializer = deserializer;
+        }
+
+        @Override
+        void process(Deserializer deserializer) {
+            deserializer.addEmbedded(setter, this.deserializer);
+        }
+    }
+
+    private FieldInfo[] setters = new FieldInfo[0];
+
+    private final MethodHandle constructor;
     private MethodHandle factory; // (T,String)void; while building: (T,Reader)void
 
     private int ignoreNext;
+
+    public Deserializer(MethodHandle constructor) {
+        if (constructor.type().returnType().isPrimitive()) {
+            throw new IllegalArgumentException("Constructor " + constructor + " must create object instance");
+        }
+        if (constructor.type().parameterCount() > 0) {
+            throw new IllegalArgumentException("Constructor " + constructor + " must be empty");
+        }
+        this.constructor = constructor;
+    }
 
     @SuppressWarnings("unused")
     private static List<?> stringToList(MethodHandle adder, String[] values) throws Throwable {
@@ -73,30 +150,18 @@ public final class Deserializer {
         return list;
     }
 
-    public void addEmbedded(MethodHandle setter, Deserializer deserializer) {
+    private void addEmbedded(MethodHandle setter, MethodHandle deserializer) {
         MethodHandle pointerSetter;
         Class<?> valueType = setter.type().parameterType(1);
         if (valueType.isAssignableFrom(List.class)) {
             throw new UnsupportedOperationException("Embedded lists not supported yet.");
         } else {
-            MethodHandle constructor = findConstructor(valueType);
-            MethodHandle deserializerHandle = deserializer.createDeserializerFor(constructor);
-            pointerSetter = MethodHandles.filterArguments(setter, 1, deserializerHandle);
+            pointerSetter = MethodHandles.filterArguments(setter, 1, deserializer);
         }
         pointerSetter = Methods.secureNull(pointerSetter);
         pointerSetter = MethodHandles.filterArguments(pointerSetter, 1, NEXT_EMBEDDED_HANDLE);
 
         addHandle(pointerSetter);
-    }
-
-    private MethodHandle findConstructor(Class<?> valueType) {
-        MethodHandle constructor;
-        try {
-            constructor = publicLookup().in(valueType).findConstructor(valueType, methodType(void.class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError(valueType.getName() + " has no public constructor.", ex);
-        }
-        return constructor;
     }
 
     /**
@@ -105,7 +170,7 @@ public final class Deserializer {
      * @param setter      (&lt;? super T&gt;&lt;value type&gt;)void
      * @param genericType The value type
      */
-    public void addSetter(MethodHandle setter, Type genericType) {
+    private void addSetter(MethodHandle setter, Type genericType) {
         MethodHandle pointerSetter;
         Class<?> valueType = setter.type().parameterType(1);
         if (String.class.equals(valueType)) {
@@ -165,7 +230,7 @@ public final class Deserializer {
 
     }
 
-    public void ignoreNext() {
+    private void ignoreNext() {
         ignoreNext++;
     }
 
@@ -174,27 +239,15 @@ public final class Deserializer {
      *
      * @return (String)&lt;type&gt;
      */
-    public MethodHandle createDeserializerFor(Class<?> valueType) {
-        return createDeserializerFor(findConstructor(valueType));
-    }
-
-    /**
-     * Creates a MethodHandle that accepts a String and returns a deserialized  Object.
-     *
-     * @return (String)&lt;type&gt;
-     */
-    public MethodHandle createDeserializerFor(MethodHandle constructor) {
+    public MethodHandle createDeserializer() {
+        for (FieldInfo sws : setters) {
+            sws.process(this);
+        }
         if (factory == null) {
             throw new IllegalStateException("No setters defined yet.");
         }
         // factory is (? super T,String)void
-        MethodHandle pointerConstructor;
-        try {
-            pointerConstructor = lookup().findConstructor(Pointer.class, methodType(void.class, String.class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("No (String) constructor in class Pointer?", ex);
-        }
-        MethodHandle handle = MethodHandles.filterArguments(factory, 1, pointerConstructor);
+        MethodHandle handle = MethodHandles.filterArguments(factory, 1, POINTER_CONSTRUCTOR);
         Class<?> modelType = constructor.type().returnType();
         // handle is (? super T,String)void
         handle = handle.asType(methodType(void.class, modelType, String.class));
@@ -205,6 +258,26 @@ public final class Deserializer {
         // handle is (String)<type>
         handle = Methods.rejectIfArgument(handle, 0, EMPTY_STRING_CHECK);
         return Methods.secureNull(handle);
+    }
+
+    public void setField(MethodHandle setter, Type type, int fieldIndex, Supplier<String> name) {
+        checkSize(name, fieldIndex);
+        setters[fieldIndex] = new SetterWithType(setter, type);
+    }
+
+    public void setEmbeddedField(MethodHandle setter, MethodHandle deserializer, int fieldIndex, Supplier<String> name) {
+        checkSize(name, fieldIndex);
+        setters[fieldIndex] = new SetterWithEmbedded(setter, deserializer);
+    }
+
+    private void checkSize(Supplier<String> name, int fieldIndex) {
+        int old = setters.length;
+        if (fieldIndex < old) {
+            setters[fieldIndex].checkForIndex(fieldIndex, name);
+        } else {
+            setters = Arrays.copyOf(setters, fieldIndex + 1);
+            Arrays.fill(setters, old, fieldIndex + 1, new IgnoreNext());
+        }
     }
 
     @SuppressWarnings("unused")

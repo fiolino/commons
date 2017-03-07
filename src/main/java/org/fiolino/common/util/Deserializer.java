@@ -116,7 +116,7 @@ public final class Deserializer {
         }
 
         if (valueType.isAssignableFrom(List.class)) {
-            Class<?> itemType = Types.getRawArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
+            Class<?> itemType = Types.rawArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
             MethodHandle addToList = LIST_ADD_HANDLE.asType(methodType(void.class, List.class, itemType));
             MethodHandle adder = createSetterForValueType(addToList, itemType);
             MethodHandle listBuilder = MethodHandles.insertArguments(STRING_TO_LIST_HANDLE, 0, adder);

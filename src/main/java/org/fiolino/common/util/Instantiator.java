@@ -8,12 +8,11 @@ import javax.annotation.PostConstruct;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.lang.reflect.Parameter;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -23,38 +22,103 @@ import static java.lang.invoke.MethodType.methodType;
 /**
  * Creates a {@link Supplier} or {@link Function} to instantiate objects.
  * <p>
+ * Instantiators may have individual {@link java.lang.invoke.MethodHandles.Lookup} instances as well as own providers.
+ * <p>
+ * Lookups are used to identify constructors and factory methods.
+ * <p>
  * Created by kuli on 10.02.15.
  */
 public final class Instantiator {
 
     private static final Instantiator DEFAULT = new Instantiator();
 
+    /**
+     * The default instantiator, whoch is an instance without any specific providers.
+     */
     public static Instantiator getDefault() {
         return DEFAULT;
     }
 
+    /**
+     * Creates a new instance with a given list of providers.
+     *
+     * @param providers See the type description about possible provider types.
+     * @return The instantiator
+     */
     public static Instantiator withProviders(Object... providers) {
         return withProviders(lookup(), providers);
     }
 
     public static Instantiator withProviders(MethodHandles.Lookup lookup, Object... providers) {
-        return new Instantiator(lookup, new HashMap<>(providers.length * 2)).registerAllTypes(providers);
+        return new Instantiator(lookup, new ArrayList<>(providers.length)).registerAllTypes(providers);
     }
 
     public static Instantiator forLookup(MethodHandles.Lookup lookup) {
         return getDefault().withLookup(lookup);
     }
 
-    private final MethodHandles.Lookup lookup;
-    private final Map<MethodType, MethodHandle> providers;
+    private static abstract class HandleContainer {
+        final MethodHandle handle;
 
-    private Instantiator(MethodHandles.Lookup lookup, Map<MethodType, MethodHandle> providers) {
+        HandleContainer(MethodHandle handle) {
+            this.handle = handle;
+        }
+
+        abstract MethodHandle getProviderFor(MethodType type);
+    }
+
+    private static class DirectHandleContainer extends HandleContainer {
+        DirectHandleContainer(MethodHandle handle) {
+            super(handle);
+        }
+
+        @Override
+        public MethodHandle getProviderFor(MethodType type) {
+            if (type.equals(handle.type())) return handle;
+            return null;
+        }
+    }
+
+    private static class GenericHandleContainer extends HandleContainer {
+        private final int argumentIndex;
+        private final Class<?> subscribedClass;
+        private final Class<?>[] expectedArguments;
+
+        GenericHandleContainer(MethodHandle handle, int argumentIndex, Class<?> subscribedClass) {
+            super(handle);
+            this.argumentIndex = argumentIndex;
+            this.subscribedClass = subscribedClass;
+
+            int argCount = handle.type().parameterCount() - 1;
+            expectedArguments = new Class<?>[argCount];
+            for (int i=0, j=0; j < argCount; i++) {
+                if (i == argumentIndex) continue;
+                expectedArguments[j++] = handle.type().parameterType(i);
+            }
+        }
+
+        @Override
+        public MethodHandle getProviderFor(MethodType type) {
+            Class<?> requestedClass = type.returnType();
+            if (!subscribedClass.isAssignableFrom(requestedClass)) {
+                return null;
+            }
+            if (!Arrays.equals(expectedArguments, type.parameterArray())) {
+                return null;
+            }
+            return MethodHandles.insertArguments(handle, argumentIndex, requestedClass);
+        }
+    }
+    private final MethodHandles.Lookup lookup;
+    private final List<HandleContainer> providers;
+
+    private Instantiator(MethodHandles.Lookup lookup, List<HandleContainer> providers) {
         this.lookup = lookup;
         this.providers = providers;
     }
 
     private Instantiator(MethodHandles.Lookup lookup) {
-        this(lookup, Collections.emptyMap());
+        this(lookup, Collections.emptyList());
     }
 
     private Instantiator() {
@@ -69,7 +133,7 @@ public final class Instantiator {
         if (anything.length == 0) {
             return this;
         }
-        return new Instantiator(lookup, new HashMap<>(providers)).registerAllTypes(anything);
+        return new Instantiator(lookup, new ArrayList<>(providers)).registerAllTypes(anything);
     }
 
     private Instantiator registerAllTypes(Object... providers) {
@@ -77,7 +141,7 @@ public final class Instantiator {
             if (p instanceof Class) {
                 register((Class<?>) p);
             } else if (p instanceof MethodHandle) {
-                register(makeOptional((MethodHandle) p));
+                register(makeOptional((MethodHandle) p), -1);
             } else if (p instanceof Method) {
                 register((Method) p);
             } else {
@@ -97,7 +161,7 @@ public final class Instantiator {
         if (!Modifier.isStatic(provider.getModifiers())) {
             h = h.bindTo(instantiate(provider.getDeclaringClass()));
         }
-        register(makeOptional(h));
+        register(makeOptional(h), findRequestedTypeParameter(provider));
     }
 
     private <T> void register(Class<T> providerClass) {
@@ -110,7 +174,7 @@ public final class Instantiator {
             if (annotation.optional() || m.isAnnotationPresent(Nullable.class)) {
                 provider = makeOptional(provider);
             }
-            register(provider);
+            register(provider, findRequestedTypeParameter(m));
             return null;
         });
     }
@@ -124,7 +188,7 @@ public final class Instantiator {
             if (annotation.optional() || m.isAnnotationPresent(Nullable.class)) {
                 provider = makeOptional(provider);
             }
-            register(provider);
+            register(provider, findRequestedTypeParameter(m));
             return null;
         });
     }
@@ -143,12 +207,35 @@ public final class Instantiator {
         return MethodHandles.foldArguments(checkedExisting, provider);
     }
 
-    private void register(MethodHandle provider) {
+    private void register(MethodHandle provider, int typeIndex) {
         MethodType type = provider.type();
         if (type.returnType().isPrimitive()) {
             throw new AssertionError("Provider " + provider + " returns a primitive");
         }
-        providers.put(type, provider);
+        HandleContainer p = typeIndex < 0 ? new DirectHandleContainer(provider) : new GenericHandleContainer(provider, typeIndex, type.returnType());
+        providers.add(0, p);
+    }
+
+    private int findRequestedParameter(Method m) {
+        int i=0;
+        for (Parameter p : m.getParameters()) {
+            if (p.isAnnotationPresent(Requested.class)) {
+                return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+
+    private int findRequestedTypeParameter(Method m) {
+        int arg = findRequestedParameter(m);
+        if (arg >= 0) {
+            Class<?> t = m.getParameterTypes()[arg];
+            if (!Class.class.equals(t)) {
+                throw new AssertionError("Parameter #" + arg + " of " + m + " is annotated with @Requested but of wrong type " + t);
+            }
+        }
+        return arg;
     }
 
     /**
@@ -227,21 +314,20 @@ public final class Instantiator {
     }
 
     private MethodHandle findProviderOrGeneric(MethodType methodType) {
-        MethodHandle p = providers.get(methodType);
-        if (p != null) return p;
-        return findConstructor(methodType.returnType(), methodType.changeReturnType(void.class));
+        return providers.stream().map(p -> p.getProviderFor(methodType)).filter(Objects::nonNull).findFirst()
+                .orElseGet(() -> findConstructor(methodType));
     }
 
     private MethodHandle findProvider(MethodType methodType) {
         return withPostProcessor(findProviderOrGeneric(methodType));
     }
 
-    private MethodHandle findConstructor(Class<?> type, MethodType methodType) {
+    private MethodHandle findConstructor(MethodType methodType) {
         MethodHandle constructor;
         try {
-            constructor = lookup.findConstructor(type, methodType);
+            constructor = lookup.findConstructor(methodType.returnType(), methodType.changeReturnType(void.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("No constructor with parameters " + Arrays.toString(methodType.parameterArray()) + " in " + type.getName());
+            throw new AssertionError("No constructor with parameters " + Arrays.toString(methodType.parameterArray()) + " in " + methodType.returnType().getName());
         }
         return constructor;
     }
@@ -281,7 +367,7 @@ public final class Instantiator {
             MethodHandle postProcessor = supp.get();
             MethodType t = postProcessor.type();
             if (t.parameterCount() != 1) {
-                throw new AssertionError(m + " is annotated with @PostCreate but has too many parameters.");
+                throw new AssertionError(m + " is annotated with @" + PostConstruct.class.getSimpleName() + " but has too many parameters.");
             }
             Class<?> returnType = t.returnType();
             if (returnType == void.class) {

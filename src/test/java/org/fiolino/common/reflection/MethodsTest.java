@@ -419,6 +419,33 @@ public class MethodsTest {
     }
 
     @Test
+    public void testInstanceCheck() throws Throwable {
+        MethodHandle instanceCheck = Methods.instanceCheck(String.class);
+        boolean isInstance = (boolean) instanceCheck.invokeExact((Object) 1848);
+        assertFalse("Number is not String", isInstance);
+        isInstance = (boolean) instanceCheck.invokeExact((Object) "Some string");
+        assertTrue("String is a String", isInstance);
+        isInstance = (boolean) instanceCheck.invokeExact((Object) null);
+        assertFalse("null is not a String", isInstance);
+    }
+
+    @Test
+    public void testInstanceCheckIsNotNullCheckForObject() throws Throwable {
+        MethodHandle instanceCheck = Methods.instanceCheck(Object.class);
+        boolean isInstance = (boolean) instanceCheck.invokeExact((Object) 1848);
+        assertTrue("Number is not null", isInstance);
+        isInstance = (boolean) instanceCheck.invokeExact((Object) "Some string");
+        assertTrue("String is not null", isInstance);
+        isInstance = (boolean) instanceCheck.invokeExact((Object) null);
+        assertFalse("null check", isInstance);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testInstanceCheckWithPrimitive() {
+        Methods.instanceCheck(int.class);
+    }
+
+    @Test
     public void testMethodTypesEqual() {
         MethodType prototype = methodType(Date.class, CharSequence.class, int.class);
         Comparison compare = Methods.compare(prototype, methodType(Date.class, CharSequence.class, int.class));

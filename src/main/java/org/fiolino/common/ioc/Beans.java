@@ -237,7 +237,7 @@ public class Beans {
                 }
             }
 
-            Class<?> argument = Types.getRawArgument(f, Factory.class, 0, Types.Bounded.UPPER);
+            Class<?> argument = Types.rawArgument(f, Factory.class, 0, Types.Bounded.UPPER);
             int distance = Types.distanceOf(type, argument);
             if (distance == 0) {
                 return f;

@@ -1,16 +1,19 @@
 package org.fiolino.common.util;
 
 import org.fiolino.common.ioc.PostProcessor;
-import org.fiolino.data.annotation.Facet;
 import org.junit.Test;
 
 import javax.annotation.Nullable;
 import javax.annotation.PostConstruct;
+import java.awt.*;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.util.Date;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.function.Supplier;
@@ -381,5 +384,62 @@ public class InstantiatorTest {
         AtomicInteger r2 = func.apply(3);
         assertNotNull(r2);
         assertEquals(3, r2.get());
+    }
+
+    static class GenericFactory {
+        @Provider
+        CharSequence reproduce(String someValue, int factor, @Requested Class<?> type) {
+            StringBuilder sb = new StringBuilder();
+            for (int i=0; i < factor; i++) {
+                sb.append(someValue);
+            }
+            if (type.equals(String.class)) {
+                return sb.toString();
+            } else if (type.equals(StringBuilder.class)) {
+                return sb;
+            } else {
+                return null;
+            }
+        }
+    }
+
+    static class HasConstructor {
+        HasConstructor(String unused, int unused2) {}
+    }
+
+    @Test
+    public void testGeneric() {
+        Instantiator i = Instantiator.withProviders(lookup(), new GenericFactory());
+        @SuppressWarnings("unchecked")
+        BiFunction<String, Integer, String> func = i.createProviderFor(BiFunction.class, String.class, String.class, int.class);
+        checkIsNotLambda(func);
+        String s = func.apply("test", 3);
+        assertNotNull(s);
+        assertEquals("testtesttest", s);
+
+        @SuppressWarnings("unchecked")
+        BiFunction<String, Integer, StringBuilder> func2 = i.createProviderFor(BiFunction.class, StringBuilder.class, String.class, int.class);
+        checkIsNotLambda(func2);
+        StringBuilder sb = func2.apply("bla", 4);
+        assertNotNull(sb);
+        assertEquals("blablablabla", sb.toString());
+
+        @SuppressWarnings("unchecked")
+        BiFunction<String, Integer, StringBuffer> func3 = i.createProviderFor(BiFunction.class, StringBuffer.class, String.class, int.class);
+        checkIsNotLambda(func3);
+        StringBuffer sb2 = func3.apply("blubb", 5);
+        assertNull(sb2); // Because GenericFactory is not @Nullable
+
+        @SuppressWarnings("unchecked")
+        BiFunction<String, Integer, HasConstructor> func4 = i.createProviderFor(BiFunction.class, HasConstructor.class, String.class, int.class);
+        checkIsLambda(func4);
+        HasConstructor x = func4.apply("x", 6);
+        assertNotNull(x);
+    }
+
+    @Test(expected = AssertionError.class)
+    public void testFail() {
+        Instantiator i = Instantiator.withProviders(lookup(), new GenericFactory(), new OptionalFactory());
+        i.createProviderFor(BiFunction.class, Rectangle.class, Date.class, TimeUnit.class);
     }
 }

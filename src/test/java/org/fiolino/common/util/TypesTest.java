@@ -34,6 +34,22 @@ public class TypesTest {
     }
 
     @Test
+    public void testAsPrimitive() {
+        assertEquals(int.class, Types.asPrimitive(Integer.class));
+        assertEquals(int.class, Types.asPrimitive(int.class));
+        assertEquals(void.class, Types.asPrimitive(Void.class));
+        assertNull(Types.asPrimitive(Object.class));
+    }
+
+    @Test
+    public void testToWrapper() {
+        assertEquals(Integer.class, Types.toWrapper(int.class));
+        assertEquals(Integer.class, Types.toWrapper(Integer.class));
+        assertEquals(Void.class, Types.toWrapper(void.class));
+        assertEquals(Object.class, Types.toWrapper(Object.class));
+    }
+
+    @Test
     public void testAssignable() {
         assertTrue(Types.isAssignableFrom(Map.class, HashMap.class));
         assertFalse(Types.isAssignableFrom(HashMap.class, Map.class));
@@ -92,55 +108,55 @@ public class TypesTest {
     @TestWithParameter
     @SuppressWarnings("rawtypes")
     void testRawType1(Map unused, Type t) {
-        assertEquals(Map.class, Types.getRawType(t));
+        assertEquals(Map.class, Types.rawType(t));
     }
 
     @TestWithParameter
     void testRawType2(Map<? extends List<?>, ?> unused, Type t) {
-        assertEquals(Map.class, Types.getRawType(t));
+        assertEquals(Map.class, Types.rawType(t));
     }
 
     @TestWithParameter
     <T> void testRawType3(ThreadLocal<T> unused, Type t) {
-        assertEquals(ThreadLocal.class, Types.getRawType(t));
+        assertEquals(ThreadLocal.class, Types.rawType(t));
     }
 
     @TestWithParameter(expected = IllegalArgumentException.class)
     <T> void testRawType4(T unused, Type t) {
-        Types.getRawType(t);
+        Types.rawType(t);
     }
 
     @TestWithParameter
     void testRawType5(List<? extends Map<?, ?>> unused, Type t) {
         Type argument = ((ParameterizedType) t).getActualTypeArguments()[0];
-        assertEquals(Map.class, Types.getRawType(argument, Types.Bounded.UPPER));
+        assertEquals(Map.class, Types.rawType(argument, Types.Bounded.UPPER));
     }
 
     @TestWithParameter
     void testRawType6(List<? super Map<?, ?>> unused, Type t) {
         Type argument = ((ParameterizedType) t).getActualTypeArguments()[0];
-        assertEquals(Map.class, Types.getRawType(argument, Types.Bounded.LOWER));
+        assertEquals(Map.class, Types.rawType(argument, Types.Bounded.LOWER));
     }
 
     @TestWithParameter(expected = IllegalArgumentException.class)
     void testRawType7(List<? extends Map<?, ?>> unused, Type t) {
         Type argument = ((ParameterizedType) t).getActualTypeArguments()[0];
-        Types.getRawType(argument, Types.Bounded.LOWER);
+        Types.rawType(argument, Types.Bounded.LOWER);
     }
 
     @TestWithParameter
     void testSimpleArguments(Map<?, String> unused, Type t) {
-        assertEquals(String.class, Types.getRawArgument(t, Map.class, 1, Types.Bounded.EXACT));
+        assertEquals(String.class, Types.rawArgument(t, Map.class, 1, Types.Bounded.EXACT));
     }
 
     @TestWithParameter(expected = IllegalArgumentException.class)
     void testOutOfBounds(Map<?, String> unused, Type t) {
-        Types.getRawArgument(t, Map.class, 2, Types.Bounded.EXACT);
+        Types.rawArgument(t, Map.class, 2, Types.Bounded.EXACT);
     }
 
     @TestWithParameter(expected = IllegalArgumentException.class)
     void testRawType(Map unused, Type t) {
-        Types.getRawArgument(t, Map.class, 0, Types.Bounded.EXACT);
+        Types.rawArgument(t, Map.class, 0, Types.Bounded.EXACT);
     }
 
     private static interface SwapParameters<A, B> extends Map<B, A> {
@@ -148,7 +164,7 @@ public class TypesTest {
 
     @TestWithParameter
     void testSwappedArguments(SwapParameters<Integer, String> unused, Type t) {
-        assertEquals(Integer.class, Types.getRawArgument(t, Map.class, 1, Types.Bounded.EXACT));
+        assertEquals(Integer.class, Types.rawArgument(t, Map.class, 1, Types.Bounded.EXACT));
     }
 
     private interface FixedParameters extends SwapParameters<Integer, String> {
@@ -156,8 +172,8 @@ public class TypesTest {
 
     @TestWithParameter
     void testFixedArguments(FixedParameters unused, Type t) {
-        assertEquals(Integer.class, Types.getRawArgument(t, Map.class, 1, Types.Bounded.EXACT));
-        assertEquals(String.class, Types.getRawArgument(t, SwapParameters.class, 1, Types.Bounded.EXACT));
+        assertEquals(Integer.class, Types.rawArgument(t, Map.class, 1, Types.Bounded.EXACT));
+        assertEquals(String.class, Types.rawArgument(t, SwapParameters.class, 1, Types.Bounded.EXACT));
     }
 
     private interface OneParameter<A extends List<?>> extends Map<Date, A> {
@@ -165,7 +181,7 @@ public class TypesTest {
 
     @TestWithParameter
     void testOneArgument(OneParameter<?> unused, Type t) {
-        assertEquals(Date.class, Types.getRawArgument(t, Map.class, 0, Types.Bounded.EXACT));
-        assertEquals(List.class, Types.getRawArgument(t, Map.class, 1, Types.Bounded.UPPER));
+        assertEquals(Date.class, Types.rawArgument(t, Map.class, 0, Types.Bounded.EXACT));
+        assertEquals(List.class, Types.rawArgument(t, Map.class, 1, Types.Bounded.UPPER));
     }
 }

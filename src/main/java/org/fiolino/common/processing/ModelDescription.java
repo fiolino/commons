@@ -56,7 +56,7 @@ public class ModelDescription extends AbstractConfigurationContainer {
         this.lookup = parent.lookup.in(modelType);
         Class<?> valueType = relationHolder.getValueType();
         if (Map.class.isAssignableFrom(valueType)) {
-            valueType = Types.getRawArgument(relationHolder.getGenericType(), Map.class, 1, Types.Bounded.UPPER);
+            valueType = Types.rawArgument(relationHolder.getGenericType(), Map.class, 1, Types.Bounded.UPPER);
         }
     }
 
@@ -138,16 +138,16 @@ public class ModelDescription extends AbstractConfigurationContainer {
     }
 
     private Class<?> getTargetTypeFor(Type genericType, AccessibleObject annotated) {
-        Class<?> valueType = Types.getRawType(genericType);
+        Class<?> valueType = Types.rawType(genericType);
         if (Map.class.isAssignableFrom(valueType)) {
-            if (!String.class.equals(Types.getRawArgument(genericType, Map.class, 0, Types.Bounded.LOWER))) {
+            if (!String.class.equals(Types.rawArgument(genericType, Map.class, 0, Types.Bounded.LOWER))) {
                 throw new AssertionError("Bad type for " + annotated + ": Can only index Maps with String keys.");
             }
-            genericType = Types.getGenericArgument(genericType, Map.class, 1);
-            valueType = Types.getRawType(genericType);
+            genericType = Types.genericArgument(genericType, Map.class, 1);
+            valueType = Types.rawType(genericType);
         }
         if (Collection.class.isAssignableFrom(valueType)) {
-            valueType = Types.getRawArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
+            valueType = Types.rawArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
         }
         TargetType annotation = annotated.getAnnotation(TargetType.class);
         if (annotation == null) {

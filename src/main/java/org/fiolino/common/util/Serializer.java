@@ -430,7 +430,7 @@ public class Serializer<T> implements SerialPresenter {
         if (valueType == Text.class) {
             return new TextBasedPresenter(name, getter);
         }
-        Class<?> c = Types.getRawType(valueType);
+        Class<?> c = Types.rawType(valueType);
         if (Date.class.isAssignableFrom(c)) {
             return new DateBasedPresenter(name, getter);
         }
@@ -471,9 +471,9 @@ public class Serializer<T> implements SerialPresenter {
 
     private void setEmbedded(String name, MethodHandle getter, Type type, int fieldIndex) {
         SerialPresenter subPresenter;
-        Class<?> rawType = Types.getRawType(type);
+        Class<?> rawType = Types.rawType(type);
         if (Iterable.class.isAssignableFrom(rawType)) {
-            Class<?> targetType = Types.getRawArgument(type, List.class, 0, Types.Bounded.UPPER);
+            Class<?> targetType = Types.rawArgument(type, List.class, 0, Types.Bounded.UPPER);
             Serializer<?> targetSerializer = Serializer.get(targetType);
             subPresenter = new EmbeddedMultiSerializer(name, getter, targetSerializer);
         } else {

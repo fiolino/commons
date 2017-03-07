@@ -15,7 +15,11 @@ import java.util.Map;
  *
  * @author Michael Kuhlmann <michael@kuhlmann.org>
  */
-public class Types {
+public final class Types {
+    private Types() {
+        throw new AssertionError("Static class");
+    }
+
     private static final Map<Class<?>, Class<?>> PRIMITIVES_TO_WRAPPER_CLASSES
             = new HashMap<>();
 
@@ -33,7 +37,10 @@ public class Types {
         PRIMITIVES_TO_WRAPPER_CLASSES.put(double.class, Double.class);
         PRIMITIVES_TO_WRAPPER_CLASSES.put(void.class, Void.class);
 
-        PRIMITIVES_TO_WRAPPER_CLASSES.forEach(WRAPPERS_TO_PRIMITIVES::put);
+        PRIMITIVES_TO_WRAPPER_CLASSES.forEach((p, w) -> {
+            WRAPPERS_TO_PRIMITIVES.put(w, p);
+            WRAPPERS_TO_PRIMITIVES.put(p, p);
+        });
     }
 
     /**
@@ -63,7 +70,7 @@ public class Types {
     }
 
     /**
-     * Gets the primitive type of the given argument is a wrapper, or null otherwise.
+     * Gets the primitive type of the given argument is a wrapper or a primitive itself, or null otherwise.
      */
     public static Class<?> asPrimitive(Class<?> wrapper) {
         return WRAPPERS_TO_PRIMITIVES.get(wrapper);
@@ -123,19 +130,25 @@ public class Types {
         throw new AssertionError(subType.getName() + " is subclass of class " + superType.getName() + ", but direct class to getSuperclass() can't find it.");
     }
 
-    public static Class<?> getRawType(Type type) {
-        return getRawType(type, Bounded.EXACT);
+    /**
+     * Gets the raw class of some type, i.e. the non-generic raw value.
+     */
+    public static Class<?> rawType(Type type) {
+        return rawType(type, Bounded.EXACT);
     }
 
-    public static Class<?> getRawType(Type type, Bounded b) {
+    /**
+     * Gets the raw class of some type, i.e. the non-generic raw value.
+     */
+    public static Class<?> rawType(Type type, Bounded b) {
         if (type instanceof Class) return toWrapper((Class<?>) type);
         if (type instanceof ParameterizedType) {
-            return getRawType(((ParameterizedType) type).getRawType(), b);
+            return rawType(((ParameterizedType) type).getRawType(), b);
         }
         if (type instanceof WildcardType) {
             Type[] bounds = b.getBounds((WildcardType) type);
             if (bounds.length == 1) {
-                return getRawType(bounds[0], b);
+                return rawType(bounds[0], b);
             }
             throw new IllegalArgumentException("Type " + type + " has multiple bounds");
         }
@@ -165,35 +178,35 @@ public class Types {
         abstract Type[] getBounds(WildcardType t);
     }
 
-    public static Type getGenericArgument(Type type, Class<?> reference, int index) {
-        Type arg = getGenericArgument0(type, reference, index);
+    public static Type genericArgument(Type type, Class<?> reference, int index) {
+        Type arg = genericArgument0(type, reference, index);
         if (arg == null) {
             throw new NotAssignableException("Type " + type + " is not assignable from " + reference);
         }
         return arg;
     }
 
-    public static Class<?> getRawArgument(Type type, Class<?> reference, int index, Bounded b) {
-        return getRawType(getGenericArgument(type, reference, index), b);
+    public static Class<?> rawArgument(Type type, Class<?> reference, int index, Bounded b) {
+        return rawType(genericArgument(type, reference, index), b);
     }
 
-    private static Type getGenericArgument0(Type type, Class<?> reference, int index) {
-        Class<?> rawType = getRawType(type);
+    private static Type genericArgument0(Type type, Class<?> reference, int index) {
+        Class<?> rawType = rawType(type);
         if (rawType.equals(reference)) {
-            return getGenericArgumentOf(type, index, null, null);
+            return genericArgumentOf(type, index, null, null);
         }
         if (!reference.isAssignableFrom(rawType)) return null;
 
         Type supertype = rawType.getGenericSuperclass();
         if (supertype != null) {
             // Can be null if interface
-            Type supertypeArgument = getGenericArgument0(supertype, reference, index);
+            Type supertypeArgument = genericArgument0(supertype, reference, index);
             if (supertypeArgument != null) {
                 return mapArgument(supertypeArgument, type, rawType);
             }
         }
         for (Type interfaceType : rawType.getGenericInterfaces()) {
-            Type interfaceArgument = getGenericArgument0(interfaceType, reference, index);
+            Type interfaceArgument = genericArgument0(interfaceType, reference, index);
             if (interfaceArgument != null) {
                 return mapArgument(interfaceArgument, type, rawType);
             }
@@ -207,12 +220,12 @@ public class Types {
             Type[] upperBounds = ((TypeVariable<?>) argument).getBounds();
 
             AnnotatedType[] boundAnnotations = ((TypeVariable<?>) argument).getAnnotatedBounds();
-            return getGenericArgumentOf(caller, mappedIndex, upperBounds, boundAnnotations);
+            return genericArgumentOf(caller, mappedIndex, upperBounds, boundAnnotations);
         }
         return argument;
     }
 
-    private static Type getGenericArgumentOf(Type type, int index, Type[] upperBounds, AnnotatedType[] boundAnnotations) {
+    private static Type genericArgumentOf(Type type, int index, Type[] upperBounds, AnnotatedType[] boundAnnotations) {
         if (type instanceof ParameterizedType) {
             Type[] arguments = ((ParameterizedType) type).getActualTypeArguments();
             if (index >= arguments.length) {
@@ -248,9 +261,9 @@ public class Types {
     }
 
     private static boolean isBelow(Type toCheck, Type[] bounds) {
-        Class<?> r = getRawType(toCheck, Bounded.UPPER);
+        Class<?> r = rawType(toCheck, Bounded.UPPER);
         for (Type b : bounds) {
-            Class<?> rawBound = getRawType(b, Bounded.UPPER);
+            Class<?> rawBound = rawType(b, Bounded.UPPER);
             if (r.isAssignableFrom(rawBound)) return true;
         }
         return false;
@@ -345,7 +358,7 @@ public class Types {
     private static class BoundedWildcardType extends BoundedType implements WildcardType {
         final WildcardType wrapped;
 
-        public BoundedWildcardType(WildcardType wrapped, Type[] upperBounds) {
+        BoundedWildcardType(WildcardType wrapped, Type[] upperBounds) {
             super(upperBounds);
             this.wrapped = wrapped;
         }

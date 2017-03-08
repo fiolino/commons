@@ -123,16 +123,6 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
 
         DirectMethodHandleContainer(ExtendableConverterLocator fallback, MethodHandle handle) {
             super(fallback);
-            MethodType type = handle.type();
-            if (type.parameterCount() != 1) {
-                throw new IllegalArgumentException(handle + " must accept exactly one argument!");
-            }
-            if (type.returnType() == void.class) {
-                throw new IllegalArgumentException(handle + " must return a value!");
-            }
-            if (type.returnType().equals(type.parameterType(0))) {
-                throw new IllegalArgumentException(handle + " must return a different type than it accepts!");
-            }
             this.handle = handle;
         }
 
@@ -175,10 +165,6 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
 
         @Override
         protected MethodHandle getConverter(Class<?> source, Class<?> target) {
-            return getMethodHandleFrom(factoryHandle, source, target);
-        }
-
-        private static MethodHandle getMethodHandleFrom(MethodHandle factoryHandle, Class<?> source, Class<?> target) {
             try {
                 return (MethodHandle) factoryHandle.invokeExact(source, target);
             } catch (RuntimeException | Error e) {
@@ -189,12 +175,43 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
         }
     }
 
+    /**
+     * Register a MethodHandle that accepts some value and returns another.
+     *
+     * @param handle One-argument handle for conversion
+     * @return A converterLocator that handles this
+     */
     public ExtendableConverterLocator register(MethodHandle handle) {
+        MethodType type = handle.type();
+        if (type.parameterCount() != 1) {
+            throw new IllegalArgumentException(handle + " must accept exactly one argument!");
+        }
+        if (type.returnType() == void.class) {
+            throw new IllegalArgumentException(handle + " must return a value!");
+        }
+        if (type.returnType().equals(type.parameterType(0))) {
+            throw new IllegalArgumentException(handle + " must return a different type than it accepts!");
+        }
         return new DirectMethodHandleContainer(this, handle);
     }
 
+    /**
+     * Registers all converters from the given converter method instance.
+     * The given parameter is analyzed and scanned for all methods annotated with @{@link Converter}. That method is used as a converter method then.
+     *
+     * Converter method means it can either be a simple converter, that is some method that accepts one value and returns the converted counterpart.
+     *
+     * Or it can be a method returning some MethodHandle. If that method is paremeterless, then it's being executed immediately, using
+     * the returned MethodHandle as a converter as if registered directly.
+     *
+     * Or that method accepts exactly two {@link Class} instances. In that case it's being called dynamically when someone is asking for a converter of
+     * a given type. The two parameters will be the source and the target type then.
+     *
+     * @param converterMethods Some instance or class; evaluation syntax is as in Methods.visitMethodsWithStaticContext().
+     * @return A new locator with the registered converters
+     */
     public ExtendableConverterLocator register(Object converterMethods) {
-        return register(MethodHandles.publicLookup(), converterMethods);
+        return register(MethodHandles.publicLookup().in(converterMethods.getClass()), converterMethods);
     }
 
     public ExtendableConverterLocator register(MethodHandles.Lookup lookup, Object converterMethods) {

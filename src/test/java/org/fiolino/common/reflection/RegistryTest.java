@@ -1,5 +1,7 @@
-package org.fiolino.common.util;
+package org.fiolino.common.reflection;
 
+import org.fiolino.common.reflection.Registry;
+import org.fiolino.common.reflection.RegistryBuilder;
 import org.junit.Test;
 
 import java.lang.invoke.MethodHandle;

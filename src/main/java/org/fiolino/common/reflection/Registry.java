@@ -1,8 +1,12 @@
-package org.fiolino.common.util;
+package org.fiolino.common.reflection;
 
 import java.lang.invoke.MethodHandle;
 
 /**
+ * A registry is used to construct registry handles for a certain target handle.
+ *
+ * It is constructed by the {@link RegistryBuilder}.
+ *
  * Created by kuli on 08.03.17.
  */
 public interface Registry {

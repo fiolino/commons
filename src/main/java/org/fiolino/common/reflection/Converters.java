@@ -146,7 +146,7 @@ public final class Converters {
     /**
      * Creates a MethodHandle like the given target, except that it accepts Object in the given argument position.
      * That value can then either be of the original type, or it can be a String, as long as the type can be
-     * converted from a String via createSimpleFromStringConverter().
+     * converted from a String via the default converters.
      *
      * @param target         The handle to execute within
      * @param argumentNumber The argument to convert
@@ -176,7 +176,7 @@ public final class Converters {
     private static final MethodHandle trim, getFirstChar, charToBool, stringToBool;
 
     static {
-        final MethodHandles.Lookup lookup = MethodHandles.lookup();
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
         try {
             trim = lookup.findVirtual(String.class, "trim", methodType(String.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {

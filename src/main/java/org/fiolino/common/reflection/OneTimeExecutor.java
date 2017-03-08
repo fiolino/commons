@@ -1,6 +1,4 @@
-package org.fiolino.common.util;
-
-import org.fiolino.common.reflection.Methods;
+package org.fiolino.common.reflection;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;

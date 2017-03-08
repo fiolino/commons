@@ -416,6 +416,12 @@ public class MethodsTest {
         Date itself = (Date) returnArg.invokeExact(date, 999999999L);
         assertEquals(itself, date);
         assertEquals(999999999L, itself.getTime());
+
+        // Silly way: Instead of returning the timestamp, return the instance itself
+        MethodHandle getTime = publicLookup().findVirtual(Date.class, "getTime", methodType(long.class));
+        returnArg = Methods.returnArgument(getTime, 0);
+        itself = (Date) returnArg.invokeExact(date);
+        assertEquals(itself, date);
     }
 
     @Test

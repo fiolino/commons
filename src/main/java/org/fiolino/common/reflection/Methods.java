@@ -1126,7 +1126,7 @@ public class Methods {
         MethodHandle dontReturnAnything = target.asType(targetType.changeReturnType(void.class));
         Class<?> parameterType = targetType.parameterType(argumentNumber);
         MethodHandle identityOfPos = MethodHandles.identity(parameterType);
-        if (targetType.parameterCount() > 0) {
+        if (targetType.parameterCount() > 1) {
             identityOfPos = MethodHandles.permuteArguments(identityOfPos, targetType.changeReturnType(parameterType), argumentNumber);
         }
         return MethodHandles.foldArguments(identityOfPos, dontReturnAnything);

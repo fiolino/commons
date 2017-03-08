@@ -24,10 +24,19 @@ public abstract class CharSet implements Serializable {
 
     public abstract boolean contains(char ch);
 
+    /**
+     * Returns the CharSet as an IntPredicate, handling all contained charactersd as their int counterparts.
+     */
     public IntPredicate asPredicate() {
         return c -> contains((char) c);
     }
 
+    /**
+     * Returns a CharSet where the given character is not contained.
+     *
+     * @param ch Some character to remove
+     * @return This or a clone of myself where ch is not contained
+     */
     public final CharSet remove(char ch) {
         if (!contains(ch)) {
             return this;
@@ -37,6 +46,12 @@ public abstract class CharSet implements Serializable {
 
     abstract CharSet removeExisting(char ch);
 
+    /**
+     * Returns a CharSet where the given character is added.
+     *
+     * @param ch Some character to add
+     * @return This or a clone of myself where ch is contained
+     */
     public final CharSet add(char ch) {
         if (contains(ch)) {
             return this;
@@ -46,6 +61,12 @@ public abstract class CharSet implements Serializable {
 
     abstract CharSet addNonExisting(char ch);
 
+    /**
+     * Checks whether some of my values is inside the given string sequence.
+     *
+     * @param string Some string
+     * @return true is at least one of my characters is inside the string
+     */
     public boolean isContainedIn(CharSequence string) {
         for (int i = 0, n = string.length(); i < n; i++) {
             if (contains(string.charAt(i))) {
@@ -56,18 +77,42 @@ public abstract class CharSet implements Serializable {
         return false;
     }
 
+    /**
+     * Returns the number of distinct characters in my set.
+     */
     public abstract int size();
 
+    /**
+     * Returns true if I'm an empty set.
+     */
     public boolean isEmpty() {
         return size() == 0;
     }
 
+    /**
+     * Returns an iterator over my contained characters.
+     */
     public abstract CharacterIterator iterator();
 
+    /**
+     * Returns a CharSet where all of my and the parameter's characters are contained.
+     *
+     * @param other Some CharSet
+     * @return A Charset which size is at least min(my size, other size) and at most my size + other size.
+     */
     public abstract CharSet union(CharSet other);
 
+    /**
+     * Returns a CharSet where only those characters are contained which are in both me and the other CharSet.
+     *
+     * @param other Some CharSet
+     * @return A Charset which may be empty and whose size is at most min(my size, other size).
+     */
     public abstract CharSet intersection(CharSet other);
 
+    /**
+     * Returns a String which contains all of my characters.
+     */
     public String allCharactersAsString() {
         StringBuilder sb = new StringBuilder(size());
         CharacterIterator it = iterator();
@@ -355,13 +400,7 @@ public abstract class CharSet implements Serializable {
 
         @Override
         CharSet unionFromBitSet(BitSetBasedCharSet other) {
-            if (other.bitSet.get((int) ch)) {
-                // then it's already set!
-                return other;
-            }
-            BitSet copy = (BitSet) other.bitSet.clone();
-            copy.set((int) ch);
-            return new BitSetBasedCharSet(copy);
+            return other.add(ch);
         }
 
         @Override

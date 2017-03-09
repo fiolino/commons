@@ -6,11 +6,18 @@ import org.junit.Test;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntSupplier;
+import java.util.function.IntUnaryOperator;
 
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodType.methodType;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Created by kuli on 08.03.17.
@@ -132,5 +139,114 @@ public class RegistryTest {
     @SuppressWarnings("unused")
     private static int incrementAndGet() {
         return counter.incrementAndGet();
+    }
+
+    @Test
+    public void testRunnable() {
+        AtomicInteger counter = new AtomicInteger(100);
+        Runnable onlyOnce = new RegistryBuilder().buildForFunctionalType(Runnable.class, counter::incrementAndGet);
+        onlyOnce.run();
+        assertEquals(101, counter.get());
+        onlyOnce.run();
+        assertEquals(101, counter.get());
+        counter.set(771177);
+        onlyOnce.run();
+        assertEquals(771177, counter.get());
+    }
+
+    @Test
+    public void testCallable() throws Exception {
+        AtomicInteger counter = new AtomicInteger(100);
+        @SuppressWarnings({"unchecked", "rawTypes"})
+        Callable<String> onlyOnce = new RegistryBuilder().buildForFunctionalType(Callable.class, () -> String.valueOf(counter.incrementAndGet()));
+        String val = onlyOnce.call();
+        assertEquals("101", val);
+        assertEquals(101, counter.get());
+        val = onlyOnce.call();
+        assertEquals("101", val);
+        assertEquals(101, counter.get());
+        counter.set(771177);
+        val = onlyOnce.call();
+        assertEquals("101", val);
+        assertEquals(771177, counter.get());
+    }
+
+    @Test
+    public void testConcurrentRunnable() throws InterruptedException {
+        AtomicInteger counter = new AtomicInteger(100);
+        Runnable onlyOnce = new RegistryBuilder().buildForFunctionalType(Runnable.class, () -> {
+            try {
+                TimeUnit.MILLISECONDS.sleep(500);
+            } catch (InterruptedException ex) {
+                fail("Interrupted!");
+            }
+            counter.incrementAndGet();
+        });
+
+        Thread t = new Thread(onlyOnce);
+        t.start();
+        Thread.yield();
+        TimeUnit.MILLISECONDS.sleep(100);
+        onlyOnce.run();
+        t.join();
+
+        assertEquals(101, counter.get());
+    }
+
+    private static int sleepAndIncrement(AtomicInteger ref, int sleep) throws InterruptedException {
+        TimeUnit.SECONDS.sleep(sleep);
+        return ref.incrementAndGet();
+    }
+
+    @Test
+    public void setConcurrentSupplier() throws NoSuchMethodException, IllegalAccessException, InterruptedException {
+        AtomicInteger counter = new AtomicInteger(500);
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle execute = lookup.findStatic(lookup.lookupClass(), "sleepAndIncrement", methodType(int.class, AtomicInteger.class, int.class));
+        IntSupplier operator = Methods.lambdafy(execute, IntSupplier.class, counter, 2);
+        IntSupplier guarded = new RegistryBuilder().buildForFunctionalType(IntSupplier.class, operator);
+
+        AtomicInteger backgroundResultContainer = new AtomicInteger();
+        Thread t = new Thread(() -> backgroundResultContainer.set(guarded.getAsInt()));
+        t.start();
+        Thread.yield();
+        TimeUnit.MILLISECONDS.sleep(50);
+        int localResult = guarded.getAsInt();
+        t.join();
+
+        assertEquals(501, localResult);
+        assertEquals(501, backgroundResultContainer.get());
+
+        long start = System.currentTimeMillis();
+        localResult = guarded.getAsInt();
+        long used = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - start);
+        assertTrue(used <= 1);
+        assertEquals(501, localResult);
+    }
+
+    //@Test
+    public void setConcurrentFunction() throws NoSuchMethodException, IllegalAccessException, InterruptedException {
+        AtomicInteger counter = new AtomicInteger(500);
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle execute = lookup.findStatic(lookup.lookupClass(), "sleepAndIncrement", methodType(int.class, AtomicInteger.class, int.class));
+        IntUnaryOperator operator = Methods.lambdafy(execute, IntUnaryOperator.class, counter);
+        IntUnaryOperator guarded = new RegistryBuilder().buildForFunctionalType(IntUnaryOperator.class, operator);
+
+        AtomicInteger backgroundResultContainer = new AtomicInteger();
+        Thread t = new Thread(() -> backgroundResultContainer.set(guarded.applyAsInt(3)));
+        t.start();
+        Thread.yield();
+        TimeUnit.MILLISECONDS.sleep(50);
+        int localResult = guarded.applyAsInt(1);
+        t.join();
+
+        assertEquals(501, localResult);
+        assertEquals(501, backgroundResultContainer.get());
+
+        long start = System.currentTimeMillis();
+        localResult = guarded.applyAsInt(10);
+        long used = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - start);
+        assertTrue(used <= 1);
+        assertEquals(501, localResult);
     }
 }

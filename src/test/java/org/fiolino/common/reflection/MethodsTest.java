@@ -2,6 +2,7 @@ package org.fiolino.common.reflection;
 
 import org.junit.Test;
 
+import javax.smartcardio.ATR;
 import java.awt.event.ActionListener;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -617,6 +619,71 @@ public class MethodsTest {
         // Both possible methods are more generic
         Methods.findMethodHandleOfType(lookup(), WithThreeMethods.class,
                 methodType(CharSequence.class, String.class));
+    }
+
+    @Test
+    public void testGuardWithSemaphoreNormal() throws Throwable {
+        Semaphore p = new Semaphore(1);
+        AtomicReference<String> ref = new AtomicReference<>("Initial");
+        MethodHandle getValue = publicLookup().bind(ref, "get", methodType(Object.class));
+        MethodHandle guarded = Methods.guardWithSemaphore(getValue, p);
+        Object val = guarded.invokeExact();
+        assertEquals("Initial", val);
+        assertEquals(1, p.availablePermits());
+    }
+
+    private static void check(AtomicReference<?> ref, Object boom) {
+        if (ref.get().equals(boom)) {
+            throw new IllegalArgumentException("Boom!");
+        }
+    }
+
+    @Test
+    public void testGuardWithSemaphoreException() throws Throwable {
+        Semaphore p = new Semaphore(1);
+        AtomicReference<String> ref = new AtomicReference<>("Initial");
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle checkValue = lookup.findStatic(lookup.lookupClass(), "check", methodType(void.class, AtomicReference.class, Object.class));
+        MethodHandle guarded = Methods.guardWithSemaphore(checkValue, p);
+        guarded.invokeExact(ref, (Object) "not now");
+        assertEquals(1, p.availablePermits());
+
+        ref.set("Boom");
+        try {
+            guarded.invokeExact(ref, (Object) "Boom");
+        } catch (IllegalArgumentException ex) {
+            assertEquals(1, p.availablePermits());
+            return;
+        }
+        fail("Exception expected");
+    }
+
+    private static String sleepAndCompare(long sleepInSeconds, AtomicReference<String> ref, String newValue) throws InterruptedException {
+        TimeUnit.SECONDS.sleep(sleepInSeconds);
+        return ref.getAndSet(newValue);
+    }
+
+    @Test
+    public void testGuardWithSemaphoreConcurrent() throws Throwable {
+        AtomicReference<String> ref = new AtomicReference<>("Initial");
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle sleepAndCompare = lookup.findStatic(lookup.lookupClass(), "sleepAndCompare", methodType(String.class, long.class, AtomicReference.class, String.class));
+        MethodHandle guarded = Methods.guardWithSemaphore(sleepAndCompare);
+        Thread thread = new Thread(() -> {
+            try {
+                String currentValue = (String) guarded.invokeExact(3L, ref, "Set by thread");
+                assertEquals("Initial", currentValue);
+            } catch (Throwable t) {
+                fail(t.getMessage());
+            }
+        });
+        thread.start();
+
+        Thread.yield();
+        TimeUnit.MILLISECONDS.sleep(50);
+        String currentValue = (String) guarded.invokeExact(1L, ref, "Set by main method");
+        thread.join();
+        assertEquals("Set by thread", currentValue);
     }
 
     @Test

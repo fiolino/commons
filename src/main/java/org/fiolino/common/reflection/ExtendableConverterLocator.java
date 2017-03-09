@@ -82,6 +82,9 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
         return find(source, target, ConversionRank.IN_HIERARCHY);
     }
 
+    /**
+     * A ConverterLocator that does not contain any converters at all.
+     */
     public static final ExtendableConverterLocator EMPTY = new ExtendableConverterLocator() {
         @Override
         MethodHandle find(Class<?> source, Class<?> target, ConversionRank maxRank) {
@@ -214,6 +217,22 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
         return register(MethodHandles.publicLookup().in(converterMethods.getClass()), converterMethods);
     }
 
+    /**
+     * Registers all converters from the given converter method instance.
+     * The given parameter is analyzed and scanned for all methods annotated with @{@link Converter}. That method is used as a converter method then.
+     *
+     * Converter method means it can either be a simple converter, that is some method that accepts one value and returns the converted counterpart.
+     *
+     * Or it can be a method returning some MethodHandle. If that method is paremeterless, then it's being executed immediately, using
+     * the returned MethodHandle as a converter as if registered directly.
+     *
+     * Or that method accepts exactly two {@link Class} instances. In that case it's being called dynamically when someone is asking for a converter of
+     * a given type. The two parameters will be the source and the target type then.
+     *
+     * @param lookup The local lookup instance which can access the marked methods in the converter parameter
+     * @param converterMethods Some instance or class; evaluation syntax is as in Methods.visitMethodsWithStaticContext().
+     * @return A new locator with the registered converters
+     */
     public ExtendableConverterLocator register(MethodHandles.Lookup lookup, Object converterMethods) {
         return Methods.visitMethodsWithStaticContext(lookup, converterMethods, this,
                 (loc, m, handleSupplier) -> {
@@ -238,7 +257,7 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
                                 }
                                 return loc.register(h);
                             case 1:
-                                // Then it converts to a MethodHandle - whyever
+                                // Then it's a normal converter to some MethodHandle - whyever
                                 break;
                             case 2:
                                 if (parameterTypes[0] == Class.class && parameterTypes[1] == Class.class) {

@@ -28,6 +28,15 @@ public final class Converters {
         throw new AssertionError();
     }
 
+    /**
+     * Compares a possible superclass and a possible subclass in which way they are related.
+     *
+     * @see ConversionRank
+     *
+     * @param generic The types that might be more generic
+     * @param specific The type that might be more specific
+     * @return The resulting rank
+     */
     public static ConversionRank compare(Class<?> generic, Class<?> specific) {
         if (generic == void.class || specific == void.class) {
             return ConversionRank.IMPOSSIBLE;
@@ -172,6 +181,9 @@ public final class Converters {
         return MethodHandles.guardWithTest(check, stringAccepting, objectAccepting);
     }
 
+    /**
+     * Here are the default converters, meaning converters from primitives to Strings and such.
+     */
     public static final ExtendableConverterLocator defaultConverters;
     private static final MethodHandle trim, getFirstChar, charToBool, stringToBool;
 
@@ -257,7 +269,7 @@ public final class Converters {
 
     /**
      * Finds a converter from the source to the target.
-     * If this is not convertable, an exception will be thrown.
+     * If this is not convertible, an exception will be thrown.
      *
      * @param loc    The locator
      * @param source from here..

@@ -12,6 +12,7 @@ import javax.annotation.Nullable;
 import java.lang.invoke.*;
 import java.lang.reflect.*;
 import java.util.*;
+import java.util.concurrent.Semaphore;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -822,6 +823,18 @@ public class Methods {
      *
      * @param target This will be exwecuted
      * @param referenceType Describes the returning handle's type
+     * @return A handle that calls target but drops all trailing arguments
+     */
+    public static MethodHandle dropAllOf(MethodHandle target, MethodType referenceType) {
+        return dropAllOf(target, referenceType, 0);
+    }
+
+    /**
+     * Drops all incoming arguments from referenceType starting with index.
+     * The target handle must implement the referenceType except all arguments that start at index.
+     *
+     * @param target This will be exwecuted
+     * @param referenceType Describes the returning handle's type
      * @param index In index in the referenceType's parameter array
      * @return A handle that calls target but drops all trailing arguments
      */
@@ -1360,6 +1373,74 @@ public class Methods {
         return null;
     }
 
+    /**
+     * Guards a method handle with a semaphore to assure bounded access to one single thread at a time.
+     *
+     * On each call to the target handle, a single permit is acquired, and it's released afterwards.
+     *
+     * The permit is acquired uninterruptibly, meaning that it will wait even if Thread.interrupt() is called.
+     * Therefore the caller doesn't need to check for InterruptedExceptions.
+     *
+     * @param target The target handle to call
+     * @return A handle with the same type as the target handle
+     */
+    public static MethodHandle guardWithSemaphore(MethodHandle target) {
+        return guardWithSemaphore(target, 1);
+    }
+
+    /**
+     * Guards a method handle with a semaphore to assure bounded access.
+     *
+     * On each call to the target handle, a single permit is acquired, and it's released afterwards.
+     *
+     * The permit is acquired uninterruptibly, meaning that it will wait even if Thread.interrupt() is called.
+     * Therefore the caller doesn't need to check for InterruptedExceptions.
+     *
+     * @param target The target handle to call
+     * @param concurrentAccesses How many threads may access this operation concurrently
+     * @return A handle with the same type as the target handle
+     */
+    public static MethodHandle guardWithSemaphore(MethodHandle target, int concurrentAccesses) {
+        return guardWithSemaphore(target, new Semaphore(concurrentAccesses));
+    }
+
+    /**
+     * Guards a method handle with a semaphore to assure bounded access.
+     *
+     * On each call to the target handle, a single permit is acquired, and it's released afterwards.
+     *
+     * The permit is acquired uninterruptibly, meaning that it will wait even if Thread.interrupt() is called.
+     * Therefore the caller doesn't need to check for InterruptedExceptions.
+     *
+     * @param target The target handle to call
+     * @param semaphore This is used to block gthe operation
+     * @return A handle with the same type as the target handle
+     */
+    public static MethodHandle guardWithSemaphore(MethodHandle target, Semaphore semaphore) {
+        MethodType type = target.type();
+        Class<?> returnType = type.returnType();
+        MethodHandle acquire, release;
+        try {
+            acquire = publicLookup().bind(semaphore, "acquireUninterruptibly", methodType(void.class));
+            release = publicLookup().bind(semaphore, "release", methodType(void.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new AssertionError(ex);
+        }
+        MethodHandle finallyBlock = MethodHandles.foldArguments(MethodHandles.throwException(returnType, Throwable.class),
+                MethodHandles.dropArguments(release, 0, Throwable.class));
+        MethodHandle targetWithFinally = MethodHandles.catchException(target, Throwable.class, finallyBlock);
+        MethodHandle acquireAndExecute = MethodHandles.foldArguments(targetWithFinally, acquire);
+        if (returnType == void.class) {
+            return MethodHandles.foldArguments(dropAllOf(release, type), acquireAndExecute);
+        }
+        MethodHandle returnValue = MethodHandles.identity(returnType);
+        if (type.parameterCount() > 0) {
+            returnValue = MethodHandles.dropArguments(returnValue, 1, type.parameterArray());
+        }
+        MethodHandle releaseAndReturn = MethodHandles.foldArguments(returnValue, release);
+        return MethodHandles.foldArguments(releaseAndReturn, acquireAndExecute);
+    }
+
     private static Method findSingleMethodIn(Lookup lookup, Class<?> type, MethodType reference) {
         return doInClassHierarchy(type, c -> {
             Method bestMatch = null;
@@ -1407,7 +1488,7 @@ public class Methods {
     }
 
     /**
-     * Finds the only method in the given interface that doesn\t have a default implementation, i.e. it's the functional interface's only method.
+     * Finds the only method in the given interface that doesn't have a default implementation, i.e. it's the functional interface's only method.
      *
      * @param lambdaType The interface type
      * @return The found method
@@ -1417,7 +1498,7 @@ public class Methods {
     }
 
     /**
-     * Finds the only method in the given interface that doesn\t have a default implementation, i.e. it's the functional interface's only method.
+     * Finds the only method in the given interface that doesn't have a default implementation, i.e. it's the functional interface's only method.
      *
      * @param lookup Used to iterate over all methods visible from here
      * @param lambdaType The interface type
@@ -1494,7 +1575,7 @@ public class Methods {
             }
             throw new IllegalArgumentException("Cannot call " + targetMethod + " on " + m, ex);
         } catch (IllegalArgumentException ex) {
-            if (ex.getMessage().contains("not a direct method handle")) {
+            if (ex.getMessage().contains("not a direct method handle") || ex.getMessage().contains(" is private:")) {
                 // Ugly check, but how to do better?
                 return null;
             }

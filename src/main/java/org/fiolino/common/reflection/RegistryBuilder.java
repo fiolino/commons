@@ -6,6 +6,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
 
+import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
 
 /**
@@ -18,13 +19,27 @@ public final class RegistryBuilder {
     /**
      * Builds a Registry for a given target handle.
      *
+     * Implementation note:
+     * This works for all kinds of MethodHandles if the resulting handle has no parameters,
+     * but it will only work for direct method handles if there are some parameter types.
+     *
      * @param target This handle will be called only once per parameter value.
-     * @return A Registry holding handles with exactly the same type as the target type
+     * @param leadingParameters Some values that are being added to the target at first
+     * @return A Registry holding handles with exactly the same type as the target type minus the leading parameters
      */
-    public Registry buildFor(MethodHandle target) {
-        if (target.type().parameterCount() == 0) {
+    public Registry buildFor(MethodHandle target, Object... leadingParameters) {
+        int pCount = target.type().parameterCount();
+        if (pCount < leadingParameters.length) {
+            throw new IllegalArgumentException("Too many leading parameters for " + target);
+        }
+        if (pCount == leadingParameters.length) {
+            if (pCount > 0) {
+                target = MethodHandles.insertArguments(target, 0, leadingParameters);
+            }
             return new OneTimeExecutor(target);
         }
+
+        Methods.createLambdaFactory(lookup(), )
         throw new UnsupportedOperationException();
     }
 

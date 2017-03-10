@@ -8,7 +8,6 @@ import javax.annotation.PostConstruct;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
@@ -290,7 +289,7 @@ public final class Instantiator {
      * @return A lambda or proxy
      */
     public <T> T createProviderFor(Class<T> functionalInterface) {
-        Method lambdaMethod = Methods.findLambdaMethod(lookup, functionalInterface);
+        Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalInterface);
         MethodHandle provider = findProvider(lambdaMethod.getReturnType(), lambdaMethod.getParameterTypes());
         return Methods.lambdafy(lookup, provider, functionalInterface);
     }
@@ -305,7 +304,7 @@ public final class Instantiator {
      * @return A lambda or proxy
      */
     public <T> T createProviderFor(Class<T> functionalInterface, Class<?> returnType, Class<?>... parameterTypes) {
-        Method lambdaMethod = Methods.findLambdaMethod(lookup, functionalInterface);
+        Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalInterface);
 
         Class<?>[] lambdaTypes = lambdaMethod.getParameterTypes();
         if (lambdaTypes.length < parameterTypes.length) {

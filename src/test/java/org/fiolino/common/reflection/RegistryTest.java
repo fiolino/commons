@@ -28,7 +28,7 @@ public class RegistryTest {
     public void testNoArgumentsNoReturn() throws Throwable {
         MethodHandles.Lookup lookup = lookup();
         MethodHandle incrementCounter = lookup.findStatic(lookup.lookupClass(), "incrementCounter", methodType(void.class));
-        Registry reg = new RegistryBuilder().buildFor(incrementCounter);
+        HandleRegistry reg = Registry.buildFor(incrementCounter);
 
         MethodHandle callOnlyOnce = reg.getAccessor();
         counter.set(1);
@@ -58,14 +58,14 @@ public class RegistryTest {
         assertEquals(103, counter.get());
 
         // Now check that the original accessor will never be invoked if the updater is invoked earlier.
-        reg = new RegistryBuilder().buildFor(incrementCounter);
+        reg = Registry.buildFor(incrementCounter);
 
         callOnlyOnce = reg.getAccessor();
         counter.set(1);
         callOnlyOnce.invokeExact();
         assertEquals(2, counter.get());
 
-        reg = new RegistryBuilder().buildFor(incrementCounter);
+        reg = Registry.buildFor(incrementCounter);
 
         updater = reg.getUpdater();
         callOnlyOnce = reg.getAccessor();
@@ -80,7 +80,7 @@ public class RegistryTest {
     public void testNoArgumentsButReturnSomething() throws Throwable {
         MethodHandles.Lookup lookup = lookup();
         MethodHandle incrementCounter = lookup.findStatic(lookup.lookupClass(), "incrementAndGet", methodType(int.class));
-        Registry reg = new RegistryBuilder().buildFor(incrementCounter);
+        HandleRegistry reg = Registry.buildFor(incrementCounter);
 
         MethodHandle callOnlyOnce = reg.getAccessor();
         counter.set(1);
@@ -111,14 +111,14 @@ public class RegistryTest {
         assertEquals(103, counter.get());
 
         // Now check that the original accessor will never be invoked if the updater is invoked earlier.
-        reg = new RegistryBuilder().buildFor(incrementCounter);
+        reg = Registry.buildFor(incrementCounter);
 
         callOnlyOnce = reg.getAccessor();
         counter.set(1);
         value = (int) callOnlyOnce.invokeExact();
         assertEquals(2, value);
 
-        reg = new RegistryBuilder().buildFor(incrementCounter);
+        reg = Registry.buildFor(incrementCounter);
 
         updater = reg.getUpdater();
         callOnlyOnce = reg.getAccessor();
@@ -144,7 +144,8 @@ public class RegistryTest {
     @Test
     public void testRunnable() {
         AtomicInteger counter = new AtomicInteger(100);
-        Runnable onlyOnce = new RegistryBuilder().buildForFunctionalType(Runnable.class, counter::incrementAndGet);
+        LambdaRegistry<Runnable> registry = Registry.buildForFunctionalType(counter::incrementAndGet);
+        Runnable onlyOnce = registry.getAccessor();
         onlyOnce.run();
         assertEquals(101, counter.get());
         onlyOnce.run();
@@ -158,7 +159,8 @@ public class RegistryTest {
     public void testCallable() throws Exception {
         AtomicInteger counter = new AtomicInteger(100);
         @SuppressWarnings({"unchecked", "rawTypes"})
-        Callable<String> onlyOnce = new RegistryBuilder().buildForFunctionalType(Callable.class, () -> String.valueOf(counter.incrementAndGet()));
+        LambdaRegistry<Callable<String>> registry = Registry.buildForFunctionalType(() -> String.valueOf(counter.incrementAndGet()));
+        Callable<String> onlyOnce = registry.getAccessor();
         String val = onlyOnce.call();
         assertEquals("101", val);
         assertEquals(101, counter.get());
@@ -174,7 +176,7 @@ public class RegistryTest {
     @Test
     public void testConcurrentRunnable() throws InterruptedException {
         AtomicInteger counter = new AtomicInteger(100);
-        Runnable onlyOnce = new RegistryBuilder().buildForFunctionalType(Runnable.class, () -> {
+        LambdaRegistry<Runnable> registry = Registry.buildForFunctionalType(() -> {
             try {
                 TimeUnit.MILLISECONDS.sleep(500);
             } catch (InterruptedException ex) {
@@ -182,6 +184,7 @@ public class RegistryTest {
             }
             counter.incrementAndGet();
         });
+        Runnable onlyOnce = registry.getAccessor();
 
         Thread t = new Thread(onlyOnce);
         t.start();
@@ -204,7 +207,7 @@ public class RegistryTest {
         MethodHandles.Lookup lookup = lookup();
         MethodHandle execute = lookup.findStatic(lookup.lookupClass(), "sleepAndIncrement", methodType(int.class, AtomicInteger.class, int.class));
         IntSupplier operator = Methods.lambdafy(execute, IntSupplier.class, counter, 2);
-        IntSupplier guarded = new RegistryBuilder().buildForFunctionalType(IntSupplier.class, operator);
+        IntSupplier guarded = Registry.buildForFunctionalType(IntSupplier.class, operator).getAccessor();
 
         AtomicInteger backgroundResultContainer = new AtomicInteger();
         Thread t = new Thread(() -> backgroundResultContainer.set(guarded.getAsInt()));
@@ -224,27 +227,27 @@ public class RegistryTest {
         assertEquals(501, localResult);
     }
 
-    //@Test
+    @Test
     public void setConcurrentFunction() throws NoSuchMethodException, IllegalAccessException, InterruptedException {
         AtomicInteger counter = new AtomicInteger(500);
         MethodHandles.Lookup lookup = lookup();
         MethodHandle execute = lookup.findStatic(lookup.lookupClass(), "sleepAndIncrement", methodType(int.class, AtomicInteger.class, int.class));
         IntUnaryOperator operator = Methods.lambdafy(execute, IntUnaryOperator.class, counter);
-        IntUnaryOperator guarded = new RegistryBuilder().buildForFunctionalType(IntUnaryOperator.class, operator);
+        IntUnaryOperator guarded = Registry.buildForFunctionalType(IntUnaryOperator.class, operator).getAccessor();
 
         AtomicInteger backgroundResultContainer = new AtomicInteger();
         Thread t = new Thread(() -> backgroundResultContainer.set(guarded.applyAsInt(3)));
         t.start();
         Thread.yield();
         TimeUnit.MILLISECONDS.sleep(50);
-        int localResult = guarded.applyAsInt(1);
+        int localResult = guarded.applyAsInt(3);
         t.join();
 
         assertEquals(501, localResult);
         assertEquals(501, backgroundResultContainer.get());
 
         long start = System.currentTimeMillis();
-        localResult = guarded.applyAsInt(10);
+        localResult = guarded.applyAsInt(3);
         long used = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - start);
         assertTrue(used <= 1);
         assertEquals(501, localResult);

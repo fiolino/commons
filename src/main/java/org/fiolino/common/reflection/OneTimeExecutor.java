@@ -8,7 +8,7 @@ import static java.lang.invoke.MethodType.methodType;
 /**
  * Created by kuli on 07.03.17.
  */
-class OneTimeExecutor implements Registry {
+class OneTimeExecutor implements HandleRegistry {
 
     private static final MethodHandle SYNC;
     private static final MethodHandle CONSTANT_HANDLE_FACTORY;
@@ -28,6 +28,7 @@ class OneTimeExecutor implements Registry {
 
     OneTimeExecutor(MethodHandle target) {
         MethodType type = target.type();
+
         callSite = new MutableCallSite(type);
         CallSite innerCallSite = new VolatileCallSite(type);
         MethodHandle setTargetOuter, setTargetInner;
@@ -46,11 +47,11 @@ class OneTimeExecutor implements Registry {
         updatingHandle = MethodHandles.foldArguments(guardedCaller, resetInner);
     }
 
-    // target: ()<T> or ()void
+    // execution: ()<T> or ()void
     // return: ()<T> or ()void
-    // Input creates something, which will be used as the new target of my callSite after calling
-    private MethodHandle createSyncHandle(MethodHandle target, MethodHandle setTargetOuter, MethodHandle setTargetInner) {
-        MethodType type = target.type();
+    // Input creates something, which will be used as the new execution of my callSite after calling
+    private MethodHandle createSyncHandle(MethodHandle execution, MethodHandle setTargetOuter, MethodHandle setTargetInner) {
+        MethodType type = execution.type();
 
         MethodHandle syncOuterCallSite = MethodHandles.insertArguments(SYNC, 0, (Object) new MutableCallSite[] {
                 callSite
@@ -61,16 +62,18 @@ class OneTimeExecutor implements Registry {
         if (returnType == void.class) {
             setBoth = MethodHandles.insertArguments(setBoth, 0, Methods.DO_NOTHING);
             MethodHandle setTargetAndSync = MethodHandles.foldArguments(syncOuterCallSite, setBoth);
-            return MethodHandles.foldArguments(setTargetAndSync, target);
+            // The following is only needed if execution accepts parameters, which is only the case when used from other OneArgumentRegistryBuilder
+            setTargetAndSync = Methods.dropAllOf(setTargetAndSync, type, 0);
+            return MethodHandles.foldArguments(setTargetAndSync, execution);
         }
 
-        MethodHandle constantHandleFactory = MethodHandles.insertArguments(CONSTANT_HANDLE_FACTORY, 0, returnType);
+        MethodHandle constantHandleFactory = MethodHandles.insertArguments(CONSTANT_HANDLE_FACTORY, 0, returnType).asType(methodType(MethodHandle.class, returnType));
         setBoth = MethodHandles.filterArguments(setBoth, 0, constantHandleFactory);
-        MethodHandle setTargetAndReturnValue = Methods.returnArgument(setBoth.asType(methodType(void.class, returnType)), 0);
-        MethodHandle executeAndSetTarget = MethodHandles.foldArguments(setTargetAndReturnValue, target);
-
-        MethodHandle syncAndReturn = Methods.returnArgument(MethodHandles.dropArguments(syncOuterCallSite, 0, returnType), 0);
-        return MethodHandles.foldArguments(syncAndReturn, executeAndSetTarget);
+        MethodHandle setBothAndSync = MethodHandles.foldArguments(MethodHandles.dropArguments(syncOuterCallSite, 0, returnType), setBoth);
+        MethodHandle setTargetAndReturnValue = Methods.returnArgument(setBothAndSync, 0);
+        // The following is only needed if execution accepts parameters, which is only the case when used from other OneArgumentRegistryBuilder
+        setTargetAndReturnValue = Methods.dropAllOf(setTargetAndReturnValue, type, 0);
+        return MethodHandles.foldArguments(setTargetAndReturnValue, execution);
     }
 
     @Override

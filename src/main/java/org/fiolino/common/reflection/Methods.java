@@ -833,7 +833,7 @@ public class Methods {
      * Drops all incoming arguments from referenceType starting with index.
      * The target handle must implement the referenceType except all arguments that start at index.
      *
-     * @param target This will be exwecuted
+     * @param target This will be executed
      * @param referenceType Describes the returning handle's type
      * @param index In index in the referenceType's parameter array
      * @return A handle that calls target but drops all trailing arguments
@@ -1489,44 +1489,39 @@ public class Methods {
 
     /**
      * Finds the only method in the given interface that doesn't have a default implementation, i.e. it's the functional interface's only method.
+     * Fail if the given type is not a functional interface.
      *
      * @param lambdaType The interface type
      * @return The found method
      */
-    public static Method findLambdaMethod(Class<?> lambdaType) {
-        return findLambdaMethod(publicLookup().in(lambdaType), lambdaType);
+    public static Method findLambdaMethodOrFail(Class<?> lambdaType) {
+        return findLambdaMethod(lambdaType).orElseThrow(() -> new IllegalArgumentException(lambdaType.getName() + " is not a functional interface."));
     }
 
     /**
      * Finds the only method in the given interface that doesn't have a default implementation, i.e. it's the functional interface's only method.
+     * Will return only one or no methods at all.
      *
-     * @param lookup Used to iterate over all methods visible from here
      * @param lambdaType The interface type
      * @return The found method
      */
-    public static Method findLambdaMethod(Lookup lookup, Class<?> lambdaType) {
+    public static Optional<Method> findLambdaMethod(Class<?> lambdaType) {
         if (!lambdaType.isInterface()) {
             throw new IllegalArgumentException(lambdaType.getName() + " should be an interface!");
         }
-        Method found = visitAllMethods(lookup, lambdaType, null, (v, m, ignored) -> {
+        Method found = null;
+        for (Method m : lambdaType.getMethods()) {
             int modifiers = m.getModifiers();
             if (Modifier.isStatic(modifiers) || !Modifier.isAbstract(modifiers)) {
-                return v;
+                continue;
             }
-            if (v == null) {
-                return m;
+            if (found == null) {
+                found = m;
             } else {
-                throw notAFunctionalType(lambdaType);
+                return Optional.empty();
             }
-        });
-        if (found == null) {
-            throw notAFunctionalType(lambdaType);
         }
-        return found;
-    }
-
-    private static RuntimeException notAFunctionalType(Class<?> lambdaType) {
-        return new IllegalArgumentException(lambdaType.getName() + " is not a functional interface.");
+        return Optional.ofNullable(found);
     }
 
     /**
@@ -1543,7 +1538,7 @@ public class Methods {
     @Nullable
     public static MethodHandle createLambdaFactory(Lookup lookup, MethodHandle targetMethod, Class<?> lambdaType) {
 
-        Method m = findLambdaMethod(lookup, lambdaType);
+        Method m = findLambdaMethodOrFail(lambdaType);
         String name = m.getName();
         Class<?>[] calledParameters = m.getParameterTypes();
         MethodType calledType = methodType(m.getReturnType(), calledParameters);

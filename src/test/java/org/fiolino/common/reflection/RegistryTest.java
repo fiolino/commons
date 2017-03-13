@@ -234,7 +234,7 @@ public class RegistryTest {
     private void testWithParameter(boolean isVolatile) throws Throwable {
         AtomicReference<String> ref = new AtomicReference<>();
         MethodHandle target = publicLookup().bind(ref, "set", methodType(void.class, Object.class));
-        OneTimeExecutor ex = new OneTimeExecutor(target, isVolatile);
+        OneTimeExecutionBuilder ex = new OneTimeExecutionBuilder(target, isVolatile);
         ex.getAccessor().invokeExact((Object) "Fritz");
         assertEquals("Fritz", ref.get());
         ex.getAccessor().invokeExact((Object) (Object) "Knut");
@@ -257,7 +257,7 @@ public class RegistryTest {
     private void testWithParameterAndReturnValue(boolean isVolatile) throws Throwable {
         AtomicInteger ref = new AtomicInteger(100);
         MethodHandle target = publicLookup().bind(ref, "getAndSet", methodType(int.class, int.class));
-        OneTimeExecutor ex = new OneTimeExecutor(target, isVolatile);
+        OneTimeExecutionBuilder ex = new OneTimeExecutionBuilder(target, isVolatile);
         int newValue = (int) ex.getAccessor().invokeExact(222);
         assertEquals(100, newValue);
         assertEquals(222, ref.get());
@@ -324,5 +324,30 @@ public class RegistryTest {
         assertEquals(knut, func.apply("Knut"));
         assertEquals(nullName, func.apply(null));
         assertNull(func.apply("John"));
+
+        reg.reset();
+        TimeUnit.MILLISECONDS.sleep(50);
+        assertNotEquals(fritz, func.apply("Fritz"));
+        assertNotEquals(knut, func.apply("Knut"));
+        assertNotEquals(nullName, func.apply(null));
+        assertNull(func.apply("John"));
+
+        fritz = func.apply("Fritz");
+        nullName = func.apply(null);
+        UnaryOperator<String> updater = reg.getUpdater();
+        TimeUnit.MILLISECONDS.sleep(50);
+        assertEquals(fritz, func.apply("Fritz"));
+        String newFritz = updater.apply("Fritz");
+        assertNotEquals(fritz, newFritz);
+        assertNotEquals(fritz, func.apply("Fritz"));
+        assertEquals(newFritz, func.apply("Fritz"));
+
+        assertEquals(nullName, func.apply(null));
+        String newNullName = updater.apply(null);
+        assertNotEquals(nullName, newNullName);
+        assertNotEquals(nullName, func.apply(null));
+        assertEquals(newNullName, func.apply(null));
     }
+
+
 }

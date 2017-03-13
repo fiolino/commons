@@ -51,9 +51,9 @@ public interface Registry extends Resettable {
         }
         switch (pCount) {
             case 0:
-                return new OneTimeExecutor(target, false);
+                return new OneTimeExecutionBuilder(target, false);
             case 1:
-                return OneArgumentRegistryBuilder.createFor(target, leadingParameters);
+                return MultiArgumentExecutionBuilder.createFor(target, leadingParameters);
             default:
                 throw new UnsupportedOperationException();
         }
@@ -69,11 +69,11 @@ public interface Registry extends Resettable {
      */
     static <T> LambdaRegistry<T> buildForFunctionalType(Class<T> functionalType, T function) {
         if (functionalType.equals(Function.class)) {
-            return new RegistryMapper<>(OneArgumentRegistryBuilder.createFor((Function<?, ?>) function), functionalType);
+            return new RegistryMapper<>(MultiArgumentExecutionBuilder.createFor((Function<?, ?>) function), functionalType);
         }
         Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalType);
         if (lambdaMethod.getParameterCount() == 1) {
-            return new RegistryMapper<T>(OneArgumentRegistryBuilder.createFor(functionalType, function), functionalType);
+            return new RegistryMapper<T>(MultiArgumentExecutionBuilder.createFor(functionalType, function), functionalType);
         }
         MethodHandle lambdaHandle;
         try {

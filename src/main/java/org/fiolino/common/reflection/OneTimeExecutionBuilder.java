@@ -16,12 +16,12 @@ import static java.lang.invoke.MethodType.methodType;
  *
  * The target can be of any type, but the API only exposes handles without parameters. Anything else won't make much sense
  * because the parameter value is not checked at all; having multiple calls with different parameter values would still
- * block all calls except the first one. This feature is only needed in the {@link OneArgumentRegistryBuilder} in the
+ * block all calls except the first one. This feature is only needed in the {@link MultiArgumentExecutionBuilder} in the
  * case of a parameter value of null.
  *
  * Created by kuli on 07.03.17.
  */
-class OneTimeExecutor implements Registry {
+class OneTimeExecutionBuilder implements Registry {
 
     private static final MethodHandle SYNC;
     private static final MethodHandle CONSTANT_HANDLE_FACTORY;
@@ -49,7 +49,7 @@ class OneTimeExecutor implements Registry {
      * @param isVolatile Use this to make the CallSite volatile; it's a performance feature, so when update or reset()
      *                   are used frequently, the this should be true
      */
-    OneTimeExecutor(MethodHandle target, boolean isVolatile) {
+    OneTimeExecutionBuilder(MethodHandle target, boolean isVolatile) {
         MethodType type = target.type();
 
         callSite = isVolatile ? new VolatileCallSite(type) : new MutableCallSite(type);
@@ -66,7 +66,7 @@ class OneTimeExecutor implements Registry {
         innerCallSite.setTarget(innerCaller);
         MethodHandle guardedCaller = Methods.synchronize(innerCallSite.dynamicInvoker());
         callSite.setTarget(guardedCaller);
-        MethodHandle resetInner = MethodHandles.insertArguments(setTargetInner, 0, innerCaller);
+        MethodHandle resetInner = setTargetInner.bindTo(innerCaller);
         resetInner = Methods.dropAllOf(resetInner, type);
         updatingHandle = MethodHandles.foldArguments(guardedCaller, resetInner);
     }
@@ -82,8 +82,8 @@ class OneTimeExecutor implements Registry {
             return createVoidSyncHandle(execution, setBothTargets);
         }
 
-        MethodHandle constantHandleFactory = MethodHandles.insertArguments(CONSTANT_HANDLE_FACTORY, 0, returnType).asType(methodType(MethodHandle.class, returnType));
-        // The following is only needed if execution accepts parameters, which is only the case when used from other OneArgumentRegistryBuilder
+        MethodHandle constantHandleFactory = CONSTANT_HANDLE_FACTORY.bindTo(returnType).asType(methodType(MethodHandle.class, returnType));
+        // The following is only needed if execution accepts parameters, which is only the case when used from other MultiArgumentExecutionBuilder
         int parameterCount = type.parameterCount();
         if (parameterCount > 0) {
             MethodHandle dropArguments = MethodHandles.insertArguments(DROP_ARGUMENTS, 1, 0, type.parameterArray());
@@ -91,15 +91,10 @@ class OneTimeExecutor implements Registry {
         }
 
         setBothTargets = MethodHandles.filterArguments(setBothTargets, 0, constantHandleFactory);
-        if (callSite instanceof MutableCallSite) {
-            MethodHandle syncOuterCallSite = MethodHandles.insertArguments(SYNC, 0, (Object) new MutableCallSite[] {
-                    (MutableCallSite) callSite
-            });
-            setBothTargets = MethodHandles.foldArguments(MethodHandles.dropArguments(syncOuterCallSite, 0, returnType), setBothTargets);
-        }
+        setBothTargets = addMutableCallSiteSynchronization(setBothTargets);
 
         MethodHandle setBothAndReturnValue = Methods.returnArgument(setBothTargets, 0);
-        // The following is only needed if execution accepts parameters, which is only the case when used from other OneArgumentRegistryBuilder
+        // The following is only needed if execution accepts parameters, which is only the case when used from other MultiArgumentExecutionBuilder
         if (parameterCount > 0) {
             setBothAndReturnValue = MethodHandles.dropArguments(setBothAndReturnValue, 1, type.parameterArray());
         }
@@ -107,17 +102,24 @@ class OneTimeExecutor implements Registry {
     }
 
     private MethodHandle createVoidSyncHandle(MethodHandle execution, MethodHandle setTargets) {
-        MethodHandle setTargetAndSync = MethodHandles.insertArguments(setTargets, 0, Methods.dropAllOf(Methods.DO_NOTHING, execution.type()));
-        if (callSite instanceof MutableCallSite) {
-            MethodHandle syncOuterCallSite = MethodHandles.insertArguments(SYNC, 0, (Object) new MutableCallSite[] {
-                    (MutableCallSite) callSite
-            });
-            setTargetAndSync = MethodHandles.foldArguments(syncOuterCallSite, setTargetAndSync);
-        }
+        MethodHandle doNothing = Methods.dropAllOf(Methods.DO_NOTHING, execution.type());
+        MethodHandle setTargetToNoop = setTargets.bindTo(doNothing);
+        setTargetToNoop = addMutableCallSiteSynchronization(setTargetToNoop);
 
-        // The following is only needed if execution accepts parameters, which is only the case when used from other OneArgumentRegistryBuilder
-        setTargetAndSync = Methods.dropAllOf(setTargetAndSync, execution.type());
-        return MethodHandles.foldArguments(setTargetAndSync, execution);
+        // The following is only needed if execution accepts parameters, which is only the case when used from other MultiArgumentExecutionBuilder
+        setTargetToNoop = Methods.dropAllOf(setTargetToNoop, execution.type());
+        return MethodHandles.foldArguments(setTargetToNoop, execution);
+    }
+
+    private MethodHandle addMutableCallSiteSynchronization(MethodHandle doBefore) {
+        if (!(callSite instanceof MutableCallSite)) {
+            return doBefore;
+        }
+        MethodHandle syncOuterCallSite = SYNC.bindTo(new MutableCallSite[] {
+                (MutableCallSite) callSite
+        });
+        syncOuterCallSite = Methods.dropAllOf(syncOuterCallSite, doBefore.type());
+        return MethodHandles.foldArguments(syncOuterCallSite, doBefore);
     }
 
     @Override

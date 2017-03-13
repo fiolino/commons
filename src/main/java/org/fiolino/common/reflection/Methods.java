@@ -1384,8 +1384,8 @@ public class Methods {
      * @param target The target handle to call
      * @return A handle with the same type as the target handle
      */
-    public static MethodHandle guardWithSemaphore(MethodHandle target) {
-        return guardWithSemaphore(target, 1);
+    public static MethodHandle synchronize(MethodHandle target) {
+        return synchronize(target, 1);
     }
 
     /**
@@ -1400,8 +1400,8 @@ public class Methods {
      * @param concurrentAccesses How many threads may access this operation concurrently
      * @return A handle with the same type as the target handle
      */
-    public static MethodHandle guardWithSemaphore(MethodHandle target, int concurrentAccesses) {
-        return guardWithSemaphore(target, new Semaphore(concurrentAccesses));
+    public static MethodHandle synchronize(MethodHandle target, int concurrentAccesses) {
+        return synchronizeWith(target, new Semaphore(concurrentAccesses));
     }
 
     /**
@@ -1416,7 +1416,7 @@ public class Methods {
      * @param semaphore This is used to block gthe operation
      * @return A handle with the same type as the target handle
      */
-    public static MethodHandle guardWithSemaphore(MethodHandle target, Semaphore semaphore) {
+    public static MethodHandle synchronizeWith(MethodHandle target, Semaphore semaphore) {
         MethodType type = target.type();
         Class<?> returnType = type.returnType();
         MethodHandle acquire, release;
@@ -1424,10 +1424,10 @@ public class Methods {
             acquire = publicLookup().bind(semaphore, "acquireUninterruptibly", methodType(void.class));
             release = publicLookup().bind(semaphore, "release", methodType(void.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError(ex);
+            throw new InternalError(ex);
         }
         MethodHandle finallyBlock = MethodHandles.foldArguments(MethodHandles.throwException(returnType, Throwable.class),
-                MethodHandles.dropArguments(release, 0, Throwable.class));
+                release);
         MethodHandle targetWithFinally = MethodHandles.catchException(target, Throwable.class, finallyBlock);
         MethodHandle acquireAndExecute = MethodHandles.foldArguments(targetWithFinally, acquire);
         if (returnType == void.class) {

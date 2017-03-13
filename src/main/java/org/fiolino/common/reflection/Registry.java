@@ -10,16 +10,25 @@ import static java.lang.invoke.MethodHandles.publicLookup;
 /**
  * A registry is used to construct registry handles for a certain target handle.
  *
- * It is constructed by the {@link RegistryBuilder}.
- *
  * Created by kuli on 08.03.17.
  */
-public interface Registry {
+public interface Registry extends Resettable {
     /**
-     * Clears all cached data for this registry.
+     * Gets the handle that calls the cached service.
+     *
+     * The type of this handle is exactly the same as the one that was used for creating this registry.
      */
-    void clear();
+    MethodHandle getAccessor();
 
+    /**
+     * Gets the handle that calls the original service, overwriting any cached data.
+     *
+     * The type of this handle is exactly the same as the one that was used for creating this registry.
+     */
+    MethodHandle getUpdater();
+
+
+    // Static factory methods
 
     /**
      * Builds a Registry for a given target handle.
@@ -32,7 +41,7 @@ public interface Registry {
      * @param leadingParameters Some values that are being added to the target at first
      * @return A Registry holding handles with exactly the same type as the target type minus the leading parameters
      */
-    static HandleRegistry buildFor(MethodHandle target, Object... leadingParameters) {
+    static Registry buildFor(MethodHandle target, Object... leadingParameters) {
         int pCount = target.type().parameterCount() - leadingParameters.length;
         if (pCount < 0) {
             throw new IllegalArgumentException("Too many leading parameters for " + target);
@@ -42,7 +51,7 @@ public interface Registry {
         }
         switch (pCount) {
             case 0:
-                return new OneTimeExecutor(target);
+                return new OneTimeExecutor(target, false);
             case 1:
                 return OneArgumentRegistryBuilder.createFor(target, leadingParameters);
             default:

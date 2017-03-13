@@ -6,10 +6,10 @@ import java.lang.invoke.MethodHandles;
  * Created by kuli on 10.03.17.
  */
 final class RegistryMapper<T> implements LambdaRegistry<T> {
-    private final Registry registry;
+    private final Resettable registry;
     private final T accessor, updater;
 
-    RegistryMapper(HandleRegistry registry, Class<T> lambdaType) {
+    RegistryMapper(Registry registry, Class<T> lambdaType) {
         this.registry = registry;
         MethodHandles.Lookup lookup = MethodHandles.lookup();
         accessor = Methods.lambdafy(lookup, registry.getAccessor(), lambdaType);
@@ -27,7 +27,7 @@ final class RegistryMapper<T> implements LambdaRegistry<T> {
     }
 
     @Override
-    public void clear() {
-        registry.clear();
+    public void reset() {
+        registry.reset();
     }
 }

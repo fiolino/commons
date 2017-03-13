@@ -15,7 +15,7 @@ import static java.lang.invoke.MethodType.methodType;
 /**
  * Created by kuli on 10.03.17.
  */
-final class OneArgumentRegistryBuilder implements HandleRegistry {
+final class OneArgumentRegistryBuilder implements Registry {
 
     private enum Null { VALUE }
 
@@ -42,7 +42,7 @@ final class OneArgumentRegistryBuilder implements HandleRegistry {
 
     private final Map<?, ?> map;
     private final MethodHandle accessor, updater;
-    private final Registry nullFallback;
+    private final Resettable nullFallback;
 
     private <T, R> OneArgumentRegistryBuilder(Map<?, ?> map, Function<T, R> targetFunction, MethodHandle targetHandle) {
         this.map = map;
@@ -82,7 +82,7 @@ final class OneArgumentRegistryBuilder implements HandleRegistry {
         if (argumentType.isPrimitive()) {
             nullFallback = null;
         } else {
-            OneTimeExecutor ex = new OneTimeExecutor(targetHandle);
+            OneTimeExecutor ex = new OneTimeExecutor(targetHandle, false);
             MethodHandle nullCheck = Methods.nullCheck().asType(methodType(boolean.class, argumentType));
             getOrSet = MethodHandles.guardWithTest(nullCheck, ex.getAccessor(), getOrSet);
             set = MethodHandles.guardWithTest(nullCheck, ex.getUpdater(), set);
@@ -137,15 +137,14 @@ final class OneArgumentRegistryBuilder implements HandleRegistry {
     }
 
     private static Function<?, ?> createFunction(MethodHandle handle, Object... leadingValues) {
-        MethodHandle h = handle.type().returnType() == void.class ? MethodHandles.filterReturnValue(handle, MethodHandles.constant(Object.class, Null.VALUE)) : handle;
-        return Methods.lambdafy(h, Function.class, leadingValues);
+        return Methods.lambdafy(handle, Function.class, leadingValues);
     }
 
     @Override
-    public void clear() {
+    public void reset() {
         map.clear();
         if (nullFallback != null) {
-            nullFallback.clear();
+            nullFallback.reset();
         }
     }
 

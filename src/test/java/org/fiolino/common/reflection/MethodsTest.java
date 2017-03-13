@@ -2,7 +2,6 @@ package org.fiolino.common.reflection;
 
 import org.junit.Test;
 
-import javax.smartcardio.ATR;
 import java.awt.event.ActionListener;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
@@ -18,7 +17,6 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 import java.util.function.IntBinaryOperator;
 import java.util.function.IntUnaryOperator;
 import java.util.function.UnaryOperator;
@@ -622,11 +620,11 @@ public class MethodsTest {
     }
 
     @Test
-    public void testGuardWithSemaphoreNormal() throws Throwable {
+    public void testSynchronize() throws Throwable {
         Semaphore p = new Semaphore(1);
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandle getValue = publicLookup().bind(ref, "get", methodType(Object.class));
-        MethodHandle guarded = Methods.guardWithSemaphore(getValue, p);
+        MethodHandle guarded = Methods.synchronizeWith(getValue, p);
         Object val = guarded.invokeExact();
         assertEquals("Initial", val);
         assertEquals(1, p.availablePermits());
@@ -639,12 +637,12 @@ public class MethodsTest {
     }
 
     @Test
-    public void testGuardWithSemaphoreException() throws Throwable {
+    public void testSynchronizeWithException() throws Throwable {
         Semaphore p = new Semaphore(1);
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandles.Lookup lookup = lookup();
         MethodHandle checkValue = lookup.findStatic(lookup.lookupClass(), "check", methodType(void.class, AtomicReference.class, Object.class));
-        MethodHandle guarded = Methods.guardWithSemaphore(checkValue, p);
+        MethodHandle guarded = Methods.synchronizeWith(checkValue, p);
         guarded.invokeExact(ref, (Object) "not now");
         assertEquals(1, p.availablePermits());
 
@@ -664,11 +662,11 @@ public class MethodsTest {
     }
 
     @Test
-    public void testGuardWithSemaphoreConcurrent() throws Throwable {
+    public void testSynchronizeConcurrent() throws Throwable {
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandles.Lookup lookup = lookup();
         MethodHandle sleepAndCompare = lookup.findStatic(lookup.lookupClass(), "sleepAndCompare", methodType(String.class, long.class, AtomicReference.class, String.class));
-        MethodHandle guarded = Methods.guardWithSemaphore(sleepAndCompare);
+        MethodHandle guarded = Methods.synchronize(sleepAndCompare);
         Thread thread = new Thread(() -> {
             try {
                 String currentValue = (String) guarded.invokeExact(3L, ref, "Set by thread");

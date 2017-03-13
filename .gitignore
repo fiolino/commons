@@ -2,6 +2,7 @@
 build
 *.idea
 *.class
+/classes
 
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/

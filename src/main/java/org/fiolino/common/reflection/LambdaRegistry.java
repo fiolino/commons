@@ -5,7 +5,7 @@ package org.fiolino.common.reflection;
  *
  * Created by kuli on 10.03.17.
  */
-public interface LambdaRegistry<T> extends Registry {
+public interface LambdaRegistry<T> extends Resettable {
     /**
      * Gets the function that calls the cached service.
      */

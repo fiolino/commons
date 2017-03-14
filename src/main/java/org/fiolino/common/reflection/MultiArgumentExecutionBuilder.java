@@ -6,6 +6,7 @@ import java.lang.invoke.MethodType;
 import java.lang.invoke.MutableCallSite;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -41,7 +42,6 @@ final class MultiArgumentExecutionBuilder implements Registry {
         return input == Null.VALUE ? null : input;
     }
 
-    @SuppressWarnings("unused")
     private static Object returnFromNull(Object input) {
         return input == null ? Null.VALUE : input;
     }
@@ -111,12 +111,12 @@ final class MultiArgumentExecutionBuilder implements Registry {
         }
 
         Class<?> returnType = expectedType.returnType();
-        if (parameterCount > 1 || returnType.isPrimitive()) { // If void, then the function already returns Null.VALUE
+        if (parameterCount > 1 || !needsNullCheck(returnType, map)) { // If void, then the function already returns Null.VALUE
             setIfAbsent = MethodHandles.insertArguments(setIfAbsent, 1, targetFunction);
         } else {
             Function<T, Object> nullSafe = x -> {
                 R r = targetFunction.apply(x);
-                return r == null ? Null.VALUE : r;
+                return returnFromNull(r);
             };
             setIfAbsent = MethodHandles.insertArguments(setIfAbsent, 1, nullSafe);
             setIfAbsent = MethodHandles.filterReturnValue(setIfAbsent, FILTER_TO_NULL);
@@ -130,7 +130,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
             targetWithObject = targetHandle.asType(methodType(void.class, allParametersAreObjects));
         } else {
             targetWithObject = targetHandle.asType(methodType(Object.class, allParametersAreObjects));
-            if (!returnType.isPrimitive()) {
+            if (needsNullCheck(returnType, map)) {
                 // for Objects it needs null check
                 update = MethodHandles.filterArguments(update, 1, FILTER_FROM_NULL);
             }
@@ -146,7 +146,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
         setIfAbsent = setIfAbsent.asType(expectedType);
         update = update.asType(expectedType);
 
-        if (parameterCount > 1 || expectedType.parameterType(0).isPrimitive()) {
+        if (parameterCount > 1 || !needsNullCheck(expectedType.parameterType(0), map)) {
             nullFallback = null;
         } else {
             OneTimeExecutionBuilder ex = new OneTimeExecutionBuilder(targetHandle, false);
@@ -158,6 +158,10 @@ final class MultiArgumentExecutionBuilder implements Registry {
 
         accessor = setIfAbsent;
         updater = update;
+    }
+
+    private static boolean needsNullCheck(Class<?> type, Map<?, ?> mapImplementation) {
+        return !type.isPrimitive() && !(mapImplementation instanceof HashMap);
     }
 
     private static MethodHandle collectArguments(MethodHandle target, int pos, int argCount) {

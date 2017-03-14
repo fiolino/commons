@@ -52,7 +52,12 @@ final class MultiArgumentExecutionBuilder implements Registry {
 
         @Override
         public String toString() {
-            return super.toString();
+            StringBuilder sb = new StringBuilder("Parameters ");
+            for (int i=0; i < values.length; i++) {
+                if (i > 0) sb.append("; ");
+                sb.append('#').append(i).append(": ").append(values[i]);
+            }
+            return sb.toString();
         }
     }
 

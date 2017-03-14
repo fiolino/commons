@@ -8,9 +8,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.IntSupplier;
-import java.util.function.IntUnaryOperator;
-import java.util.function.UnaryOperator;
+import java.util.function.*;
 
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
@@ -349,5 +347,108 @@ public class RegistryTest {
         assertEquals(newNullName, func.apply(null));
     }
 
+    @Test
+    public void testConsumer() {
+        AtomicReference<String> ref = new AtomicReference<>();
+        LambdaRegistry<Consumer<String>> reg = Registry.buildForFunctionalType(ref::set);
+        Consumer<String> consumer = reg.getAccessor();
+        consumer.accept("Hello");
+        assertEquals("Hello", ref.get());
+        consumer.accept(null);
+        assertNull(ref.get());
+        consumer.accept("Hello");
+        assertNull(ref.get());
+        consumer.accept("Goodbye");
+        assertEquals("Goodbye", ref.get());
+        consumer.accept("Hello");
+        assertEquals("Goodbye", ref.get());
 
+        Consumer<String> updater = reg.getUpdater();
+        updater.accept("Hello");
+        assertEquals("Hello", ref.get());
+        consumer.accept(null);
+        assertEquals("Hello", ref.get());
+        updater.accept(null);
+        assertNull(ref.get());
+    }
+
+    private static String getAndSetSum(AtomicInteger ref, int value, String name) {
+        int old = ref.getAndAdd(value);
+        if (old == 0) {
+            return null;
+        }
+        return name + " says: " + old + " + " + value + " = " + ref.get();
+    }
+
+    @Test
+    public void testMultiArguments() throws Throwable {
+        AtomicInteger ref = new AtomicInteger(100);
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle sum = lookup.findStatic(lookup.lookupClass(), "getAndSetSum", methodType(String.class, AtomicInteger.class, int.class, String.class));
+        Registry reg = Registry.buildFor(sum, ref);
+        MethodHandle sumX = reg.getAccessor();
+
+        String result = (String) sumX.invokeExact(7, "Frankie");
+        assertEquals("Frankie says: 100 + 7 = 107", result);
+        assertEquals(107, ref.get());
+
+        ref.set(0);
+        result = (String) sumX.invokeExact(7, "Frankie");
+        assertEquals("Frankie says: 100 + 7 = 107", result);
+        assertEquals(0, ref.get());
+
+        result = (String) sumX.invokeExact(50, "Johnny");
+        assertNull(result);
+        assertEquals(50, ref.get());
+
+        ref.set(0);
+        result = (String) sumX.invokeExact(50, "Johnny");
+        assertNull(result);
+        assertEquals(50, ref.get());
+
+        result = (String) sumX.invokeExact(51, "Johnny");
+        assertEquals("Johnny says: 50 + 51 = 101", result);
+        assertEquals(101, ref.get());
+
+        result = (String) sumX.invokeExact(52, "Johnny");
+        assertEquals("Johnny says: 101 + 52 = 153", result);
+        assertEquals(153, ref.get());
+
+        result = (String) sumX.invokeExact(52, "Lisa");
+        assertEquals("Lisa says: 153 + 52 = 205", result);
+        assertEquals(205, ref.get());
+
+        result = (String) reg.getUpdater().invokeExact(52, "Lisa");
+        assertEquals("Lisa says: 205 + 52 = 257", result);
+        assertEquals(257, ref.get());
+
+        result = (String) sumX.invokeExact(7, "Frankie");
+        assertEquals("Frankie says: 100 + 7 = 107", result);
+        assertEquals(257, ref.get());
+
+        reg.reset();
+        result = (String) sumX.invokeExact(7, "Frankie");
+        assertEquals("Frankie says: 257 + 7 = 264", result);
+        assertEquals(264, ref.get());
+    }
+
+    @Test
+    public void testBiConsumer() {
+        AtomicReference<String> ref = new AtomicReference<>();
+        LambdaRegistry<BiConsumer<AtomicReference<String>, String>> reg = Registry.buildForFunctionalType(AtomicReference::set);
+        BiConsumer<AtomicReference<String>, String> set = reg.getAccessor();
+
+        set.accept(ref, "Steffi");
+        assertEquals("Steffi", ref.get());
+        set.accept(ref, "Heidi");
+        assertEquals("Heidi", ref.get());
+        set.accept(ref, "Steffi");
+        assertEquals("Heidi", ref.get());
+        set.accept(ref, "Mona");
+        assertEquals("Mona", ref.get());
+        set.accept(ref, "Heidi");
+        assertEquals("Mona", ref.get());
+        reg.getUpdater().accept(ref, "Heidi");
+        assertEquals("Heidi", ref.get());
+    }
 }

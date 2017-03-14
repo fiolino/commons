@@ -46,17 +46,13 @@ public interface Registry extends Resettable {
         if (pCount < 0) {
             throw new IllegalArgumentException("Too many leading parameters for " + target);
         }
+        if (pCount > 0) {
+            return MultiArgumentExecutionBuilder.createFor(target, leadingParameters);
+        }
         if (leadingParameters.length > 0) {
             target = MethodHandles.insertArguments(target, 0, leadingParameters);
         }
-        switch (pCount) {
-            case 0:
-                return new OneTimeExecutionBuilder(target, false);
-            case 1:
-                return MultiArgumentExecutionBuilder.createFor(target, leadingParameters);
-            default:
-                throw new UnsupportedOperationException();
-        }
+        return new OneTimeExecutionBuilder(target, false);
     }
 
     /**
@@ -68,7 +64,7 @@ public interface Registry extends Resettable {
      * @return A container of the lambda that will be called only once per argument values
      */
     static <T> LambdaRegistry<T> buildForFunctionalType(Class<T> functionalType, T function) {
-        if (functionalType.equals(Function.class)) {
+        if (Function.class.isAssignableFrom(functionalType)) {
             return new RegistryMapper<>(MultiArgumentExecutionBuilder.createFor((Function<?, ?>) function), functionalType);
         }
         Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalType);

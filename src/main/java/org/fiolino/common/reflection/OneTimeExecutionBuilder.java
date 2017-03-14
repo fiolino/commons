@@ -124,7 +124,17 @@ class OneTimeExecutionBuilder implements Registry {
 
     @Override
     public void reset() {
+        MutableCallSite cs = preReset();
+        if (cs != null) {
+            MutableCallSite.syncAll(new MutableCallSite[] {
+                    cs
+            });
+        }
+    }
+
+    MutableCallSite preReset() {
         callSite.setTarget(updatingHandle);
+        return callSite instanceof MutableCallSite ? (MutableCallSite)callSite : null;
     }
 
     @Override

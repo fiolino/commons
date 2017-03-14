@@ -3,11 +3,13 @@ package org.fiolino.common.reflection;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.invoke.MutableCallSite;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import java.util.logging.Handler;
 
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
@@ -47,6 +49,11 @@ final class MultiArgumentExecutionBuilder implements Registry {
         public int hashCode() {
             return Arrays.hashCode(values);
         }
+
+        @Override
+        public String toString() {
+            return super.toString();
+        }
     }
 
     private static final MethodHandle FILTER_TO_NULL, FILTER_FROM_NULL, CREATE_PCONTAINER, GET_PARAMS;
@@ -56,7 +63,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
         try {
             FILTER_TO_NULL = lookup.findStatic(lookup.lookupClass(), "returnToNull", methodType(Object.class, Object.class));
             FILTER_FROM_NULL = lookup.findStatic(lookup.lookupClass(), "returnFromNull", methodType(Object.class, Object.class));
-            CREATE_PCONTAINER = lookup.findConstructor(ParameterContainer.class, methodType(void.class, Object[].class));
+            CREATE_PCONTAINER = lookup.findConstructor(ParameterContainer.class, methodType(void.class, Object[].class)).asType(methodType(Object.class, Object[].class));
             GET_PARAMS = lookup.findGetter(ParameterContainer.class, "values", Object[].class);
         } catch (NoSuchMethodException | NoSuchFieldException | IllegalAccessException ex) {
             throw new InternalError(ex);
@@ -65,56 +72,77 @@ final class MultiArgumentExecutionBuilder implements Registry {
 
     private final Map<?, ?> map;
     private final MethodHandle accessor, updater;
-    private final Resettable nullFallback;
+    private final OneTimeExecutionBuilder nullFallback;
 
     private <T, R> MultiArgumentExecutionBuilder(Map<?, ?> map, Function<T, R> targetFunction, MethodHandle targetHandle) {
         this.map = map;
         MethodType expectedType = targetHandle.type();
-        assert expectedType.parameterCount() >= 1;
-        boolean isMulti = expectedType.parameterCount() > 1;
+        int parameterCount = expectedType.parameterCount();
+        assert parameterCount >= 1;
 
         MethodType setType = methodType(Object.class, Object.class, Object.class);
-        MethodHandle set, getOrSet;
+        MethodHandle update, setIfAbsent;
         try {
-            set = publicLookup().bind(map, "put", setType);
-            getOrSet = publicLookup().bind(map, "computeIfAbsent", methodType(Object.class, Object.class, Function.class));
+            update = publicLookup().bind(map, "put", setType);
+            setIfAbsent = publicLookup().bind(map, "computeIfAbsent", methodType(Object.class, Object.class, Function.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError(ex);
         }
 
-        MethodHandle reversedSet = MethodHandles.permuteArguments(set, setType, 1, 0);
-
-        if (expectedType.returnType().isPrimitive()) { // If void, then the function returns already Null.VALUE
-            getOrSet = MethodHandles.insertArguments(getOrSet, 1, targetFunction);
+        Class<?> returnType = expectedType.returnType();
+        if (parameterCount > 1 || returnType.isPrimitive()) { // If void, then the function returns already Null.VALUE
+            setIfAbsent = MethodHandles.insertArguments(setIfAbsent, 1, targetFunction);
         } else {
             Function<T, Object> nullSafe = x -> {
                 R r = targetFunction.apply(x);
                 return r == null ? Null.VALUE : r;
             };
-            getOrSet = MethodHandles.insertArguments(getOrSet, 1, nullSafe);
-            getOrSet = MethodHandles.filterReturnValue(getOrSet, FILTER_TO_NULL);
-
-            reversedSet = MethodHandles.filterArguments(reversedSet, 0, FILTER_FROM_NULL);
-            reversedSet = Methods.returnArgument(reversedSet, 0); // Returns null or other new value
+            setIfAbsent = MethodHandles.insertArguments(setIfAbsent, 1, nullSafe);
+            setIfAbsent = MethodHandles.filterReturnValue(setIfAbsent, FILTER_TO_NULL);
         }
-        MethodHandle targetWithObject = targetHandle.asType(methodType(Object.class, Object.class));
-        set = MethodHandles.foldArguments(reversedSet, targetWithObject);
 
-        getOrSet = getOrSet.asType(expectedType);
-        set = set.asType(expectedType);
-        Class<?> argumentType = expectedType.parameterType(0);
-        if (argumentType.isPrimitive()) {
+        MethodHandle targetWithObject;
+        Class<?>[] allParametersAreObjects = new Class<?>[parameterCount];
+        Arrays.fill(allParametersAreObjects, Object.class);
+        if (returnType == void.class) {
+            update = MethodHandles.insertArguments(update, 1, Null.VALUE);
+            targetWithObject = targetHandle.asType(methodType(void.class, allParametersAreObjects));
+        } else {
+            targetWithObject = targetHandle.asType(methodType(Object.class, allParametersAreObjects));
+            if (!returnType.isPrimitive()) {
+                // for Objects it needs null check
+                update = MethodHandles.filterArguments(update, 1, FILTER_FROM_NULL);
+            }
+            update = MethodHandles.permuteArguments(update, setType, 1, 0);
+            update = Methods.returnArgument(update, 0); // Returns null or other new value
+        }
+        if (parameterCount > 1) {
+            update = collectArguments(update, returnType == void.class ? 0 : 1, parameterCount);
+            setIfAbsent= collectArguments(setIfAbsent, 0, parameterCount);
+        }
+        update = MethodHandles.foldArguments(update, targetWithObject);
+
+        setIfAbsent = setIfAbsent.asType(expectedType);
+        update = update.asType(expectedType);
+
+        if (parameterCount > 1 || expectedType.parameterType(0).isPrimitive()) {
             nullFallback = null;
         } else {
             OneTimeExecutionBuilder ex = new OneTimeExecutionBuilder(targetHandle, false);
-            MethodHandle nullCheck = Methods.nullCheck().asType(methodType(boolean.class, argumentType));
-            getOrSet = MethodHandles.guardWithTest(nullCheck, ex.getAccessor(), getOrSet);
-            set = MethodHandles.guardWithTest(nullCheck, ex.getUpdater(), set);
+            MethodHandle nullCheck = Methods.nullCheck().asType(methodType(boolean.class, expectedType.parameterType(0)));
+            setIfAbsent = MethodHandles.guardWithTest(nullCheck, ex.getAccessor(), setIfAbsent);
+            update = MethodHandles.guardWithTest(nullCheck, ex.getUpdater(), update);
             nullFallback = ex;
         }
 
-        accessor = getOrSet;
-        updater = set;
+        accessor = setIfAbsent;
+        updater = update;
+    }
+
+    private static MethodHandle collectArguments(MethodHandle target, int pos, int argCount) {
+        MethodHandle h = MethodHandles.filterArguments(target, pos, CREATE_PCONTAINER); // h now accepts an object array as the key and stores a ParameterContainer
+        return h.asCollector(Object[].class, argCount);
+
     }
 
     static <T> MultiArgumentExecutionBuilder createFor(Class<T> lambdaType, T instance) {
@@ -141,7 +169,8 @@ final class MultiArgumentExecutionBuilder implements Registry {
     static MultiArgumentExecutionBuilder createFor(Map<?, ?> map, Function<?, ?> target) {
         MethodHandle functionHandle;
         try {
-            functionHandle = publicLookup().bind(target, "apply", methodType(Object.class, Object.class));
+            // publicLookup() does not work for local functions
+            functionHandle = lookup().bind(target, "apply", methodType(Object.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError(ex);
         }
@@ -154,14 +183,20 @@ final class MultiArgumentExecutionBuilder implements Registry {
     }
 
     static MultiArgumentExecutionBuilder createFor(Map<?, ?> map, MethodHandle target, Object... leadingValues) {
-        if (target.type().parameterCount() != 1) {
-            throw new IllegalArgumentException(target + " must accept exactly one parameter");
-        }
-        return new MultiArgumentExecutionBuilder(map, createFunction(target, leadingValues), target);
+        MethodHandle targetHandle = MethodHandles.insertArguments(target, 0, leadingValues);
+        return new MultiArgumentExecutionBuilder(map, createFunction(target, leadingValues), targetHandle);
     }
 
     private static Function<?, ?> createFunction(MethodHandle handle, Object... leadingValues) {
-        return Methods.lambdafy(handle, Function.class, leadingValues);
+        MethodType type = handle.type();
+        MethodHandle h = type.returnType() == void.class ? MethodHandles.filterReturnValue(handle, MethodHandles.constant(Object.class, Null.VALUE)) : handle;
+        int parameterCount = type.parameterCount();
+        if (parameterCount > leadingValues.length + 1) {
+            // Then it's multi-parameter
+            h = h.asSpreader(Object[].class, parameterCount - leadingValues.length);
+            h = MethodHandles.filterArguments(h, leadingValues.length, GET_PARAMS); // targetHandle now accepts a ParameterContainer as the last argument
+        }
+        return Methods.lambdafy(h, Function.class, leadingValues);
     }
 
     @Override
@@ -170,6 +205,11 @@ final class MultiArgumentExecutionBuilder implements Registry {
         if (nullFallback != null) {
             nullFallback.reset();
         }
+    }
+
+    MutableCallSite preReset() {
+        map.clear();
+        return nullFallback == null ? null : nullFallback.preReset();
     }
 
     @Override

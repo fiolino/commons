@@ -16,6 +16,20 @@ import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
 
 /**
+ * Builder for targets with one or more arguments.
+ *
+ * The created handle is based on a Map instance which contains the parameters as its key and the executed result as the value.
+ * Recurring calls with the same arguments then just return the cached value.
+ *
+ * If the target accepts more than one argument, then the arguments are being folded into an Object array, contained in my
+ * inner class ParameterContainer.
+ *
+ * If the target accepts only one argument and this is nullable, then null keys are put into a private side instance of a
+ * {@link OneTimeExecutionBuilder}. This is because the most common map implementation {@link ConcurrentHashMap} does not permit
+ * null keys.
+ *
+ * If the value is nullable, then it's mapped to a constant replacement. The same holds true if the target does not return values.
+ *
  * Created by kuli on 10.03.17.
  */
 final class MultiArgumentExecutionBuilder implements Registry {
@@ -42,11 +56,13 @@ final class MultiArgumentExecutionBuilder implements Registry {
 
         @Override
         public boolean equals(Object obj) {
+            // Identity will never happen
             return obj instanceof ParameterContainer && Arrays.equals(values, ((ParameterContainer) obj).values);
         }
 
         @Override
         public int hashCode() {
+            // Will always compare with other ParameterContainers
             return Arrays.hashCode(values);
         }
 
@@ -95,7 +111,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
         }
 
         Class<?> returnType = expectedType.returnType();
-        if (parameterCount > 1 || returnType.isPrimitive()) { // If void, then the function returns already Null.VALUE
+        if (parameterCount > 1 || returnType.isPrimitive()) { // If void, then the function already returns Null.VALUE
             setIfAbsent = MethodHandles.insertArguments(setIfAbsent, 1, targetFunction);
         } else {
             Function<T, Object> nullSafe = x -> {

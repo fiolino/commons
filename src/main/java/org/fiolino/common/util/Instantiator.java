@@ -295,7 +295,7 @@ public final class Instantiator {
     }
 
     /**
-     * Creates a provider which implements the given functional interface an calls the appropriate provider method or constructor.
+     * Creates a provider which implements the given functional interface and calls the appropriate provider method or constructor.
      * This method can be used when the given interface is generic, so that the signature doesn't specify the argument and return type enough.
      *
      * @param functionalInterface Describes the provider/constructor to use. Its method signature specifies parts of the parameter values.

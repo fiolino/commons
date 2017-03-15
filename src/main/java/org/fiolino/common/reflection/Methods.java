@@ -1535,6 +1535,11 @@ public class Methods {
     }
 
     /**
+     * Internal interface to check lambda access.
+     */
+    public interface LambdaMarker { }
+
+    /**
      * Creates a lambda factory for the given type which will then call the given target method.
      *
      * @param lookup       Must be the caller's lookup according to LambdaMetaFactory's documentation
@@ -1543,10 +1548,11 @@ public class Methods {
      * @param lambdaType   The interface that specifies the lambda. The lambda method's argument size n must not exceed
      *                     the target's argument size t, and their types must be convertible to the last n arguments of the
      *                     target.
+     * @param markerInterfaces Some interfaces without methods that will be implemented by the created lambda instance
      * @return A MethodHandle that accepts the first (t-n) arguments of the target and returns an instance of lambdaType.
      */
     @Nullable
-    public static MethodHandle createLambdaFactory(Lookup lookup, MethodHandle targetMethod, Class<?> lambdaType) {
+    public static MethodHandle createLambdaFactory(Lookup lookup, MethodHandle targetMethod, Class<?> lambdaType, Class<?>... markerInterfaces) {
 
         Method m = findLambdaMethodOrFail(lambdaType);
         String name = m.getName();
@@ -1570,9 +1576,17 @@ public class Methods {
             instantiatedType = methodType(targetType.returnType(), params);
         }
 
+        Object[] metaArguments = new Object[6 + markerInterfaces.length];
+        metaArguments[0] = calledType;
+        metaArguments[1] = targetMethod;
+        metaArguments[2] = instantiatedType;
+        metaArguments[3] = LambdaMetafactory.FLAG_MARKERS;
+        metaArguments[4] = markerInterfaces.length + 1;
+        metaArguments[5] = LambdaMarker.class;
+        System.arraycopy(markerInterfaces, 0, metaArguments, 6, markerInterfaces.length);
         CallSite callSite;
         try {
-            callSite = LambdaMetafactory.metafactory(lookup, name, factoryType, calledType, targetMethod, instantiatedType);
+            callSite = LambdaMetafactory.altMetafactory(lookup, name, factoryType, metaArguments);
         } catch (LambdaConversionException ex) {
             if (ex.getMessage().contains("Unsupported MethodHandle kind")) {
                 // Ugly check, but how to do better?
@@ -1640,5 +1654,15 @@ public class Methods {
         } catch (Throwable t) {
             throw new AssertionError("Creating lambda " + lambdaType.getName() + " failed.", t);
         }
+    }
+
+    /**
+     * Checks whether the given lambda instance was created from a factory returned from createLambdaFactory().
+     *
+     * @param instance The lambda to check
+     * @return true is it was successfully created from a direct handle
+     */
+    public static boolean wasLambdafiedDirect(Object instance) {
+        return instance instanceof LambdaMarker;
     }
 }

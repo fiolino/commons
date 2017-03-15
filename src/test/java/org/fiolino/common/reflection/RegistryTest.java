@@ -500,4 +500,35 @@ public class RegistryTest {
         reg.getUpdater().invoke(1, 2, 3);
         assertEquals(6, ref.get());
     }
+
+    @Test
+    public void testBiInt() {
+        AtomicInteger ref = new AtomicInteger();
+        LambdaRegistry<IntBinaryOperator> reg = Registry.buildForFunctionalType((a, b) -> ref.getAndAdd(a + b));
+        IntBinaryOperator operator = reg.getAccessor();
+
+        int result = operator.applyAsInt(5, 6);
+        assertEquals(0, result);
+        assertEquals(11, ref.get());
+
+        result = operator.applyAsInt(99, 9);
+        assertEquals(11, result);
+        assertEquals(119, ref.get());
+
+        result = operator.applyAsInt(5, 6);
+        assertEquals(0, result);
+        assertEquals(119, ref.get());
+
+        result = reg.getUpdater().applyAsInt(5, 6);
+        assertEquals(119, result);
+        assertEquals(130, ref.get());
+
+        result = operator.applyAsInt(5, 6);
+        assertEquals(119, result);
+        assertEquals(130, ref.get());
+
+        result = operator.applyAsInt(99, 9);
+        assertEquals(11, result);
+        assertEquals(130, ref.get());
+    }
 }

@@ -691,10 +691,12 @@ public class MethodsTest {
         assertNotNull(lambdaFactory);
 
         IntUnaryOperator multWithTen = (IntUnaryOperator) lambdaFactory.invokeExact(10);
+        assertTrue(Methods.wasLambdafiedDirect(multWithTen));
         int result = multWithTen.applyAsInt(1103);
         assertEquals(11030, result);
 
         IntUnaryOperator multWithNine = (IntUnaryOperator) lambdaFactory.invokeExact(9);
+        assertTrue(Methods.wasLambdafiedDirect(multWithNine));
         result = multWithNine.applyAsInt(99);
         assertEquals(99 * 9, result);
     }
@@ -715,6 +717,7 @@ public class MethodsTest {
         assertNotNull(lambdaFactory);
 
         SumToString demo = (SumToString) lambdaFactory.invokeExact();
+        assertTrue(Methods.wasLambdafiedDirect(demo));
         assertFalse(MethodHandleProxies.isWrapperInstance(demo));
         Object result = demo.sumUpNonsense(5, 6);
         assertEquals("11", result);
@@ -738,6 +741,7 @@ public class MethodsTest {
 
         IntBinaryOperator multiply = Methods.lambdafy(mult, IntBinaryOperator.class);
         assertFalse(MethodHandleProxies.isWrapperInstance(multiply));
+        assertTrue(Methods.wasLambdafiedDirect(multiply));
         assertEquals(77 * 19, multiply.applyAsInt(77, 19));
     }
 
@@ -747,11 +751,13 @@ public class MethodsTest {
         MethodHandle modified = MethodHandles.dropArguments(mult, 1, String.class);
         IntUnaryOperator doubleIt = Methods.lambdafy(modified, IntUnaryOperator.class, 2, "Ignored");
         assertTrue(MethodHandleProxies.isWrapperInstance(doubleIt));
+        assertFalse(Methods.wasLambdafiedDirect(doubleIt));
         assertEquals(36, doubleIt.applyAsInt(18));
 
         modified = MethodHandles.insertArguments(mult, 1, 5);
         IntUnaryOperator multiplyWithFive = Methods.lambdafy(modified, IntUnaryOperator.class);
         assertTrue(MethodHandleProxies.isWrapperInstance(multiplyWithFive));
+        assertFalse(Methods.wasLambdafiedDirect(multiplyWithFive));
         assertEquals(220, multiplyWithFive.applyAsInt(44));
     }
 

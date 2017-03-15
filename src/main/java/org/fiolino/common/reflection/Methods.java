@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nullable;
 import java.lang.invoke.*;
 import java.lang.reflect.*;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.*;
 import java.util.concurrent.Semaphore;
 import java.util.function.Function;
@@ -558,7 +560,7 @@ public class Methods {
         List<Method> usedMethods = new ArrayList<>();
         V value = initialValue;
         do {
-            Method[] methods = c.getDeclaredMethods();
+            Method[] methods = AccessController.doPrivileged((PrivilegedAction<Method[]>) c::getDeclaredMethods);
             outer:
             for (final Method m : methods) {
                 for (Method used : usedMethods) {
@@ -655,7 +657,8 @@ public class Methods {
         if (enumConstants == null) {
             throw new IllegalArgumentException(enumType.getName() + " should be an enum.");
         }
-        for (java.lang.reflect.Field f : enumType.getDeclaredFields()) {
+        Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) enumType::getFields);
+        for (java.lang.reflect.Field f : fields) {
             int m = f.getModifiers();
             if (!Modifier.isStatic(m) || !Modifier.isPublic(m)) {
                 continue;
@@ -737,7 +740,8 @@ public class Methods {
             throw new IllegalArgumentException(type.getName() + " should be an enum.");
         }
         boolean isAnnotated = false;
-        for (java.lang.reflect.Field f : type.getDeclaredFields()) {
+        Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) type::getFields);
+        for (java.lang.reflect.Field f : fields) {
             int m = f.getModifiers();
             if (!Modifier.isStatic(m) || !Modifier.isPublic(m)) {
                 continue;
@@ -1438,7 +1442,12 @@ public class Methods {
             returnValue = MethodHandles.dropArguments(returnValue, 1, type.parameterArray());
         }
         MethodHandle releaseAndReturn = MethodHandles.foldArguments(returnValue, release);
-        return MethodHandles.foldArguments(releaseAndReturn, acquireAndExecute);
+        MethodHandle synced = MethodHandles.foldArguments(releaseAndReturn, acquireAndExecute);
+
+        if (target.isVarargsCollector()) {
+            synced = synced.asVarargsCollector(type.parameterType(type.parameterCount() - 1));
+        }
+        return synced;
     }
 
     private static Method findSingleMethodIn(Lookup lookup, Class<?> type, MethodType reference) {
@@ -1446,8 +1455,9 @@ public class Methods {
             Method bestMatch = null;
             Comparison matchingRank = null;
             boolean ambiguous = false;
+            Method[] methods = AccessController.doPrivileged((PrivilegedAction<Method[]>) c::getDeclaredMethods);
             loop:
-            for (Method m : c.getDeclaredMethods()) {
+            for (Method m : methods) {
                 if (!wouldBeVisible(lookup, m)) {
                     continue;
                 }

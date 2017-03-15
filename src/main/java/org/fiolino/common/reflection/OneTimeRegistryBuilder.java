@@ -1,12 +1,13 @@
 package org.fiolino.common.reflection;
 
 import java.lang.invoke.*;
+import java.util.concurrent.Semaphore;
 
 import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
 
 /**
- * This creates a {@link MethodHandle} which executes its target and then sets the result as a constant handle
+ * This creates a Registry for MethodHandles which executes its target and then sets the result as a constant handle
  * into its own CallSite so that later calls will directly return that cached value.
  *
  * The target itself is wrapped into a synchronization block so that concurrent calls on the initial handle will block
@@ -14,14 +15,12 @@ import static java.lang.invoke.MethodType.methodType;
  * points to an inner CallSite whose target is then set to the same constant handle as the outer one. Awaiting
  * threads will then call the same constant handle after release.
  *
- * The target can be of any type, but the API only exposes handles without parameters. Anything else won't make much sense
- * because the parameter value is not checked at all; having multiple calls with different parameter values would still
- * block all calls except the first one. This feature is only needed in the {@link MultiArgumentExecutionBuilder} in the
- * case of a parameter value of null.
+ * The target can be of any type, but parameters are not evaluated at all. That means successive calls will be discarded
+ * independent of their parameter values. So it's mostly useful for parameter-less targets.
  *
  * Created by kuli on 07.03.17.
  */
-class OneTimeExecutionBuilder implements Registry {
+public final class OneTimeRegistryBuilder implements Registry, Updateable {
 
     private static final MethodHandle SYNC;
     private static final MethodHandle CONSTANT_HANDLE_FACTORY;
@@ -39,19 +38,21 @@ class OneTimeExecutionBuilder implements Registry {
         }
     }
 
+    private final Semaphore semaphore;
     private final CallSite callSite;
     private final MethodHandle updatingHandle;
 
     /**
-     * Creates the executor.
+     * Creates the builder.
      *
      * @param target The target handle, which will be called only once as long as the updater or reset() aren't in play
      * @param isVolatile Use this to make the CallSite volatile; it's a performance feature, so when update or reset()
      *                   are used frequently, the this should be true
      */
-    OneTimeExecutionBuilder(MethodHandle target, boolean isVolatile) {
+    OneTimeRegistryBuilder(MethodHandle target, boolean isVolatile) {
         MethodType type = target.type();
 
+        semaphore = new Semaphore(1);
         callSite = isVolatile ? new VolatileCallSite(type) : new MutableCallSite(type);
         CallSite innerCallSite = new VolatileCallSite(type);
         MethodHandle setTargetOuter, setTargetInner;
@@ -64,10 +65,13 @@ class OneTimeExecutionBuilder implements Registry {
 
         MethodHandle innerCaller = createSyncHandle(target, setTargetOuter, setTargetInner);
         innerCallSite.setTarget(innerCaller);
-        MethodHandle guardedCaller = Methods.synchronize(innerCallSite.dynamicInvoker());
+        MethodHandle guardedCaller = Methods.synchronizeWith(innerCallSite.dynamicInvoker(), semaphore);
         callSite.setTarget(guardedCaller);
         MethodHandle resetInner = setTargetInner.bindTo(innerCaller);
         resetInner = Methods.dropAllOf(resetInner, type);
+        if (target.isVarargsCollector()) {
+            resetInner = resetInner.asVarargsCollector(type.parameterType(type.parameterCount() - 1));
+        }
         updatingHandle = MethodHandles.foldArguments(guardedCaller, resetInner);
     }
 
@@ -98,7 +102,11 @@ class OneTimeExecutionBuilder implements Registry {
         if (parameterCount > 0) {
             setBothAndReturnValue = MethodHandles.dropArguments(setBothAndReturnValue, 1, type.parameterArray());
         }
-        return MethodHandles.foldArguments(setBothAndReturnValue, execution);
+        MethodHandle result = MethodHandles.foldArguments(setBothAndReturnValue, execution);
+        if (execution.isVarargsCollector()) {
+            result = result.asVarargsCollector(type.parameterType(type.parameterCount() - 1));
+        }
+        return result;
     }
 
     private MethodHandle createVoidSyncHandle(MethodHandle execution, MethodHandle setTargets) {
@@ -124,7 +132,11 @@ class OneTimeExecutionBuilder implements Registry {
 
     @Override
     public void reset() {
-        MutableCallSite cs = preReset();
+        resetTo(updatingHandle);
+    }
+
+    private void resetTo(MethodHandle handle) {
+        MutableCallSite cs = preResetTo(handle);
         if (cs != null) {
             MutableCallSite.syncAll(new MutableCallSite[] {
                     cs
@@ -133,7 +145,11 @@ class OneTimeExecutionBuilder implements Registry {
     }
 
     MutableCallSite preReset() {
-        callSite.setTarget(updatingHandle);
+        return preResetTo(updatingHandle);
+    }
+
+    private MutableCallSite preResetTo(MethodHandle handle) {
+        callSite.setTarget(handle);
         return callSite instanceof MutableCallSite ? (MutableCallSite)callSite : null;
     }
 
@@ -145,5 +161,41 @@ class OneTimeExecutionBuilder implements Registry {
     @Override
     public MethodHandle getUpdater() {
         return updatingHandle;
+    }
+
+    @Override
+    public void updateTo(Object newValue) {
+        Class<?> returnType = updatingHandle.type().returnType();
+        if (returnType == void.class) {
+            // No synchronization necessary
+            resetTo(Methods.DO_NOTHING);
+            return;
+        }
+        semaphore.acquireUninterruptibly();
+        try {
+            resetTo(MethodHandles.constant(returnType, newValue));
+        } finally {
+            semaphore.release();
+        }
+    }
+
+    /**
+     * Creates a registry builder where updates are expected to never or very rarely happen.
+     *
+     * @param execution The task which will be executed on the first run
+     * @return A registry builder for that target
+     */
+    public static OneTimeRegistryBuilder createFor(MethodHandle execution) {
+        return new OneTimeRegistryBuilder(execution, false);
+    }
+
+    /**
+     * Creates a registry builder where updates are expected to happen frequently.
+     *
+     * @param execution The task which will be executed on the first run
+     * @return A registry builder for that target
+     */
+    public static OneTimeRegistryBuilder createForVolatile(MethodHandle execution) {
+        return new OneTimeRegistryBuilder(execution, true);
     }
 }

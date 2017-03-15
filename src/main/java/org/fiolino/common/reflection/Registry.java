@@ -52,7 +52,7 @@ public interface Registry extends Resettable {
         if (leadingParameters.length > 0) {
             target = MethodHandles.insertArguments(target, 0, leadingParameters);
         }
-        return new OneTimeExecutionBuilder(target, false);
+        return new OneTimeRegistryBuilder(target, false);
     }
 
     /**

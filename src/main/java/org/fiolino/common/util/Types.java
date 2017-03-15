@@ -155,6 +155,9 @@ public final class Types {
         throw new IllegalArgumentException("Cannot extract raw class type from " + type);
     }
 
+    /**
+     * Used for choosing either the lower or the upper bounds of a possibly bounded type.
+     */
     public enum Bounded {
         UPPER {
             @Override
@@ -178,6 +181,14 @@ public final class Types {
         abstract Type[] getBounds(WildcardType t);
     }
 
+    /**
+     * Gets the generic argument type of some owning type.
+     *
+     * @param type The type to check
+     * @param reference The owning reference type which declares the generic arguments
+     * @param index The argument index
+     * @return The generic type
+     */
     public static Type genericArgument(Type type, Class<?> reference, int index) {
         Type arg = genericArgument0(type, reference, index);
         if (arg == null) {
@@ -186,6 +197,15 @@ public final class Types {
         return arg;
     }
 
+    /**
+     * Gets the raw argument class of some owning type.
+     *
+     * @param type The type to check
+     * @param reference The owning reference type which declares the generic arguments
+     * @param index The argument index
+     * @param b Needed when it's a bounded type
+     * @return The found argument
+     */
     public static Class<?> rawArgument(Type type, Class<?> reference, int index, Bounded b) {
         return rawType(genericArgument(type, reference, index), b);
     }

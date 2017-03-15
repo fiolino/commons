@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.util.Arrays;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -193,7 +194,7 @@ public class RegistryTest {
     }
 
     private static int sleepAndIncrement(AtomicInteger ref, int sleep) throws InterruptedException {
-        TimeUnit.SECONDS.sleep(sleep);
+        TimeUnit.MILLISECONDS.sleep(sleep);
         return ref.incrementAndGet();
     }
 
@@ -202,7 +203,7 @@ public class RegistryTest {
         AtomicInteger counter = new AtomicInteger(500);
         MethodHandles.Lookup lookup = lookup();
         MethodHandle execute = lookup.findStatic(lookup.lookupClass(), "sleepAndIncrement", methodType(int.class, AtomicInteger.class, int.class));
-        IntSupplier operator = Methods.lambdafy(execute, IntSupplier.class, counter, 2);
+        IntSupplier operator = Methods.lambdafy(execute, IntSupplier.class, counter, 100);
         IntSupplier guarded = Registry.buildForFunctionalType(IntSupplier.class, operator).getAccessor();
 
         AtomicInteger backgroundResultContainer = new AtomicInteger();
@@ -232,10 +233,10 @@ public class RegistryTest {
     private void testWithParameter(boolean isVolatile) throws Throwable {
         AtomicReference<String> ref = new AtomicReference<>();
         MethodHandle target = publicLookup().bind(ref, "set", methodType(void.class, Object.class));
-        OneTimeExecutionBuilder ex = new OneTimeExecutionBuilder(target, isVolatile);
+        OneTimeRegistryBuilder ex = new OneTimeRegistryBuilder(target, isVolatile);
         ex.getAccessor().invokeExact((Object) "Fritz");
         assertEquals("Fritz", ref.get());
-        ex.getAccessor().invokeExact((Object) (Object) "Knut");
+        ex.getAccessor().invokeExact((Object) "Knut");
         // Second call was ignored
         assertEquals("Fritz", ref.get());
         ex.getAccessor().invokeExact((Object) null);
@@ -255,7 +256,7 @@ public class RegistryTest {
     private void testWithParameterAndReturnValue(boolean isVolatile) throws Throwable {
         AtomicInteger ref = new AtomicInteger(100);
         MethodHandle target = publicLookup().bind(ref, "getAndSet", methodType(int.class, int.class));
-        OneTimeExecutionBuilder ex = new OneTimeExecutionBuilder(target, isVolatile);
+        OneTimeRegistryBuilder ex = new OneTimeRegistryBuilder(target, isVolatile);
         int newValue = (int) ex.getAccessor().invokeExact(222);
         assertEquals(100, newValue);
         assertEquals(222, ref.get());
@@ -274,18 +275,18 @@ public class RegistryTest {
         IntUnaryOperator guarded = Registry.buildForFunctionalType(IntUnaryOperator.class, operator).getAccessor();
 
         AtomicInteger backgroundResultContainer = new AtomicInteger();
-        Thread t = new Thread(() -> backgroundResultContainer.set(guarded.applyAsInt(3)));
+        Thread t = new Thread(() -> backgroundResultContainer.set(guarded.applyAsInt(200)));
         t.start();
         Thread.yield();
         TimeUnit.MILLISECONDS.sleep(50);
-        int localResult = guarded.applyAsInt(3);
+        int localResult = guarded.applyAsInt(200);
         t.join();
 
         assertEquals(501, localResult);
         assertEquals(501, backgroundResultContainer.get());
 
         long start = System.currentTimeMillis();
-        localResult = guarded.applyAsInt(3);
+        localResult = guarded.applyAsInt(200);
         long used = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - start);
         assertTrue(used <= 1);
         assertEquals(501, localResult);
@@ -404,8 +405,9 @@ public class RegistryTest {
         ref.set(0);
         result = (String) sumX.invokeExact(50, "Johnny");
         assertNull(result);
-        assertEquals(50, ref.get());
+        assertEquals(0, ref.get());
 
+        ref.set(50);
         result = (String) sumX.invokeExact(51, "Johnny");
         assertEquals("Johnny says: 50 + 51 = 101", result);
         assertEquals(101, ref.get());
@@ -450,5 +452,52 @@ public class RegistryTest {
         assertEquals("Mona", ref.get());
         reg.getUpdater().accept(ref, "Heidi");
         assertEquals("Heidi", ref.get());
+    }
+
+    private static void sum(AtomicInteger target, int... values) {
+        int sum = Arrays.stream(values).sum();
+        target.set(sum);
+    }
+
+    @Test
+    public void testVarArgs() throws Throwable {
+        AtomicInteger ref = new AtomicInteger();
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle handle = lookup.findStatic(lookup.lookupClass(), "sum", methodType(void.class, AtomicInteger.class, int[].class));
+        Registry reg = Registry.buildFor(handle);
+        MethodHandle ex1 = reg.getAccessor();
+
+        ex1.invoke(ref, 1, 2, 3);
+        assertEquals(6, ref.get());
+
+        ex1.invoke(ref, 1000, 1000, 5000);
+        assertEquals(7000, ref.get());
+
+        ex1.invoke(ref, 1, 2, 3);
+        assertEquals(7000, ref.get());
+
+        reg.getUpdater().invoke(ref, 1, 2, 3);
+        assertEquals(6, ref.get());
+    }
+
+    @Test
+    public void testVarArgsOnly() throws Throwable {
+        AtomicInteger ref = new AtomicInteger();
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle handle = lookup.findStatic(lookup.lookupClass(), "sum", methodType(void.class, AtomicInteger.class, int[].class));
+        Registry reg = Registry.buildFor(handle, ref);
+        MethodHandle ex1 = reg.getAccessor();
+
+        ex1.invoke(1, 2, 3);
+        assertEquals(6, ref.get());
+
+        ex1.invoke(1000, 1000, 5000);
+        assertEquals(7000, ref.get());
+
+        ex1.invoke(1, 2, 3);
+        assertEquals(7000, ref.get());
+
+        reg.getUpdater().invoke(1, 2, 3);
+        assertEquals(6, ref.get());
     }
 }

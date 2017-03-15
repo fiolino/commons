@@ -656,8 +656,8 @@ public class MethodsTest {
         fail("Exception expected");
     }
 
-    private static String sleepAndCompare(long sleepInSeconds, AtomicReference<String> ref, String newValue) throws InterruptedException {
-        TimeUnit.SECONDS.sleep(sleepInSeconds);
+    private static String sleepAndCompare(long sleepInMillis, AtomicReference<String> ref, String newValue) throws InterruptedException {
+        TimeUnit.MILLISECONDS.sleep(sleepInMillis);
         return ref.getAndSet(newValue);
     }
 
@@ -669,7 +669,7 @@ public class MethodsTest {
         MethodHandle guarded = Methods.synchronize(sleepAndCompare);
         Thread thread = new Thread(() -> {
             try {
-                String currentValue = (String) guarded.invokeExact(3L, ref, "Set by thread");
+                String currentValue = (String) guarded.invokeExact(300L, ref, "Set by thread");
                 assertEquals("Initial", currentValue);
             } catch (Throwable t) {
                 fail(t.getMessage());
@@ -679,7 +679,7 @@ public class MethodsTest {
 
         Thread.yield();
         TimeUnit.MILLISECONDS.sleep(50);
-        String currentValue = (String) guarded.invokeExact(1L, ref, "Set by main method");
+        String currentValue = (String) guarded.invokeExact(100L, ref, "Set by main method");
         thread.join();
         assertEquals("Set by thread", currentValue);
     }

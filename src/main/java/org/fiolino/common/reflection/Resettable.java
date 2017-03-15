@@ -8,6 +8,10 @@ package org.fiolino.common.reflection;
 public interface Resettable {
     /**
      * Clears all cached data for this registry.
+     *
+     * Later calls will be handled as if they were the first ones.
+     *
+     * If some concurrent thread is calling my registry currently, then the behaviour is undefined: Usually no a
      */
     void reset();
 }

@@ -631,6 +631,7 @@ public class MethodsTest {
         assertEquals(1, p.availablePermits());
     }
 
+    @SuppressWarnings("unused")
     private static void check(AtomicReference<?> ref, Object boom) {
         if (ref.get().equals(boom)) {
             throw new IllegalArgumentException("Boom!");
@@ -657,6 +658,7 @@ public class MethodsTest {
         fail("Exception expected");
     }
 
+    @SuppressWarnings("unused")
     private static String sleepAndCompare(long sleepInMillis, AtomicReference<String> ref, String newValue) throws InterruptedException {
         TimeUnit.MILLISECONDS.sleep(sleepInMillis);
         return ref.getAndSet(newValue);
@@ -715,6 +717,7 @@ public class MethodsTest {
         assertTrue(multiply instanceof Override);
     }
 
+    @SuppressWarnings("unused")
     private static String sumUp(Integer a, Object b) {
         return String.valueOf(a + Integer.parseInt(b.toString()));
     }
@@ -782,6 +785,7 @@ public class MethodsTest {
             this.count = count;
         }
 
+        @SuppressWarnings("unused")
         String loop(CharSequence input) {
             StringBuilder sb = new StringBuilder(input.length() * count);
             for (int i=0; i < count; i++) {

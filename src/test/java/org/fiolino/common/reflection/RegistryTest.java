@@ -193,6 +193,7 @@ public class RegistryTest {
         assertEquals(101, counter.get());
     }
 
+    @SuppressWarnings("unused")
     private static int sleepAndIncrement(AtomicInteger ref, int sleep) throws InterruptedException {
         TimeUnit.MILLISECONDS.sleep(sleep);
         return ref.incrementAndGet();
@@ -373,6 +374,7 @@ public class RegistryTest {
         assertNull(ref.get());
     }
 
+    @SuppressWarnings("unused")
     private static String getAndSetSum(AtomicInteger ref, int value, String name) {
         int old = ref.getAndAdd(value);
         if (old == 0) {
@@ -454,6 +456,7 @@ public class RegistryTest {
         assertEquals("Heidi", ref.get());
     }
 
+    @SuppressWarnings("unused")
     private static void sum(AtomicInteger target, int... values) {
         int sum = Arrays.stream(values).sum();
         target.set(sum);
@@ -565,6 +568,10 @@ public class RegistryTest {
 
         ex.reset();
         previous = ex.getAccessor().invokeExact((Object) "First");
+        assertEquals("Initial", previous);
+        assertEquals("First", ref.get());
+
+        previous = ex.getAccessor().invokeExact((Object) "Whatever the...");
         assertEquals("Initial", previous);
         assertEquals("First", ref.get());
     }

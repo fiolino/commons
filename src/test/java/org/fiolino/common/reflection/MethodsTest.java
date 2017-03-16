@@ -2,6 +2,7 @@ package org.fiolino.common.reflection;
 
 import org.junit.Test;
 
+import javax.annotation.concurrent.ThreadSafe;
 import java.awt.event.ActionListener;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
@@ -699,6 +700,19 @@ public class MethodsTest {
         assertTrue(Methods.wasLambdafiedDirect(multWithNine));
         result = multWithNine.applyAsInt(99);
         assertEquals(99 * 9, result);
+    }
+
+    @Test
+    public void testLambdaFactoryWithMarkers() throws Throwable {
+        MethodHandle mult = publicLookup().findStatic(Math.class, "multiplyExact", methodType(int.class, int.class, int.class));
+        MethodHandle lambdaFactory = Methods.createLambdaFactory(lookup(), mult, IntBinaryOperator.class,
+                ThreadSafe.class, Override.class); // Hehe, annotations as marker interfaces
+        assertNotNull(lambdaFactory);
+
+        IntBinaryOperator multiply = (IntBinaryOperator) lambdaFactory.invokeExact();
+        assertTrue(Methods.wasLambdafiedDirect(multiply));
+        assertTrue(multiply instanceof ThreadSafe);
+        assertTrue(multiply instanceof Override);
     }
 
     private static String sumUp(Integer a, Object b) {

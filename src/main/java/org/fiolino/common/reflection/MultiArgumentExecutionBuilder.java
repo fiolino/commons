@@ -66,7 +66,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
 
     private final Map<?, ?> map;
     private final MethodHandle accessor, updater;
-    private final OneTimeRegistryBuilder nullFallback;
+    private final OneTimeExecution nullFallback;
 
     private <T> MultiArgumentExecutionBuilder(Map<?, ?> map, Function<T, ?> targetFunction, MethodHandle targetHandle) {
         this.map = map;
@@ -84,15 +84,15 @@ final class MultiArgumentExecutionBuilder implements Registry {
         }
 
         Class<?> returnType = expectedType.returnType();
-        if (needsNoNullCheck(returnType, map)) { // If void, then the function already returns Null.VALUE
-            setIfAbsent = MethodHandles.insertArguments(setIfAbsent, 1, targetFunction);
-        } else {
+        if (needsNullCheck(returnType, map)) { // If void, then the function already returns Null.VALUE
             Function<T, Object> nullSafe = x -> {
                 Object r = targetFunction.apply(x);
                 return returnFromNull(r);
             };
             setIfAbsent = MethodHandles.insertArguments(setIfAbsent, 1, nullSafe);
             setIfAbsent = MethodHandles.filterReturnValue(setIfAbsent, FILTER_TO_NULL);
+        } else {
+            setIfAbsent = MethodHandles.insertArguments(setIfAbsent, 1, targetFunction);
         }
 
         Class<?>[] allParametersAreObjects = new Class<?>[parameterCount];
@@ -104,7 +104,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
             updateOffset = 0;
             updateType = expectedType;
         } else {
-            if (!needsNoNullCheck(returnType, map)) {
+            if (needsNullCheck(returnType, map)) {
                 // for Objects it needs null check
                 update = MethodHandles.filterArguments(update, 1, FILTER_FROM_NULL);
             }
@@ -115,7 +115,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
         }
         Class<?>[] expectedParameters = expectedType.parameterArray();
         if (parameterCount > 1) {
-            update = collectArguments(update, updateOffset, parameterCount, expectedParameters);
+            update = collectArguments(update, updateOffset, parameterCount, updateType.parameterArray());
             setIfAbsent= collectArguments(setIfAbsent, 0, parameterCount, expectedParameters);
         }
         setIfAbsent = convertArraysToContainers(setIfAbsent, 0, expectedParameters);
@@ -125,10 +125,10 @@ final class MultiArgumentExecutionBuilder implements Registry {
         update = update.asType(updateType);
         update = MethodHandles.foldArguments(update, targetHandle);
 
-        if (parameterCount > 1 || expectedType.parameterType(0).isArray() || needsNoNullCheck(expectedType.parameterType(0), map)) {
+        if (parameterCount > 1 || expectedType.parameterType(0).isArray() || !needsNullCheck(expectedType.parameterType(0), map)) {
             nullFallback = null;
         } else {
-            OneTimeRegistryBuilder ex = new OneTimeRegistryBuilder(targetHandle, false);
+            OneTimeExecution ex = OneTimeExecution.createFor(targetHandle);
             MethodHandle nullCheck = Methods.nullCheck().asType(methodType(boolean.class, expectedType.parameterType(0)));
             setIfAbsent = MethodHandles.guardWithTest(nullCheck, ex.getAccessor(), setIfAbsent);
             update = MethodHandles.guardWithTest(nullCheck, ex.getUpdater(), update);
@@ -144,8 +144,8 @@ final class MultiArgumentExecutionBuilder implements Registry {
         updater = update;
     }
 
-    private static boolean needsNoNullCheck(Class<?> type, Map<?, ?> mapImplementation) {
-        return type.isPrimitive() || mapImplementation instanceof HashMap;
+    private static boolean needsNullCheck(Class<?> type, Map<?, ?> mapImplementation) {
+        return !(type.isPrimitive() || mapImplementation instanceof HashMap);
     }
 
     private static MethodHandle convertArraysToContainers(MethodHandle target, int offset, Class<?>[] arguments) {
@@ -162,10 +162,18 @@ final class MultiArgumentExecutionBuilder implements Registry {
     }
 
     private static MethodHandle collectArguments(MethodHandle target, int pos, int argCount, Class<?>[] parameters) {
-        Class<?> p = parameters[pos];
+        Class<?> p = commonClassOf(parameters, pos, argCount);
+        MethodHandle toContainer = ArrayMappers.toContainer(p);
+        MethodHandle h = MethodHandles.filterArguments(target, pos, toContainer.asType(toContainer.type().changeReturnType(target.type().parameterType(pos))));
+        return h.asCollector(toContainer.type().parameterType(0), argCount);
+
+    }
+
+    private static Class<?> commonClassOf(Class<?>[] parameters, int start, int count) {
+        Class<?> p = parameters[start];
         if (p.isPrimitive()) {
-            for (int i=1; i < argCount; i++) {
-                Class<?> p2 = parameters[i + pos];
+            for (int i = 1; i < count; i++) {
+                Class<?> p2 = parameters[i + start];
                 if (!p.equals(p2)) {
                     p = Object.class;
                     break;
@@ -174,10 +182,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
         } else {
             p = Object.class;
         }
-        MethodHandle toContainer = ArrayMappers.toContainer(p);
-        MethodHandle h = MethodHandles.filterArguments(target, pos, toContainer.asType(toContainer.type().changeReturnType(target.type().parameterType(pos))));
-        return h.asCollector(toContainer.type().parameterType(0), argCount);
-
+        return p;
     }
 
     static <T> MultiArgumentExecutionBuilder createFor(Class<T> lambdaType, T instance) {
@@ -229,8 +234,9 @@ final class MultiArgumentExecutionBuilder implements Registry {
         MethodType type = handle.type();
         MethodHandle h = type.returnType() == void.class ? MethodHandles.filterReturnValue(handle, MethodHandles.constant(Object.class, Null.VALUE)) : handle;
         int parameterCount = type.parameterCount();
+        int start = leadingValues.length;
         // First check for transformed arrays
-        for (int i = leadingValues.length; i < parameterCount; i++) {
+        for (int i = start; i < parameterCount; i++) {
             Class<?> p = type.parameterType(i);
             if (p.isArray()) {
                 MethodHandle fromContainer = ArrayMappers.fromContainer(p);
@@ -238,10 +244,13 @@ final class MultiArgumentExecutionBuilder implements Registry {
             }
         }
         // Then fold the arguments, if necessary
-        if (parameterCount > leadingValues.length + 1) {
+        int count = parameterCount - start;
+        if (count > 1) {
             // Then it's multi-parameter
-            h = h.asSpreader(Object[].class, parameterCount - leadingValues.length);
-            h = MethodHandles.filterArguments(h, leadingValues.length, ArrayMappers.fromContainer(Object.class)); // targetHandle now accepts a ObjectParameterContainer as the last argument
+            Class<?> p = commonClassOf(type.parameterArray(), start, count);
+            MethodHandle fromContainer = ArrayMappers.fromContainer(p);
+            h = h.asSpreader(fromContainer.type().returnType(), count);
+            h = MethodHandles.filterArguments(h, start, fromContainer); // targetHandle now accepts a ObjectParameterContainer as the last argument
         }
         return Methods.lambdafy(h, Function.class, leadingValues);
     }
@@ -256,7 +265,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
 
     MutableCallSite preReset() {
         map.clear();
-        return nullFallback == null ? null : nullFallback.preReset();
+        return nullFallback instanceof OneTimeRegistryBuilder ? ((OneTimeRegistryBuilder) nullFallback).preReset() : null;
     }
 
     @Override

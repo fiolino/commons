@@ -20,7 +20,7 @@ import static java.lang.invoke.MethodType.methodType;
  *
  * Created by kuli on 07.03.17.
  */
-public final class OneTimeRegistryBuilder implements Registry, Updateable {
+final class OneTimeRegistryBuilder implements Registry, OneTimeExecution {
 
     private static final MethodHandle SYNC;
     private static final MethodHandle CONSTANT_HANDLE_FACTORY;
@@ -149,7 +149,7 @@ public final class OneTimeRegistryBuilder implements Registry, Updateable {
     }
 
     private MutableCallSite preResetTo(MethodHandle handle) {
-        callSite.setTarget(handle);
+        callSite.setTarget(Methods.dropAllOf(handle, updatingHandle.type()));
         return callSite instanceof MutableCallSite ? (MutableCallSite)callSite : null;
     }
 
@@ -177,25 +177,5 @@ public final class OneTimeRegistryBuilder implements Registry, Updateable {
         } finally {
             semaphore.release();
         }
-    }
-
-    /**
-     * Creates a registry builder where updates are expected to never or very rarely happen.
-     *
-     * @param execution The task which will be executed on the first run
-     * @return A registry builder for that target
-     */
-    public static OneTimeRegistryBuilder createFor(MethodHandle execution) {
-        return new OneTimeRegistryBuilder(execution, false);
-    }
-
-    /**
-     * Creates a registry builder where updates are expected to happen frequently.
-     *
-     * @param execution The task which will be executed on the first run
-     * @return A registry builder for that target
-     */
-    public static OneTimeRegistryBuilder createForVolatile(MethodHandle execution) {
-        return new OneTimeRegistryBuilder(execution, true);
     }
 }

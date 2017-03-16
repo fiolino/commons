@@ -531,4 +531,41 @@ public class RegistryTest {
         assertEquals(11, result);
         assertEquals(130, ref.get());
     }
+
+    @Test
+    public void testUpdateable() throws Throwable {
+        AtomicReference<String> ref = new AtomicReference<>("Initial");
+        MethodHandle setRef = publicLookup().bind(ref, "getAndSet", methodType(Object.class, Object.class));
+        OneTimeExecution ex = OneTimeExecution.createFor(setRef);
+
+        Object previous = ex.getAccessor().invokeExact((Object) "First");
+        assertEquals("Initial", previous);
+        assertEquals("First", ref.get());
+
+        previous = ex.getAccessor().invokeExact((Object) "Second");
+        assertEquals("Initial", previous);
+        assertEquals("First", ref.get());
+
+        ex.updateTo(TimeUnit.SECONDS);
+        previous = ex.getAccessor().invokeExact((Object) "Third");
+        assertEquals(TimeUnit.SECONDS, previous);
+        assertEquals("First", ref.get());
+    }
+
+    @Test
+    public void testUpdateFirst() throws Throwable {
+        AtomicReference<String> ref = new AtomicReference<>("Initial");
+        MethodHandle setRef = publicLookup().bind(ref, "getAndSet", methodType(Object.class, Object.class));
+        OneTimeExecution ex = OneTimeExecution.createFor(setRef);
+        ex.updateTo(2046);
+
+        Object previous = ex.getAccessor().invokeExact((Object) "First");
+        assertEquals(2046, previous);
+        assertEquals("Initial", ref.get());
+
+        ex.reset();
+        previous = ex.getAccessor().invokeExact((Object) "First");
+        assertEquals("Initial", previous);
+        assertEquals("First", ref.get());
+    }
 }

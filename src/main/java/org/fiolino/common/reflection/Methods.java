@@ -822,27 +822,14 @@ public class Methods {
     }
 
     /**
-     * Drops all incoming arguments from referenceType starting with index.
-     * The target handle must implement the referenceType except all arguments that start at index.
+     * Drops all incoming arguments from referenceType that are not already implemented by the target handle.
      *
-     * @param target This will be exwecuted
+     * @param target This will be executed
      * @param referenceType Describes the returning handle's type
      * @return A handle that calls target but drops all trailing arguments
      */
     public static MethodHandle dropAllOf(MethodHandle target, MethodType referenceType) {
-        return dropAllOf(target, referenceType, 0);
-    }
-
-    /**
-     * Drops all incoming arguments from referenceType starting with index.
-     * The target handle must implement the referenceType except all arguments that start at index.
-     *
-     * @param target This will be executed
-     * @param referenceType Describes the returning handle's type
-     * @param index In index in the referenceType's parameter array
-     * @return A handle that calls target but drops all trailing arguments
-     */
-    public static MethodHandle dropAllOf(MethodHandle target, MethodType referenceType, int index) {
+        int index = target.type().parameterCount();
         if (index == referenceType.parameterCount()) {
             return target;
         }
@@ -932,7 +919,7 @@ public class Methods {
             return handles[start];
         }
         MethodHandle remaining = and(handles, start + 1);
-        return MethodHandles.guardWithTest(handles[start], remaining, dropAllOf(FALSE, remaining.type(), 0));
+        return MethodHandles.guardWithTest(handles[start], remaining, dropAllOf(FALSE, remaining.type()));
     }
 
     /**
@@ -958,7 +945,7 @@ public class Methods {
             return handles[start];
         }
         MethodHandle remaining = or(handles, start + 1);
-        return MethodHandles.guardWithTest(handles[start], dropAllOf(TRUE, remaining.type(), 0), remaining);
+        return MethodHandles.guardWithTest(handles[start], dropAllOf(TRUE, remaining.type()), remaining);
     }
 
     /**
@@ -1067,7 +1054,7 @@ public class Methods {
         } else {
             constantNull = MethodHandles.constant(returnType, null);
         }
-        constantNull = dropAllOf(constantNull, type, 0);
+        constantNull = dropAllOf(constantNull, type);
         return constantNull;
     }
 

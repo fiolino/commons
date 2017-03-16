@@ -147,10 +147,10 @@ public class MethodsTest {
     @Test
     public void testFindViaConsumer() throws Throwable {
         @SuppressWarnings("unchecked")
-        MethodHandle handle = Methods.findVia(lookup(), List.class, new MethodFinderCallback<List>() {
+        MethodHandle handle = Methods.findUsing(lookup(), List.class, new MethodFinderCallback<List>() {
             @Override
             @SuppressWarnings("unchecked")
-            public void findVia(List l) throws Exception {
+            public void callMethodFrom(List l) throws Exception {
                 l.add(null);
             }
         });
@@ -165,9 +165,9 @@ public class MethodsTest {
     @Test
     public void testBindToConsumer() throws Throwable {
         List<String> testList = new ArrayList<>();
-        MethodHandle handle = Methods.bindVia(lookup(), testList, new MethodFinderCallback<Object>() {
+        MethodHandle handle = Methods.bindUsing(lookup(), testList, new MethodFinderCallback<Object>() {
             @Override
-            public void findVia(Object l) throws Exception {
+            public void callMethodFrom(Object l) throws Exception {
                 ((List<?>) l).add(null);
             }
         });
@@ -197,7 +197,7 @@ public class MethodsTest {
     @Test
     public void testFindViaPrototype() throws Throwable {
         final MethodHandle[] handles = new MethodHandle[2];
-        Methods.findVia(lookup(), new Prototype(), null, (v, m, handleSupplier) -> {
+        Methods.findUsing(lookup(), new Prototype(), null, (v, m, handleSupplier) -> {
             handles[m.getName().equals("createAddHandle") ? 0 : 1] = handleSupplier.get();
             return null;
         });
@@ -382,10 +382,10 @@ public class MethodsTest {
 
     @Test
     public void testSecureArgument() throws Throwable {
-        MethodHandle addToList = Methods.findVia(lookup(), List.class, new MethodFinderCallback<List>() {
+        MethodHandle addToList = Methods.findUsing(lookup(), List.class, new MethodFinderCallback<List>() {
             @Override
             @SuppressWarnings("unchecked")
-            public void findVia(List prototype) throws Throwable {
+            public void callMethodFrom(List prototype) throws Throwable {
                 prototype.add(null);
             }
         });

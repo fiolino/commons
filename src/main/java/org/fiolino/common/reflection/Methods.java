@@ -213,20 +213,25 @@ public class Methods {
      * @param <T>    The interface type
      * @return The found MethodHandle, or null if there is no such
      */
-    public static <T> MethodHandle findVia(Lookup lookup, Class<T> type, MethodFinderCallback<T> finder) {
+    public static <T> MethodHandle findUsing(Lookup lookup, Class<T> type, MethodFinderCallback<T> finder) {
         if (!type.isInterface()) {
             throw new IllegalArgumentException("Can only find in interfaces.");
         }
         Object proxy = createProxy(type);
+        Method found = fromMethodByProxy(finder, type.cast(proxy));
+        return unreflectMethod(lookup, found);
+    }
+
+    private static <T> Method fromMethodByProxy(MethodFinderCallback<T> finder, T proxy) {
         Method found = null;
         try {
-            finder.findVia(type.cast(proxy));
+            finder.callMethodFrom(proxy);
         } catch (MethodFoundException ex) {
             found = ex.getMethod();
         } catch (Throwable ex) {
             throw new IllegalStateException("Prototype " + finder + " threw exception.", ex);
         }
-        return unreflectMethod(lookup, found);
+        return found;
     }
 
     private static MethodHandle unreflectMethod(Lookup lookup, Method method) {
@@ -249,17 +254,11 @@ public class Methods {
      * @param finder Used to identify the method
      * @return The found MethodHandle, or null if there is no such
      */
-    public static MethodHandle bindVia(Lookup lookup, Object target, MethodFinderCallback<Object> finder) {
+    public static <T> MethodHandle bindUsing(Lookup lookup, T target, MethodFinderCallback<T> finder) {
         Class<?>[] interfaces = target.getClass().getInterfaces();
         Object proxy = createProxy(interfaces);
-        Method found = null;
-        try {
-            finder.findVia(proxy);
-        } catch (MethodFoundException ex) {
-            found = ex.getMethod();
-        } catch (Throwable ex) {
-            throw new IllegalStateException("Prototype " + finder + " threw exception.", ex);
-        }
+        @SuppressWarnings("unchecked")
+        Method found = fromMethodByProxy(finder, (T) proxy);
         MethodHandle handle = unreflectMethod(lookup, found);
         return handle == null ? null : handle.bindTo(target);
     }
@@ -277,8 +276,8 @@ public class Methods {
      * @param prototype Contains all methods
      * @param visitor   The callback for each found method
      */
-    public static <V> V findVia(final Lookup lookup, final Object prototype,
-                                V initialValue, final MethodVisitor<V> visitor) {
+    public static <V> V findUsing(final Lookup lookup, final Object prototype,
+                                  V initialValue, final MethodVisitor<V> visitor) {
         return visitMethodsWithStaticContext(lookup, prototype, initialValue, (value, m, handleSupplier) -> {
             if (m.isAnnotationPresent(MethodFinder.class)) {
                 return visitor.visit(value, m, () -> findHandleByProxy(lookup, handleSupplier.get()));
@@ -730,7 +729,7 @@ public class Methods {
     }
 
     @SuppressWarnings("unchecked")
-    private static final MethodHandle exceptionHandlerCaller = findVia(MethodHandles.lookup(), ExceptionHandler.class,
+    private static final MethodHandle exceptionHandlerCaller = findUsing(MethodHandles.lookup(), ExceptionHandler.class,
             (h) -> h.handleNotExisting(null, null, null, null));
 
     public static <E extends Enum<E>> MethodHandle convertEnumToString(Class<E> type) {

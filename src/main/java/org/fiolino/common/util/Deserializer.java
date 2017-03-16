@@ -62,7 +62,7 @@ public final class Deserializer {
         STRING_TO_LIST_HANDLE = MethodHandles.filterArguments(stringToList, 1, stringToStringArray);
 
         @SuppressWarnings("unchecked")
-        MethodHandle handle = Methods.findVia(publicLookup(), List.class, p -> p.add(new Object()));
+        MethodHandle handle = Methods.findUsing(publicLookup(), List.class, p -> p.add(new Object()));
         LIST_ADD_HANDLE = handle;
     }
 

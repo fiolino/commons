@@ -250,7 +250,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
             Class<?> p = commonClassOf(type.parameterArray(), start, count);
             MethodHandle fromContainer = ArrayMappers.fromContainer(p);
             h = h.asSpreader(fromContainer.type().returnType(), count);
-            h = MethodHandles.filterArguments(h, start, fromContainer); // targetHandle now accepts a ObjectParameterContainer as the last argument
+            h = MethodHandles.filterArguments(h, start, fromContainer); // targetHandle now accepts a ParameterContainer as the last argument
         }
         return Methods.lambdafy(h, Function.class, leadingValues);
     }

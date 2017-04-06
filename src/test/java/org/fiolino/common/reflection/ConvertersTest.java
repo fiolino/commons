@@ -303,20 +303,23 @@ public class ConvertersTest {
     @Test
     public void testDirectConverter() throws Throwable {
         // Test unnecessary converter
-        MethodHandle c = Converters.defaultConverters.find(Integer.class, Number.class);
-        assertNull(c);
-        c = Converters.findConverter(Converters.defaultConverters, Integer.class, Number.class);
+        Converter c = Converters.defaultConverters.find(Integer.class, Number.class);
         assertNotNull(c);
-        assertEquals(methodType(Number.class, Integer.class), c.type());
-        Number n = (Number) c.invokeExact((Integer) 12);
+        assertNull(c.getConverter());
+        MethodHandle h = Converters.findConverter(Converters.defaultConverters, Integer.class, Number.class);
+        assertNotNull(h);
+        assertEquals(methodType(Number.class, Integer.class), h.type());
+        Number n = (Number) h.invokeExact((Integer) 12);
         assertEquals(12, n);
 
         // Test non-perfect converter
         c = Converters.defaultConverters.find(TimeUnit.class, String.class);
-        assertEquals(methodType(String.class, Enum.class), c.type());
-        c = Converters.findConverter(Converters.defaultConverters, TimeUnit.class, String.class);
-        assertEquals(methodType(String.class, TimeUnit.class), c.type());
-        String s = (String) c.invokeExact(TimeUnit.SECONDS);
+        assertNotNull(c);
+        assertNotNull(c.getConverter());
+        assertEquals(methodType(String.class, Enum.class), c.getConverter().type());
+        h = Converters.findConverter(Converters.defaultConverters, TimeUnit.class, String.class);
+        assertEquals(methodType(String.class, TimeUnit.class), h.type());
+        String s = (String) h.invokeExact(TimeUnit.SECONDS);
         assertEquals("SECONDS", s);
     }
 
@@ -337,22 +340,24 @@ public class ConvertersTest {
         assertEquals("The number is 42", sb.toString());
     }
 
-    @Test(expected = NoMatchingConverterException.class)
     public void testCantConvert() throws NoMatchingConverterException {
-        Converters.findStrict(Converters.defaultConverters, Date.class, String.class);
+        Converter converter = Converters.defaultConverters.find(Date.class, String.class);
+        assertEquals(ConversionRank.NEEDS_CONVERSION, converter.getRank());
+        assertNull(converter.getConverter());
     }
 
     // Can't convert from any primitive to another wrapper
-    @Test(expected = NoMatchingConverterException.class)
+    @Test
     public void testWrongPrimitive() throws NoMatchingConverterException {
-        Converters.findStrict(Converters.defaultConverters, long.class, Integer.class);
+        Converter converter = Converters.defaultConverters.find(long.class, Integer.class);
+        assertFalse(converter.isConvertable());
     }
 
     // But can convert from any wrapper to some primitive as long as there's an xxxValue() method
     @Test
     public void testConvertablePrimitive() throws Throwable {
-        MethodHandle c = Converters.defaultConverters.find(Integer.class, long.class);
-        long val = (long) c.invokeExact((Integer) 12345);
+        Converter c = Converters.defaultConverters.find(Integer.class, long.class);
+        long val = (long) c.getConverter().invokeExact((Integer) 12345);
         assertEquals(12345L, val);
     }
 

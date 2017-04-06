@@ -195,7 +195,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindViaPrototype() throws Throwable {
+    public void testFindUsingPrototype() throws Throwable {
         final MethodHandle[] handles = new MethodHandle[2];
         Methods.findUsing(lookup(), new Prototype(), null, (v, m, handleSupplier) -> {
             handles[m.getName().equals("createAddHandle") ? 0 : 1] = handleSupplier.get();

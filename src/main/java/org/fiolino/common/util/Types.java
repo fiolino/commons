@@ -81,11 +81,11 @@ public final class Types {
      * Gets a negative distance if subclass and superclass are reversed, and throws a
      * NotAssignableException if the subclass and the superclass are not related at all.
      *
-     * @param subType   The sub type
      * @param superType The super type; either a direct superclass, or an interface
+     * @param subType   The sub type
      * @return The distance in classes; 0 means subtype and supertype are equal
      */
-    public static int getDistance(Class<?> subType, Class<?> superType) {
+    public static int getDistance(Class<?> superType, Class<?> subType) {
         if (!superType.isAssignableFrom(subType)) {
             if (subType.isAssignableFrom(superType)) {
                 return -distanceOf(superType, subType);
@@ -97,14 +97,17 @@ public final class Types {
 
     /**
      * Gets the distance of a subclass to a superclass.
+     *
      * Returns -1 if the given subclass is not a subclass of the given
      * superclass at all.
      *
-     * @param subType   The sub type
+     * Returns 0 if supertype and subtype are the same.
+     *
      * @param superType The super type; either a direct superclass, or an interface
+     * @param subType   The sub type
      * @return The distance in classes; 0 means subtype and supertype are equal
      */
-    public static int distanceOf(Class<?> subType, Class<?> superType) {
+    public static int distanceOf(Class<?> superType, Class<?> subType) {
         if (subType == null) {
             // Then subType was an interface, and its superclasses were analyzed
             return superType.equals(Object.class) ? 1 : -1;

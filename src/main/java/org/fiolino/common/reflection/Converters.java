@@ -12,10 +12,10 @@ import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.Date;
 
-import static org.fiolino.common.reflection.Methods.instanceCheck;
-import static org.fiolino.common.reflection.Methods.rejectIf;
 import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
+import static org.fiolino.common.reflection.Methods.instanceCheck;
+import static org.fiolino.common.reflection.Methods.rejectIf;
 
 /**
  * Static getters for default converters.
@@ -26,39 +26,6 @@ public final class Converters {
 
     private Converters() {
         throw new AssertionError();
-    }
-
-    /**
-     * Compares a possible superclass and a possible subclass in which way they are related.
-     *
-     * @see ConversionRank
-     *
-     * @param generic The types that might be more generic
-     * @param specific The type that might be more specific
-     * @return The resulting rank
-     */
-    public static ConversionRank compare(Class<?> generic, Class<?> specific) {
-        if (generic == void.class || specific == void.class) {
-            return ConversionRank.IMPOSSIBLE;
-        }
-        if (generic.equals(specific)) {
-            return ConversionRank.IDENTICAL;
-        }
-        if (generic.isPrimitive()) {
-            if (specific.isPrimitive()) {
-                return ConversionRank.EXPLICITLY_CASTABLE;
-            }
-            if (Types.asPrimitive(specific) == generic) {
-                return ConversionRank.WRAPPABLE;
-            }
-        } else if (specific.isPrimitive() && Types.asPrimitive(generic) == specific) {
-            return ConversionRank.WRAPPABLE;
-        }
-
-        if (Types.isAssignableFrom(generic, specific)) {
-            return ConversionRank.IN_HIERARCHY;
-        }
-        return ConversionRank.IMPOSSIBLE;
     }
 
     /**
@@ -166,7 +133,7 @@ public final class Converters {
         Methods.checkArgumentLength(type, argumentNumber);
         Class<?> argType = type.parameterType(argumentNumber);
         MethodHandle objectAccepting = target.asType(type.changeParameterType(argumentNumber, Object.class));
-        MethodHandle converter = defaultConverters.find(String.class, argType);
+        MethodHandle converter = defaultConverters.find(String.class, argType).getConverter();
         if (converter == null) {
             return objectAccepting;
         }
@@ -185,6 +152,7 @@ public final class Converters {
      * Here are the default converters, meaning converters from primitives to Strings and such.
      */
     public static final ExtendableConverterLocator defaultConverters;
+
     private static final MethodHandle trim, getFirstChar, charToBool, stringToBool;
 
     static {
@@ -192,18 +160,18 @@ public final class Converters {
         try {
             trim = lookup.findVirtual(String.class, "trim", methodType(String.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("String.trim()", ex);
+            throw new InternalError("String.trim()", ex);
         }
         MethodHandle stringEmptyCheck, charAt;
         try {
             stringEmptyCheck = lookup.findVirtual(String.class, "isEmpty", methodType(boolean.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("String.isEmpty()", ex);
+            throw new InternalError("String.isEmpty()", ex);
         }
         try {
             charAt = lookup.findVirtual(String.class, "charAt", methodType(char.class, int.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("String.charAt(int)", ex);
+            throw new InternalError("String.charAt(int)", ex);
         }
         getFirstChar = rejectIf(MethodHandles.insertArguments(charAt, 1, 0), stringEmptyCheck);
         CharSet trueChars = CharSet.of("tTyYwWX1");
@@ -211,12 +179,12 @@ public final class Converters {
             charToBool = lookup.findVirtual(CharSet.class, "contains", methodType(boolean.class, char.class))
                     .bindTo(trueChars);
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError(ex);
+            throw new InternalError("CharSet.contains()", ex);
         }
         stringToBool = MethodHandles.filterArguments(charToBool, 0, getFirstChar);
 
         ExtendableConverterLocator loc = ExtendableConverterLocator.EMPTY.register(lookup, new Object() {
-            @Converter
+            @ConvertValue
             @SuppressWarnings("unused")
             private MethodHandle convertBasicTypes(Class<?> source, Class<?> target) {
                 if (target == Object.class) {
@@ -249,13 +217,13 @@ public final class Converters {
 
         // Convert from boolean
         loc = loc.register(lookup, new Object() {
-            @Converter
+            @ConvertValue
             @SuppressWarnings("unused")
             private char booleanToChar(boolean value) {
                 return value ? 't' : 'f';
             }
 
-            @Converter
+            @ConvertValue
             @SuppressWarnings("unused")
             private String booleanToString(boolean value) {
                 return value ? "t" : "f";
@@ -264,29 +232,8 @@ public final class Converters {
         loc = loc.register(getFirstChar); // String to char
         loc = loc.register(charToBool); // char to boolean
         loc = loc.register(stringToBool);
+
         defaultConverters = loc;
-    }
-
-    /**
-     * Finds a converter from the source to the target.
-     * If this is not convertible, an exception will be thrown.
-     *
-     * @param loc    The locator
-     * @param source from here..
-     * @param target ... to here
-     * @return The converting handle, or null of the types match anyway
-     */
-    public static MethodHandle findStrict(ConverterLocator loc, Class<?> source, Class<?> target) {
-        MethodHandle converter = loc.find(source, target);
-        if (converter != null) {
-            return converter;
-        }
-        ConversionRank rank = compare(target, source);
-        if (rank == ConversionRank.IMPOSSIBLE) {
-            throw new NoMatchingConverterException("No converter from " + source.getName() + " to " + target.getName());
-        }
-
-        return null;
     }
 
     /**
@@ -306,7 +253,7 @@ public final class Converters {
         if (wrapped.equals(value.getClass())) {
             return wrapped.cast(value);
         }
-        MethodHandle converter = findStrict(loc, value.getClass(), type);
+        MethodHandle converter = loc.find(value.getClass(), type).getConverter();
         if (converter == null) {
             return wrapped.cast(value);
         }
@@ -332,7 +279,7 @@ public final class Converters {
      * @return (&lt;source&gt;)&lt;target&gt;
      */
     public static MethodHandle findConverter(ConverterLocator loc, Class<?> source, Class<?> target) {
-        MethodHandle c = findStrict(loc, source, target);
+        MethodHandle c = loc.find(source, target).getConverter();
         if (c == null) {
             c = MethodHandles.identity(target);
         }
@@ -352,18 +299,21 @@ public final class Converters {
                                                    Class<?> returnType) {
         MethodType type = target.type();
         Class<?> r = type.returnType();
-        if (r.equals(returnType)) {
-            return target;
+        if (returnType.isAssignableFrom(r)) {
+            return target.asType(type.changeReturnType(returnType));
         }
         if (returnType == void.class) {
             return target.asType(type.changeReturnType(void.class));
         }
-        MethodHandle converter = findStrict(loc, r, returnType);
-        if (converter == null) {
+        Converter converter = loc.find(r, returnType);
+        if (!converter.isConvertable()) {
+            throw new NoMatchingConverterException(r.getName() + " to " + returnType.getName());
+        }
+        if (converter.getConverter() == null) {
             return MethodHandles.explicitCastArguments(target, type.changeReturnType(returnType));
         }
-        converter = MethodHandles.explicitCastArguments(converter, methodType(returnType, r));
-        return MethodHandles.filterReturnValue(target, converter);
+        MethodHandle h = MethodHandles.explicitCastArguments(converter.getConverter(), methodType(returnType, r));
+        return MethodHandles.filterReturnValue(target, h);
     }
 
     /**
@@ -394,18 +344,21 @@ public final class Converters {
         for (int i = 0; i < n; i++) {
             Class<?> arg = type.parameterType(argumentNumber + i);
             Class<?> newType = inputTypes[i];
-            MethodHandle converter = findStrict(loc, newType, arg);
-            if (converter == null) {
-                if (casted == null) {
-                    casted = type;
+            Converter converter = loc.find(newType, arg);
+            if (!converter.isConvertable()) {
+                throw new NoMatchingConverterException("Cannot convert from " + arg.getName() + " to " + newType.getName());
+            }
+            switch (converter.getRank()) {
+                case IDENTICAL:
+                    break;
+                case NEEDS_CONVERSION:
+                    MethodHandle convertingHandle = MethodHandles.explicitCastArguments(converter.getConverter(), methodType(arg, newType));
+                    filters[i] = convertingHandle;
+                    break;
+                default:
+                    if (casted == null) casted = type;
+                    casted = casted.changeParameterType(argumentNumber + i, newType);
                 }
-                casted = casted.changeParameterType(argumentNumber + i, newType);
-            }
-
-            if (converter != null) {
-                converter = MethodHandles.explicitCastArguments(converter, methodType(arg, newType));
-            }
-            filters[i] = converter;
         }
         MethodHandle castedTarget = casted == null ? target : MethodHandles.explicitCastArguments(target, casted);
         return MethodHandles.filterArguments(castedTarget, argumentNumber, filters);
@@ -450,7 +403,7 @@ public final class Converters {
             for (int i = 0; i < argSize; i++) {
                 Class<?> sourceType = type.parameterType(i);
                 Class<?> targetType = t.parameterType(i);
-                MethodHandle c = findStrict(loc, sourceType, targetType);
+                MethodHandle c = loc.find(sourceType, targetType).getConverter();
                 if (c != null) {
                     c = MethodHandles.explicitCastArguments(c, methodType(targetType, sourceType));
                 }

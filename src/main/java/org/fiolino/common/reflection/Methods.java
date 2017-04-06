@@ -276,8 +276,8 @@ public class Methods {
      * @param prototype Contains all methods
      * @param visitor   The callback for each found method
      */
-    public static <V> V findUsing(final Lookup lookup, final Object prototype,
-                                  V initialValue, final MethodVisitor<V> visitor) {
+    public static <V> V findUsing(Lookup lookup, Object prototype,
+                                  V initialValue, MethodVisitor<V> visitor) {
         return visitMethodsWithStaticContext(lookup, prototype, initialValue, (value, m, handleSupplier) -> {
             if (m.isAnnotationPresent(MethodFinder.class)) {
                 return visitor.visit(value, m, () -> findHandleByProxy(lookup, handleSupplier.get()));
@@ -1004,6 +1004,9 @@ public class Methods {
         return rejectIf(target, checkNull);
     }
 
+    /**
+     * A handle that accepts nothing, returns nothing, and does nothing.
+     */
     public static final MethodHandle DO_NOTHING = MethodHandles.constant(Void.class, null).asType(methodType(void.class));
 
     /**

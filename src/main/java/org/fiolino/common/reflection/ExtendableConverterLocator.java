@@ -5,9 +5,16 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 
 /**
+ * A {@link ConverterLocator} where you can register individual converters for certain types.
+ *
  * Created by Kuli on 6/20/2016.
  */
 public abstract class ExtendableConverterLocator implements ConverterLocator {
+    /**
+     * A {@link ConverterLocator} that can be stacked with other ConverterLocators.
+     *
+     * Created by Kuli on 6/20/2016.
+     */
     private static abstract class StackedConverterLocator extends ExtendableConverterLocator {
         private final ExtendableConverterLocator fallback;
 
@@ -16,42 +23,15 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
         }
 
         @Override
-        MethodHandle find(Class<?> source, Class<?> target, ConversionRank maxRank) {
-            MethodHandle handle = getConverter(source, target);
-            if (handle == null) {
-                return fallback.find(source, target, maxRank);
-            }
-            ConversionRank rank = getRankOf(handle.type(), source, target);
+        public Converter find(Class<?> source, Class<?>[] targets) {
+            Converter thisConverter = super.find(source, targets);
+            ConversionRank rank = thisConverter.getRank();
             if (rank == ConversionRank.IDENTICAL) {
                 // Perfect
-                return handle;
+                return thisConverter;
             }
-            if (rank.compareTo(maxRank) < 0) {
-                // Too bad
-                return fallback.find(source, target, maxRank);
-            }
-            MethodHandle option = fallback.find(source, target, rank);
-            if (option != null) {
-                // We found another converter
-                ConversionRank optionRank = getRankOf(option.type(), source, target);
-                if (rank == optionRank) {
-                    // Multiple best matching
-                    if (rank != ConversionRank.WRAPPABLE) {
-                        // Otherwise it's okay
-                        throw new NoMatchingConverterException("Multiple non-perfect converters from " + source.getName()
-                                + " to " + target.getName() + " found, e.g. " + handle + " and " + option);
-                    }
-                } else if (rank.compareTo(optionRank) < 0) {
-                    // This one is better
-                    return option;
-                }
-            }
-            // Mine is better
-            if (Converters.compare(target, source) != ConversionRank.IMPOSSIBLE) {
-                // Better direct than with a non-perfect converter
-                return null;
-            }
-            return handle;
+            Converter option = fallback.find(source, targets);
+            return thisConverter.better(option, source);
         }
 
         @Override
@@ -62,8 +42,6 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
         }
 
         abstract void print(StringBuilder sb);
-
-        abstract MethodHandle getConverter(Class<?> source, Class<?> target);
     }
 
     @Override
@@ -75,19 +53,34 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
 
     abstract void printAll(StringBuilder sb);
 
-    abstract MethodHandle find(Class<?> source, Class<?> target, ConversionRank maxRank);
-
     @Override
-    public final MethodHandle find(Class<?> source, Class<?> target) {
-        return find(source, target, ConversionRank.IN_HIERARCHY);
+    public Converter find(Class<?> source, Class<?>... targets) {
+        if (targets.length == 0) {
+            throw new IllegalArgumentException("Expected at least one target");
+        }
+        Class<?> bestType = targets[0];
+        ConversionRank bestRank = ConversionRank.getFor(bestType, source);
+        for (int i=1; i < targets.length; i++) {
+            Class<?> t = targets[i];
+            ConversionRank r = ConversionRank.getFor(t, source);
+            if (r.isBetterThan(bestRank)) {
+                bestRank = r;
+                bestType = t;
+            }
+        }
+        MethodHandle handle = getConverter(source, bestType);
+
+        return new Converter(handle, bestRank, bestType);
     }
+
+    abstract MethodHandle getConverter(Class<?> source, Class<?> target);
 
     /**
      * A ConverterLocator that does not contain any converters at all.
      */
     public static final ExtendableConverterLocator EMPTY = new ExtendableConverterLocator() {
         @Override
-        MethodHandle find(Class<?> source, Class<?> target, ConversionRank maxRank) {
+        MethodHandle getConverter(Class<?> source, Class<?> target) {
             return null;
         }
 
@@ -96,30 +89,6 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
             sb.append("no more.");
         }
     };
-
-    /**
-     * Gets the conversion rank of a type regarding the expected parameters.
-     * Only the source may be iN_HIERARCHY.
-     *
-     * @param type   The type to check
-     * @param source From here
-     * @param target to there
-     * @return The common (worst) rank
-     */
-    private static ConversionRank getRankOf(MethodType type, Class<?> source, Class<?> target) {
-        ConversionRank sourceRank = Converters.compare(type.parameterType(0), source);
-        ConversionRank targetRank = Converters.compare(target, type.returnType());
-        if (sourceRank == targetRank) {
-            return sourceRank;
-        }
-        if (sourceRank == ConversionRank.IDENTICAL) {
-            return targetRank;
-        }
-        if (targetRank == ConversionRank.IDENTICAL) {
-            return sourceRank;
-        }
-        return ConversionRank.IMPOSSIBLE;
-    }
 
     private static class DirectMethodHandleContainer extends StackedConverterLocator {
         private final MethodHandle handle;
@@ -136,11 +105,14 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
         }
 
         @Override
-        protected java.lang.invoke.MethodHandle getConverter(Class<?> source, Class<?> target) {
-            if (getRankOf(handle.type(), source, target) == ConversionRank.IMPOSSIBLE) {
+        protected MethodHandle getConverter(Class<?> source, Class<?> target) {
+            MethodType t = handle.type();
+            if (!t.returnType().equals(target)) {
                 return null;
             }
-            return handle;
+            if (t.parameterType(0).isAssignableFrom(source))
+                return handle;
+            return null;
         }
     }
 
@@ -237,7 +209,7 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
         return Methods.visitMethodsWithStaticContext(lookup, converterMethods, this,
                 (loc, m, handleSupplier) -> {
 
-                    if (!m.isAnnotationPresent(Converter.class)) {
+                    if (!m.isAnnotationPresent(ConvertValue.class)) {
                         return loc;
                     }
                     Class<?>[] parameterTypes = m.getParameterTypes();

@@ -90,23 +90,23 @@ public class MethodsTest {
     @Test
     public void testFindSetterWithIntAndString() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findSetter(lookup(), field, int.class, String.class);
+        MethodHandle handle = Methods.findSetter(lookup(), field, int.class, String.class); // String is ignored
         assertNotNull(handle);
 
         Bean bean = new Bean();
-        handle.invokeExact(bean, 13, 2, "unused");
+        handle.invokeExact(bean, 13, 2);
         assertEquals(26, bean.value);
     }
 
     @Test
     public void testFindGetterWithIntAndDate() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findGetter(lookup(), field, int.class, Date.class);
+        MethodHandle handle = Methods.findGetter(lookup(), field, int.class, Date.class); // Date is ignored
         assertNotNull(handle);
 
         Bean bean = new Bean();
         bean.value = 55;
-        int result = (int) handle.invokeExact(bean, 15, new Date());
+        int result = (int) handle.invokeExact(bean, 15);
         assertEquals(70, result);
     }
 

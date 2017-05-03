@@ -50,7 +50,7 @@ public interface ValueDescription extends ConfigurationContainer {
      *
      * @param additionalTypes The returned handle will accept these types on top. Either the underlying method really
      *                        specifies them, or they're ignored.
-     * @return handle accepts the owner plus the additional types, and returns the result of getValueType().
+     * @return handle accepts the owner plus some of the the additional types, and returns the result of getValueType().
      */
     @Nullable
     MethodHandle createGetter(Class<?>... additionalTypes);
@@ -62,7 +62,7 @@ public interface ValueDescription extends ConfigurationContainer {
      *
      * @param additionalTypes The returned handle will accept these types on top. Either the underlying method really
      *                        specifies them, or they're ignored.
-     * @return void handle accepts the owner, the new value of type getValueType(), plus the additional types.
+     * @return void handle accepts the owner, the new value of type getValueType(), plus some of the the additional types.
      */
     @Nullable
     MethodHandle createSetter(Class<?>... additionalTypes);

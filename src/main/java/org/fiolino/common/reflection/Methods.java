@@ -111,11 +111,6 @@ public class Methods {
         } while (handle == null && missing++ < n);
 
         if (handle != null) {
-            if (missing > 0) {
-                Class<?>[] ignore = new Class<?>[missing];
-                System.arraycopy(additionalTypes, n - missing, ignore, 0, missing);
-                return MethodHandles.dropArguments(handle, 1 + n-missing, ignore);
-            }
             return handle;
         }
 

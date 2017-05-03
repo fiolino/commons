@@ -42,6 +42,14 @@ public class MethodsTest {
         public void setValue(int value) {
             this.value = value * 10;
         }
+
+        public int getValue(int plus) {
+            return value + plus;
+        }
+
+        public void setValue(int value, int multi) {
+            this.value = value * multi;
+        }
     }
 
     @Test
@@ -65,6 +73,52 @@ public class MethodsTest {
         Bean bean = new Bean();
         handle.invokeExact(bean, 588);
         assertEquals(5880, bean.value);
+    }
+
+    @Test
+    public void testFindGetterWithInt() throws Throwable {
+        Field field = Bean.class.getDeclaredField("value");
+        MethodHandle handle = Methods.findGetter(lookup(), field, int.class);
+        assertNotNull(handle);
+
+        Bean bean = new Bean();
+        bean.value = 1230;
+        int result = (int) handle.invokeExact(bean, 70);
+        assertEquals(1300, result);
+    }
+
+    @Test
+    public void testFindSetterWithIntAndString() throws Throwable {
+        Field field = Bean.class.getDeclaredField("value");
+        MethodHandle handle = Methods.findSetter(lookup(), field, int.class, String.class);
+        assertNotNull(handle);
+
+        Bean bean = new Bean();
+        handle.invokeExact(bean, 13, 2, "unused");
+        assertEquals(26, bean.value);
+    }
+
+    @Test
+    public void testFindGetterWithIntAndDate() throws Throwable {
+        Field field = Bean.class.getDeclaredField("value");
+        MethodHandle handle = Methods.findGetter(lookup(), field, int.class, Date.class);
+        assertNotNull(handle);
+
+        Bean bean = new Bean();
+        bean.value = 55;
+        int result = (int) handle.invokeExact(bean, 15, new Date());
+        assertEquals(70, result);
+    }
+
+    @Test
+    public void testFindSetterWithInt() throws Throwable {
+        Field field = Bean.class.getDeclaredField("value");
+        MethodHandle handle = Methods.findSetter(lookup(), field, int.class);
+        assertNotNull(handle);
+
+        Bean bean = new Bean();
+        handle.invokeExact(bean, 588, -1);
+        assertEquals(-588, bean.value);
     }
 
     private static class BeanWithoutMethods {

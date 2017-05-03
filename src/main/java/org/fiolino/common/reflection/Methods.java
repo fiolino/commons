@@ -42,16 +42,17 @@ public class Methods {
      *
      * @param lookup The lookup
      * @param field  The field
+     * @param additionalTypes The handle will accept these on top
      * @return The found {@link MethodHandle} of type (&lt;owner&gt;)&lt;type&gt;, or null otherwise
      */
     @Nullable
-    public static MethodHandle findGetter(Lookup lookup, Field field) {
+    public static MethodHandle findGetter(Lookup lookup, Field field, Class<?>... additionalTypes) {
         if (Modifier.isStatic(field.getModifiers())) {
             return null;
         }
         Class<?> type = field.getType();
         Class<?> owner = field.getDeclaringClass();
-        return findGetter(lookup, owner, field.getName(), type);
+        return findGetter(lookup, owner, field.getName(), type, additionalTypes);
     }
 
     /**
@@ -68,24 +69,28 @@ public class Methods {
      * @param owner     Where to look for getters
      * @param fieldName The plain field name
      * @param type      The getter's expected return type
+     * @param additionalTypes The handle will accept these on top
      * @return The found {@link MethodHandle} of type (&lt;owner&gt;)&lt;type&gt;, or null otherwise
      */
     @Nullable
-    public static MethodHandle findGetter(Lookup lookup, Class<?> owner, String fieldName, Class<?> type) {
+    public static MethodHandle findGetter(Lookup lookup, Class<?> owner, String fieldName, Class<?> type, Class<?>... additionalTypes) {
         String name = Strings.addLeading(fieldName, "get");
-        MethodHandle handle = findGetter0(lookup, owner, name, type);
-        if (handle == null && (type == boolean.class || type == Boolean.class)) {
-            name = fieldName;
-            if (!name.startsWith("is") || name.length() > 2 && Character.isLowerCase(name.charAt(2))) {
-                name = Strings.addLeading(name, "is");
+        return attachTo(onTop -> {
+            String n = name;
+            MethodHandle h = findGetter0(lookup, owner, n, type, onTop);
+            if (h == null && (type == boolean.class || type == Boolean.class)) {
+                n = fieldName;
+                if (!n.startsWith("is") || n.length() > 2 && Character.isLowerCase(n.charAt(2))) {
+                    n = Strings.addLeading(fieldName, "is");
+                }
+                h = findGetter0(lookup, owner, n, type, onTop);
             }
-            handle = findGetter0(lookup, owner, name, type);
-        }
-        if (handle == null) {
-            // Look for a method with the exact same name
-            handle = findGetter0(lookup, owner, fieldName, type);
-        }
-        if (handle == null) {
+            if (h == null) {
+                // Look for a method with the exact same name
+                h = findGetter0(lookup, owner, fieldName, type, onTop);
+            }
+            return h;
+        }, additionalTypes, () -> {
             // Look for the direct field getter
             try {
                 return lookup.findGetter(owner, fieldName, type);
@@ -93,8 +98,28 @@ public class Methods {
                 // Then the field's just not accessible, or there is no such field
                 return null;
             }
+        });
+    }
+
+    private static MethodHandle attachTo(Function<Class<?>[], MethodHandle> handleFactory, Class<?>[] additionalTypes, Supplier<MethodHandle> alternative) {
+        int missing = 0;
+        MethodHandle handle;
+        int n = additionalTypes.length;
+        do {
+            Class<?>[] onTop = Arrays.copyOf(additionalTypes, n-missing);
+            handle = handleFactory.apply(onTop);
+        } while (handle == null && missing++ < n);
+
+        if (handle != null) {
+            if (missing > 0) {
+                Class<?>[] ignore = new Class<?>[missing];
+                System.arraycopy(additionalTypes, n - missing, ignore, 0, missing);
+                return MethodHandles.dropArguments(handle, 1 + n-missing, ignore);
+            }
+            return handle;
         }
-        return handle;
+
+        return alternative.get();
     }
 
     /**
@@ -111,16 +136,20 @@ public class Methods {
      *
      * @param lookup The lookup
      * @param field  The field to look for
+     * @param additionalTypes The handle will accept these on top
      * @return The found {@link MethodHandle} of type (&lt;owner&gt;,&lt;type&gt;)void, or null otherwise
      */
     @Nullable
-    public static MethodHandle findSetter(Lookup lookup, Field field) {
+    public static MethodHandle findSetter(Lookup lookup, Field field, Class<?>... additionalTypes) {
         if (Modifier.isStatic(field.getModifiers())) {
             return null;
         }
-        Class<?> type = field.getType();
+        int n = additionalTypes.length;
+        Class<?>[] types = new Class<?>[n + 1];
+        types[0] = field.getType();
+        System.arraycopy(additionalTypes, 0, types, 1, n);
         Class<?> owner = field.getDeclaringClass();
-        return findSetter(lookup, owner, field.getName(), type);
+        return findSetter(lookup, owner, field.getName(), types);
     }
 
     /**
@@ -144,40 +173,39 @@ public class Methods {
     @Nullable
     public static MethodHandle findSetter(Lookup lookup, Class<?> owner, String fieldName, Class<?>... types) {
         String name = Strings.addLeading(fieldName, "set");
-        MethodHandle handle = findSetter0(lookup, owner, name, types);
-        if (handle != null) {
-            // Method is setFieldname
-            return handle;
-        }
-        if (types.length >= 1 && (types[0] == boolean.class || types[0] == Boolean.class)) {
-            name = Strings.removeLeading(fieldName, "is");
-            if (!name.equals(fieldName)) {
-                name = Strings.addLeading(name, "set");
-                handle = findSetter0(lookup, owner, name, types);
-                if (handle != null) {
-                    // Method is isFieldname
-                    return handle;
+        return attachTo(params -> {
+            String n = name;
+            MethodHandle h = findSetter0(lookup, owner, n, params);
+            if (h != null) {
+                // Method is setFieldname
+                return h;
+            }
+            if (types.length >= 1 && (types[0] == boolean.class || types[0] == Boolean.class)) {
+                // Check whether the name starts with "is", but the setter just starts with "set"
+                n = Strings.removeLeading(fieldName, "is");
+                if (!n.equals(fieldName)) {
+                    n = Strings.addLeading(n, "set");
+                    h = findSetter0(lookup, owner, n, params);
+                    if (h != null) {
+                        // Method is isFieldname
+                        return h;
+                    }
                 }
             }
-        }
-        // Look for a method with the exact same name
-        handle = findSetter0(lookup, owner, fieldName, types);
-        if (handle != null) {
-            // Method is fieldname
-            return handle;
-        }
-
-        // Try to find the direct field setter
-        if (types.length == 1) {
-            try {
-                return lookup.findSetter(owner, fieldName, types[0]);
-            } catch (NoSuchFieldException | IllegalAccessException ex) {
-                // Then the field's just not accessible, or there is no such field
-                return null;
+            // Look for a method with the exact same name
+            return findSetter0(lookup, owner, fieldName, params);
+        }, types, () -> {
+            // Try to find the direct field setter
+            if (types.length == 1) {
+                try {
+                    return lookup.findSetter(owner, fieldName, types[0]);
+                } catch (NoSuchFieldException | IllegalAccessException ex) {
+                    // Then the field's just not accessible, or there is no such field
+                    return null;
+                }
             }
-        }
-        // No handle found
-        return null;
+            return null;
+        });
     }
 
     @Nullable
@@ -193,9 +221,9 @@ public class Methods {
     }
 
     @Nullable
-    private static MethodHandle findGetter0(Lookup lookup, Class<?> owner, String name, Class<?> type) {
+    private static MethodHandle findGetter0(Lookup lookup, Class<?> owner, String name, Class<?> type, Class<?>[] additionalTypes) {
         try {
-            return lookup.findVirtual(owner, name, methodType(type));
+            return lookup.findVirtual(owner, name, methodType(type, additionalTypes));
         } catch (NoSuchMethodException ex) {
             // Then try next
             return null;

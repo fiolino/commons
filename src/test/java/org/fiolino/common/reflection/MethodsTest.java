@@ -310,6 +310,28 @@ public class MethodsTest {
         fail("Should not be here!");
     }
 
+    @Test
+    public void testEnumToStringNoSpecial() throws Throwable {
+        MethodHandle handle = Methods.convertEnumToString(TimeUnit.class, (f, u) -> null);
+        for (TimeUnit u : TimeUnit.values()) {
+            String name = (String) handle.invokeExact(u);
+            assertEquals(u.name(), name);
+        }
+    }
+
+    @Test
+    public void testEnumToStringWithSpecial() throws Throwable {
+        MethodHandle handle = Methods.convertEnumToString(TimeUnit.class, (f, u) -> u == TimeUnit.DAYS || u == TimeUnit.HOURS ? "Boing!" : null);
+        for (TimeUnit u : TimeUnit.values()) {
+            String name = (String) handle.invokeExact(u);
+            if (u == TimeUnit.DAYS || u == TimeUnit.HOURS) {
+                assertEquals("Boing!", name);
+            } else {
+                assertEquals(u.name(), name);
+            }
+        }
+    }
+
     @SuppressWarnings("unused")
     private static boolean checkEquals(String first, String second, AtomicInteger counter) {
         counter.incrementAndGet();
@@ -459,6 +481,26 @@ public class MethodsTest {
     }
 
     @Test
+    public void testReturnEmpty() throws Throwable {
+        Date date = new Date();
+        MethodHandle getTime = publicLookup().findVirtual(Date.class, "getTime", methodType(long.class));
+        MethodHandle returnEmpty = Methods.returnEmptyValue(getTime, long.class);
+        long time = (long) returnEmpty.invokeExact(date);
+        assertEquals(0L, time);
+
+        returnEmpty = Methods.returnEmptyValue(getTime, String.class);
+        String emptyString = (String) returnEmpty.invokeExact(date);
+        assertNull(emptyString);
+
+        returnEmpty = Methods.returnEmptyValue(getTime, boolean.class);
+        boolean falseValue = (boolean) returnEmpty.invokeExact(date);
+        assertFalse(falseValue);
+
+        returnEmpty = Methods.returnEmptyValue(getTime, void.class);
+        returnEmpty.invokeExact(date);
+    }
+
+    @Test
     public void testReturnArgument() throws Throwable {
         Date date = new Date();
         MethodHandle setTime = publicLookup().findVirtual(Date.class, "setTime", methodType(void.class, long.class));
@@ -499,11 +541,6 @@ public class MethodsTest {
         assertTrue("String is not null", isInstance);
         isInstance = (boolean) instanceCheck.invokeExact((Object) null);
         assertFalse("null check", isInstance);
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testInstanceCheckWithPrimitive() {
-        Methods.instanceCheck(int.class);
     }
 
     @Test

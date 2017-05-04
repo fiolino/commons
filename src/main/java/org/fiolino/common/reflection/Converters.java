@@ -186,7 +186,7 @@ public final class Converters {
         ExtendableConverterLocator loc = ExtendableConverterLocator.EMPTY.register(lookup, new Object() {
             @ConvertValue
             @SuppressWarnings("unused")
-            private MethodHandle convertBasicTypes(Class<?> source, Class<?> target) {
+            MethodHandle convertBasicTypes(Class<?> source, Class<?> target) {
                 if (target == Object.class) {
                     return null;
                 }
@@ -204,7 +204,7 @@ public final class Converters {
             MethodHandle getTime = lookup.findVirtual(Date.class, "getTime", methodType(long.class));
             loc = loc.register(getTime);
 
-            // Convert java.sql tytpes to Date
+            // Convert java.sql types to Date
             loc = loc.register(MethodHandles.filterArguments(dateConstructor, 0, getTime.asType(
                     methodType(long.class, Timestamp.class))));
             loc = loc.register(MethodHandles.filterArguments(dateConstructor, 0, getTime.asType(
@@ -233,6 +233,9 @@ public final class Converters {
         loc = loc.register(charToBool); // char to boolean
         loc = loc.register(stringToBool);
 
+        MethodHandle returnT = MethodHandles.dropArguments(MethodHandles.constant(char.class, 't'), 0, boolean.class);
+        MethodHandle returnF = MethodHandles.dropArguments(MethodHandles.constant(char.class, 'f'), 0, boolean.class);
+        loc = loc.register(MethodHandles.guardWithTest(MethodHandles.identity(boolean.class), returnT, returnF));
         defaultConverters = loc;
     }
 

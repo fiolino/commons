@@ -202,7 +202,7 @@ public final class Instantiator {
         MethodHandle existing = findProviderOrGeneric(type);
         existing = MethodHandles.dropArguments(existing, 0, r); // First argument would be null anyway
         MethodHandle identity = MethodHandles.identity(r);
-        identity = Methods.dropAllOf(identity, existing.type());
+        identity = Methods.dropAllOf(identity, existing.type().parameterArray());
 
         MethodHandle nullCheck = Methods.nullCheck().asType(methodType(boolean.class, r));
         MethodHandle checkedExisting = MethodHandles.guardWithTest(nullCheck, existing, identity);

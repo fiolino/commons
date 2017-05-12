@@ -265,9 +265,9 @@ public class ModelDescription extends AbstractConfigurationContainer {
             if (numberOfIgnored == 0) {
                 return h;
             }
-            Class<?>[] ignored = new Class<?>[numberOfIgnored];
-            System.arraycopy(additionalTypes, numberOfMatching, ignored, 0, numberOfIgnored);
-            return MethodHandles.dropArguments(h, numberOfMatching + leading + 1, ignored);
+            Class<?>[] ignoredArgument = new Class<?>[numberOfIgnored];
+            System.arraycopy(additionalTypes, numberOfMatching, ignoredArgument, 0, numberOfIgnored);
+            return MethodHandles.dropArguments(h, numberOfMatching + leading + 1, ignoredArgument);
         }
     }
 

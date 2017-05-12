@@ -10,6 +10,8 @@ import org.fiolino.common.analyzing.ModelInconsistencyException;
 import javax.annotation.Nullable;
 
 /**
+ * Description of a model field; this will either be referenced from an annotated {@link java.lang.reflect.Field} or {@link java.lang.reflect.Method}.
+ *
  * Created by kuli on 11.02.15.
  */
 public interface FieldDescription extends ConfigurationContainer {
@@ -56,6 +58,14 @@ public interface FieldDescription extends ConfigurationContainer {
      * If there is no getter method, null is returned.
      * If a method is annotated, then this is returned if it is a getter, or null otherwise.
      *
+     * If the reference is a Method, then the unreflected MethodHandle is returned if this method does not return
+     * void, and the arguments are of the exact types as the given ones or less. Otherwise, null is returned.
+     *
+     * If the reference is a Field, then it looks for a method with the exact same type as return type, and the
+     * given argument types or less. The name must either have "get" (or optionally "is" if it's a boolean type)
+     * as a prefix, or match the field's name exactly. If no such method exists, this method tries to access the field
+     * directly, ignoring all additional argument types. If neither does work, null is returned.
+     *
      * @param additionalTypes The returned handle will accept these types on top. Either the underlying method really
      *                        specifies them, or they're ignored.
      * @return handle accepts the owner plus some of the the additional types, and returns the result of getValueType().
@@ -67,6 +77,14 @@ public interface FieldDescription extends ConfigurationContainer {
      * Create a setter handle.
      * If there is no setter method, null is returned.
      * If a method is annotated, then this is returned if it is a setter, or null otherwise.
+     *
+     * If the reference is a Method, then the unreflected MethodHandle is returned if this method does return
+     * void, and the arguments start with the exact same type as the field, followed by the given ones or less.
+     * Otherwise, null is returned.
+     *
+     * If the reference is a Field, then it looks for a method as described before. The name must either have "set"
+     * as a prefix, or match the field's name exactly. If no such method exists, this method tries to access the field
+     * directly, ignoring all additional argument types. If neither does work, null is returned.
      *
      * @param additionalTypes The returned handle will accept these types on top. Either the underlying method really
      *                        specifies them, or they're ignored.

@@ -18,7 +18,7 @@ import java.util.function.Supplier;
 import org.fiolino.common.container.Container;
 import org.fiolino.common.processing.Analyzer;
 import org.fiolino.common.processing.ModelDescription;
-import org.fiolino.common.processing.ValueDescription;
+import org.fiolino.common.processing.FieldDescription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -78,12 +78,12 @@ public class AnnotationInterestParser {
         }
 
         protected Object execute(Object analyzeable, Analyzer analyzer,
-                                 Supplier<ValueDescription> valueDescriptionSupplier,
+                                 Supplier<FieldDescription> valueDescriptionSupplier,
                                  Field f, Method m)
                 throws ModelInconsistencyException {
-            ValueDescription valueDescription = valueDescriptionSupplier.get();
+            FieldDescription fieldDescription = valueDescriptionSupplier.get();
             try {
-                return action.invokeExact(analyzeable, analyzer, valueDescription, valueDescription.getConfiguration(), f, m);
+                return action.invokeExact(analyzeable, analyzer, fieldDescription, fieldDescription.getConfiguration(), f, m);
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
@@ -103,16 +103,16 @@ public class AnnotationInterestParser {
 
         @Override
         protected Object execute(Object analyzeable, Analyzer analyzer,
-                                 Supplier<ValueDescription> valueDescriptionSupplier,
+                                 Supplier<FieldDescription> valueDescriptionSupplier,
                                  Field f, Method m) {
             AccessibleObject accessible = f == null ? m : f;
             Annotation anno = accessible.getAnnotation(annotationType);
             if (anno == null) {
                 return null;
             }
-            ValueDescription valueDescription = valueDescriptionSupplier.get();
+            FieldDescription fieldDescription = valueDescriptionSupplier.get();
             try {
-                return action.invokeExact(analyzeable, analyzer, valueDescription, valueDescription.getConfiguration(),
+                return action.invokeExact(analyzeable, analyzer, fieldDescription, fieldDescription.getConfiguration(),
                         f, m, anno);
             } catch (RuntimeException | Error e) {
                 throw e;
@@ -189,7 +189,7 @@ public class AnnotationInterestParser {
             Class<?> pClass = parameterTypes[i++];
             if (Analyzer.class.equals(pClass)) {
                 parameterIndexes[i] = 1;
-            } else if (ValueDescription.class.equals(pClass)) {
+            } else if (FieldDescription.class.equals(pClass)) {
                 parameterIndexes[i] = 2;
             } else if (Container.class.equals(pClass)) {
                 parameterIndexes[i] = 3;
@@ -228,7 +228,7 @@ public class AnnotationInterestParser {
                 logger.debug("Method " + method + " will be called for all " + logInfo(elements));
             }
             handle = MethodHandles.permuteArguments(handle, methodType(Object.class, Object.class, Analyzer.class,
-                    ValueDescription.class, Container.class, Field.class, Method.class), parameterIndexes);
+                    FieldDescription.class, Container.class, Field.class, Method.class), parameterIndexes);
             env = new InterestEnvironment(method.toGenericString(), elements, handle);
         } else {
             if (logger.isDebugEnabled()) {
@@ -236,7 +236,7 @@ public class AnnotationInterestParser {
                         + annotationType.getName());
             }
             handle = MethodHandles.permuteArguments(handle, methodType(Object.class, Object.class, Analyzer.class,
-                    ValueDescription.class, Container.class, Field.class, Method.class, Annotation.class), parameterIndexes);
+                    FieldDescription.class, Container.class, Field.class, Method.class, Annotation.class), parameterIndexes);
             env = new AnnotationInterestEnvironment(method.toGenericString(), elements, annotationType, handle);
         }
         handlers.add(env);

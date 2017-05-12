@@ -312,7 +312,7 @@ public class MethodsTest {
 
     @Test
     public void testEnumToStringNoSpecial() throws Throwable {
-        MethodHandle handle = Methods.convertEnumToString(TimeUnit.class, (f, u) -> null);
+        MethodHandle handle = Methods.convertEnumToString(TimeUnit.class, (f, u) -> null); // Normally you would just use findVirtual("name")
         for (TimeUnit u : TimeUnit.values()) {
             String name = (String) handle.invokeExact(u);
             assertEquals(u.name(), name);

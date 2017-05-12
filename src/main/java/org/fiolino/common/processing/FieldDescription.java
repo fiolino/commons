@@ -2,6 +2,7 @@ package org.fiolino.common.processing;
 
 import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
+import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Type;
 
 import org.fiolino.common.analyzing.ModelInconsistencyException;
@@ -11,7 +12,7 @@ import javax.annotation.Nullable;
 /**
  * Created by kuli on 11.02.15.
  */
-public interface ValueDescription extends ConfigurationContainer {
+public interface FieldDescription extends ConfigurationContainer {
 
     /**
      * The name of the field. If this was a method, the extracted name is returned -- e.g., for getName(), the result would be "name".
@@ -37,6 +38,13 @@ public interface ValueDescription extends ConfigurationContainer {
      * The type of the target relation, either single or multi - actually the inner generic type of a {@link java.util.Collection}, or the same as getValueType() otherwise.
      */
     Class<?> getTargetType() throws ModelInconsistencyException;
+
+    /**
+     * Gets the original java.lang.reflect.* instance.
+     *
+     * Currently this is either a Method or a Field.
+     */
+    AccessibleObject getAttachedInstance();
 
     /**
      * Gets the annotation of a certain type.

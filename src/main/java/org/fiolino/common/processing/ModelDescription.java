@@ -11,6 +11,7 @@ import javax.annotation.Nullable;
 import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
@@ -27,7 +28,7 @@ import static java.lang.invoke.MethodType.methodType;
 public class ModelDescription extends AbstractConfigurationContainer {
     private final Class<?> modelType;
     private final MethodHandles.Lookup lookup;
-    private final Map<Object, ValueDescription> valueDescriptions = new HashMap<>();
+    private final Map<Object, FieldDescription> valueDescriptions = new HashMap<>();
 
     /**
      * Public constructor for initial creation of root model.
@@ -48,7 +49,7 @@ public class ModelDescription extends AbstractConfigurationContainer {
     /**
      * Creates a sub-model description from a parent path.
      */
-    private ModelDescription(ValueDescription relationHolder) throws ModelInconsistencyException {
+    private ModelDescription(FieldDescription relationHolder) throws ModelInconsistencyException {
         super(relationHolder.getConfiguration());
         ModelDescription parent = relationHolder.owningModel();
         this.modelType = relationHolder.getTargetType();
@@ -67,7 +68,7 @@ public class ModelDescription extends AbstractConfigurationContainer {
         }
     }
 
-    public ValueDescription getValueDescription(Field field) {
+    public FieldDescription getValueDescription(Field field) {
         return valueDescriptions.computeIfAbsent(field, f -> new FieldValueDescription((Field) f));
     }
 
@@ -89,15 +90,15 @@ public class ModelDescription extends AbstractConfigurationContainer {
         }
     }
 
-    public ValueDescription getValueDescription(Method method) throws ModelInconsistencyException {
+    public FieldDescription getValueDescription(Method method) throws ModelInconsistencyException {
         return valueDescriptions.computeIfAbsent(method, m -> {
             if (method.getReturnType() == void.class) {
                 if (method.getParameterCount() == 0) {
                     throw new ModelInconsistencyException(method + " is neither a getter nor a setter.");
                 }
-                return new SetterMethodValueDescription(method);
+                return new SetterMethodFieldDescription(method);
             }
-            return new GetterMethodValueDescription(method);
+            return new GetterMethodFieldDescription(method);
         });
     }
 
@@ -117,11 +118,11 @@ public class ModelDescription extends AbstractConfigurationContainer {
         return modelType.hashCode() + 101;
     }
 
-    private abstract class AbstractValueDescription extends AbstractConfigurationContainer implements ValueDescription {
+    private abstract class AbstractFieldDescription extends AbstractConfigurationContainer implements FieldDescription {
 
         private ModelDescription target;
 
-        AbstractValueDescription() {
+        AbstractFieldDescription() {
             super(ModelDescription.this.getConfiguration().createSubContainer());
         }
 
@@ -175,7 +176,7 @@ public class ModelDescription extends AbstractConfigurationContainer {
 
     }
 
-    private class FieldValueDescription extends AbstractValueDescription {
+    private class FieldValueDescription extends AbstractFieldDescription {
         private final Field field;
 
         FieldValueDescription(Field f) {
@@ -199,6 +200,11 @@ public class ModelDescription extends AbstractConfigurationContainer {
             return field.getGenericType();
         }
 
+        @Override
+        public AccessibleObject getAttachedInstance() {
+            return field;
+        }
+
         @Nullable
         @Override
         public MethodHandle createGetter(Class<?>... additionalTypes) {
@@ -217,11 +223,11 @@ public class ModelDescription extends AbstractConfigurationContainer {
         }
     }
 
-    private abstract class MethodValueDescription extends AbstractValueDescription {
+    private abstract class MethodFieldDescription extends AbstractFieldDescription {
         private final String name;
         final Method method;
 
-        MethodValueDescription(Method method) {
+        MethodFieldDescription(Method method) {
             super();
             this.method = method;
             name = getNameFor(method);
@@ -230,6 +236,11 @@ public class ModelDescription extends AbstractConfigurationContainer {
         @Override
         public String getName() {
             return name;
+        }
+
+        @Override
+        public AccessibleObject getAttachedInstance() {
+            return method;
         }
 
         @Override
@@ -260,8 +271,8 @@ public class ModelDescription extends AbstractConfigurationContainer {
         }
     }
 
-    private class GetterMethodValueDescription extends MethodValueDescription {
-        GetterMethodValueDescription(Method method) {
+    private class GetterMethodFieldDescription extends MethodFieldDescription {
+        GetterMethodFieldDescription(Method method) {
             super(method);
             assert method.getReturnType() != void.class;
         }
@@ -289,8 +300,8 @@ public class ModelDescription extends AbstractConfigurationContainer {
         }
     }
 
-    private class SetterMethodValueDescription extends MethodValueDescription {
-        SetterMethodValueDescription(Method method) {
+    private class SetterMethodFieldDescription extends MethodFieldDescription {
+        SetterMethodFieldDescription(Method method) {
             super(method);
             assert method.getParameterCount() != 0;
             assert method.getReturnType() == void.class;

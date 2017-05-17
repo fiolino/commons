@@ -1080,37 +1080,42 @@ public class Methods {
     }
 
     /**
-     * Drops all incoming arguments from referenceType that are not already implemented by the target handle.
+     * Converts the type of the target handle to accept all given parameters.
+     *
+     * Let's be n the target type's parameter count, and k the length of the expected parameter types,
+     * then n&lt;=k, and the resulting handle will accept all k given parameters, where all parameters at index
+     * i &gt; n are being skipped.
      *
      * @param target This will be executed
      * @param expectedParameterTypes Describes the returning handle's parameter types; the return type stays untouched
-     * @return A handle that calls target but drops all trailing arguments
+     * @return A handle that calls target but drops all trailing arguments if expectedParameterTypes are more than in target
      */
-    public static MethodHandle dropAllOf(MethodHandle target, Class<?>... expectedParameterTypes) {
-        int index = target.type().parameterCount();
+    public static MethodHandle acceptThese(MethodHandle target, Class<?>... expectedParameterTypes) {
+        int n = target.type().parameterCount();
         MethodType resultType = methodType(target.type().returnType(), expectedParameterTypes);
-        if (index == expectedParameterTypes.length) {
+        int k = expectedParameterTypes.length;
+        if (n == k) {
             return MethodHandles.explicitCastArguments(target, resultType);
         }
-        if (index > expectedParameterTypes.length) {
+        if (n > k) {
             throw new IllegalArgumentException(target + " has less parameters than " + Arrays.toString(expectedParameterTypes));
         }
         Class<?>[] parameterTypes;
-        if (index == 0) {
+        if (n == 0) {
             parameterTypes = expectedParameterTypes;
         } else {
-            parameterTypes = new Class<?>[expectedParameterTypes.length - index];
-            System.arraycopy(expectedParameterTypes, index, parameterTypes, 0, parameterTypes.length);
+            parameterTypes = new Class<?>[k - n];
+            System.arraycopy(expectedParameterTypes, n, parameterTypes, 0, parameterTypes.length);
         }
-        return MethodHandles.explicitCastArguments(MethodHandles.dropArguments(target, index, parameterTypes), resultType);
+        return MethodHandles.explicitCastArguments(MethodHandles.dropArguments(target, n, parameterTypes), resultType);
     }
 
     /**
-     * Modifies the given target handle so that it will return a value of the given type which will always be null.
+     * Modifies the given target handle so that it will return a value of the given type which will always be null or zero.
      *
      * @param target Some target to execute
      * @param returnType The type to return
-     * @return A handle with the same arguments as the target, but which returns a null value or a zero=like value if returnType is a primitive
+     * @return A handle with the same arguments as the target, but which returns a null value, or a zero-like value if returnType is a primitive
      */
     public static MethodHandle returnEmptyValue(MethodHandle target, Class<?> returnType) {
         MethodHandle h = target.asType(target.type().changeReturnType(void.class));
@@ -1168,7 +1173,7 @@ public class Methods {
             return handles[start];
         }
         MethodHandle remaining = and(handles, start + 1);
-        return MethodHandles.guardWithTest(handles[start], remaining, dropAllOf(FALSE, remaining.type().parameterArray()));
+        return MethodHandles.guardWithTest(handles[start], remaining, acceptThese(FALSE, remaining.type().parameterArray()));
     }
 
     /**
@@ -1194,7 +1199,7 @@ public class Methods {
             return handles[start];
         }
         MethodHandle remaining = or(handles, start + 1);
-        return MethodHandles.guardWithTest(handles[start], dropAllOf(TRUE, remaining.type().parameterArray()), remaining);
+        return MethodHandles.guardWithTest(handles[start], acceptThese(TRUE, remaining.type().parameterArray()), remaining);
     }
 
     /**
@@ -1295,7 +1300,7 @@ public class Methods {
     public static MethodHandle constantNullHandle(MethodType type) {
         Class<?> returnType = type.returnType();
         MethodHandle constantNull = getConstantNullHandle(returnType);
-        return dropAllOf(constantNull, type.parameterArray());
+        return acceptThese(constantNull, type.parameterArray());
     }
 
     private static MethodHandle getConstantNullHandle(Class<?> returnType) {
@@ -1728,7 +1733,7 @@ public class Methods {
         MethodHandle targetWithFinally = MethodHandles.catchException(target, Throwable.class, finallyBlock);
         MethodHandle acquireAndExecute = MethodHandles.foldArguments(targetWithFinally, acquire);
         if (returnType == void.class) {
-            return MethodHandles.foldArguments(dropAllOf(release, type.parameterArray()), acquireAndExecute);
+            return MethodHandles.foldArguments(acceptThese(release, type.parameterArray()), acquireAndExecute);
         }
         MethodHandle returnValue = MethodHandles.identity(returnType);
         if (type.parameterCount() > 0) {

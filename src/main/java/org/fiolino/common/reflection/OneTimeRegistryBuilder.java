@@ -68,7 +68,7 @@ final class OneTimeRegistryBuilder implements Registry, OneTimeExecution {
         MethodHandle guardedCaller = Methods.synchronizeWith(innerCallSite.dynamicInvoker(), semaphore);
         callSite.setTarget(guardedCaller);
         MethodHandle resetInner = setTargetInner.bindTo(innerCaller);
-        resetInner = Methods.dropAllOf(resetInner, type);
+        resetInner = Methods.acceptThese(resetInner, type.parameterArray());
         if (target.isVarargsCollector()) {
             resetInner = resetInner.asVarargsCollector(type.parameterType(type.parameterCount() - 1));
         }
@@ -110,12 +110,12 @@ final class OneTimeRegistryBuilder implements Registry, OneTimeExecution {
     }
 
     private MethodHandle createVoidSyncHandle(MethodHandle execution, MethodHandle setTargets) {
-        MethodHandle doNothing = Methods.dropAllOf(Methods.DO_NOTHING, execution.type());
+        MethodHandle doNothing = Methods.acceptThese(Methods.DO_NOTHING, execution.type().parameterArray());
         MethodHandle setTargetToNoop = setTargets.bindTo(doNothing);
         setTargetToNoop = addMutableCallSiteSynchronization(setTargetToNoop);
 
         // The following is only needed if execution accepts parameters, which is only the case when used from other MultiArgumentExecutionBuilder
-        setTargetToNoop = Methods.dropAllOf(setTargetToNoop, execution.type());
+        setTargetToNoop = Methods.acceptThese(setTargetToNoop, execution.type().parameterArray());
         return MethodHandles.foldArguments(setTargetToNoop, execution);
     }
 
@@ -126,7 +126,7 @@ final class OneTimeRegistryBuilder implements Registry, OneTimeExecution {
         MethodHandle syncOuterCallSite = SYNC.bindTo(new MutableCallSite[] {
                 (MutableCallSite) callSite
         });
-        syncOuterCallSite = Methods.dropAllOf(syncOuterCallSite, doBefore.type());
+        syncOuterCallSite = Methods.acceptThese(syncOuterCallSite, doBefore.type().parameterArray());
         return MethodHandles.foldArguments(syncOuterCallSite, doBefore);
     }
 
@@ -149,7 +149,7 @@ final class OneTimeRegistryBuilder implements Registry, OneTimeExecution {
     }
 
     private MutableCallSite preResetTo(MethodHandle handle) {
-        callSite.setTarget(Methods.dropAllOf(handle, updatingHandle.type()));
+        callSite.setTarget(Methods.acceptThese(handle, updatingHandle.type().parameterArray()));
         return callSite instanceof MutableCallSite ? (MutableCallSite)callSite : null;
     }
 

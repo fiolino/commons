@@ -15,8 +15,7 @@ import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.*;
 import java.util.concurrent.Semaphore;
-import java.util.function.Function;
-import java.util.function.Supplier;
+import java.util.function.*;
 
 import static java.lang.invoke.MethodHandles.*;
 import static java.lang.invoke.MethodType.methodType;
@@ -40,18 +39,59 @@ public class Methods {
      * <p>
      * If none of these apply, then it returns null.
      *
-     * @param lookup The lookup
      * @param field  The field
+     * @param additionalTypes The handle will accept these on top
      * @return The found {@link MethodHandle} of type (&lt;owner&gt;)&lt;type&gt;, or null otherwise
      */
     @Nullable
-    public static MethodHandle findGetter(Lookup lookup, Field field) {
+    public static MethodHandle findGetter(Field field, Class<?>... additionalTypes) {
+        return findGetter(publicLookup().in(field.getDeclaringClass()), field, additionalTypes);
+    }
+
+    /**
+     * Finds the getter method for a given field.
+     * Tries to find getters in this order:
+     * 1. By looking up a method getFieldname with the certain return type
+     * 2. If the field is of type boolean, tries to find a getter named isFieldname
+     * 3. Looks for a getter method fieldname, i.e. with the exact same name as the field
+     * 4. Tries to access the field directly through this lookup.
+     * <p>
+     * If none of these apply, then it returns null.
+     *
+     * @param lookup The lookup
+     * @param field  The field
+     * @param additionalTypes The handle will accept these on top
+     * @return The found {@link MethodHandle} of type (&lt;owner&gt;)&lt;type&gt;, or null otherwise
+     */
+    @Nullable
+    public static MethodHandle findGetter(Lookup lookup, Field field, Class<?>... additionalTypes) {
         if (Modifier.isStatic(field.getModifiers())) {
             return null;
         }
         Class<?> type = field.getType();
         Class<?> owner = field.getDeclaringClass();
-        return findGetter(lookup, owner, field.getName(), type);
+        return findGetter(lookup, owner, field.getName(), type, additionalTypes);
+    }
+
+    /**
+     * Finds the getter method for a given field in the given owner class.
+     * Tries to find getters in this order:
+     * 1. By looking up a method getFieldname with the certain return type
+     * 2. If the field is of type boolean, tries to find a getter named isFieldname
+     * 3. Looks for a getter method fieldname, i.e. with the exact same name as the field
+     * 4. Tries to access the field of that name directly through this lookup.
+     * <p>
+     * If none of these apply, then it returns null.
+     *
+     * @param owner     Where to look for getters
+     * @param fieldName The plain field name
+     * @param type      The getter's expected return type
+     * @param additionalTypes The handle will accept these on top
+     * @return The found {@link MethodHandle} of type (&lt;owner&gt;)&lt;type&gt;, or null otherwise
+     */
+    @Nullable
+    public static MethodHandle findGetter(Class<?> owner, String fieldName, Class<?> type, Class<?>... additionalTypes) {
+        return findGetter(publicLookup().in(owner), owner, fieldName, type, additionalTypes);
     }
 
     /**
@@ -68,24 +108,28 @@ public class Methods {
      * @param owner     Where to look for getters
      * @param fieldName The plain field name
      * @param type      The getter's expected return type
+     * @param additionalTypes The handle will accept these on top
      * @return The found {@link MethodHandle} of type (&lt;owner&gt;)&lt;type&gt;, or null otherwise
      */
     @Nullable
-    public static MethodHandle findGetter(Lookup lookup, Class<?> owner, String fieldName, Class<?> type) {
+    public static MethodHandle findGetter(Lookup lookup, Class<?> owner, String fieldName, Class<?> type, Class<?>... additionalTypes) {
         String name = Strings.addLeading(fieldName, "get");
-        MethodHandle handle = findGetter0(lookup, owner, name, type);
-        if (handle == null && (type == boolean.class || type == Boolean.class)) {
-            name = fieldName;
-            if (!name.startsWith("is") || name.length() > 2 && Character.isLowerCase(name.charAt(2))) {
-                name = Strings.addLeading(name, "is");
+        return attachTo(onTop -> {
+            String n = name;
+            MethodHandle h = findGetter0(lookup, owner, n, type, onTop);
+            if (h == null && (type == boolean.class || type == Boolean.class)) {
+                n = fieldName;
+                if (!n.startsWith("is") || n.length() > 2 && Character.isLowerCase(n.charAt(2))) {
+                    n = Strings.addLeading(fieldName, "is");
+                }
+                h = findGetter0(lookup, owner, n, type, onTop);
             }
-            handle = findGetter0(lookup, owner, name, type);
-        }
-        if (handle == null) {
-            // Look for a method with the exact same name
-            handle = findGetter0(lookup, owner, fieldName, type);
-        }
-        if (handle == null) {
+            if (h == null) {
+                // Look for a method with the exact same name
+                h = findGetter0(lookup, owner, fieldName, type, onTop);
+            }
+            return h;
+        }, additionalTypes, () -> {
             // Look for the direct field getter
             try {
                 return lookup.findGetter(owner, fieldName, type);
@@ -93,8 +137,44 @@ public class Methods {
                 // Then the field's just not accessible, or there is no such field
                 return null;
             }
+        });
+    }
+
+    private static MethodHandle attachTo(Function<Class<?>[], MethodHandle> handleFactory, Class<?>[] additionalTypes, Supplier<MethodHandle> alternative) {
+        int missing = 0;
+        MethodHandle handle;
+        int n = additionalTypes.length;
+        do {
+            Class<?>[] onTop = Arrays.copyOf(additionalTypes, n-missing);
+            handle = handleFactory.apply(onTop);
+        } while (handle == null && missing++ < n);
+
+        if (handle != null) {
+            return handle;
         }
-        return handle;
+
+        return alternative.get();
+    }
+
+    /**
+     * Finds the setter method for a given field.
+     * Tries to find setters in this order:
+     * 1. By looking up a method setFieldname with the certain argument type
+     * 2. Looks for a setter method fieldname, i.e. with the exact same name as the field
+     * 3. Tries to access the field directly through this lookup.
+     * <p>
+     * It will only look up virtual methods with void return type and the field's type as the
+     * sole argument.
+     * <p>
+     * If none of these apply, then it returns null.
+     *
+     * @param field  The field to look for
+     * @param additionalTypes The handle will accept these on top
+     * @return The found {@link MethodHandle} of type (&lt;owner&gt;,&lt;type&gt;)void, or null otherwise
+     */
+    @Nullable
+    public static MethodHandle findSetter(Field field, Class<?>... additionalTypes) {
+        return findSetter(publicLookup().in(field.getDeclaringClass()), field, additionalTypes);
     }
 
     /**
@@ -111,16 +191,42 @@ public class Methods {
      *
      * @param lookup The lookup
      * @param field  The field to look for
+     * @param additionalTypes The handle will accept these on top
      * @return The found {@link MethodHandle} of type (&lt;owner&gt;,&lt;type&gt;)void, or null otherwise
      */
     @Nullable
-    public static MethodHandle findSetter(Lookup lookup, Field field) {
+    public static MethodHandle findSetter(Lookup lookup, Field field, Class<?>... additionalTypes) {
         if (Modifier.isStatic(field.getModifiers())) {
             return null;
         }
-        Class<?> type = field.getType();
+        int n = additionalTypes.length;
+        Class<?>[] types = new Class<?>[n + 1];
+        types[0] = field.getType();
+        System.arraycopy(additionalTypes, 0, types, 1, n);
         Class<?> owner = field.getDeclaringClass();
-        return findSetter(lookup, owner, field.getName(), type);
+        return findSetter(lookup, owner, field.getName(), types);
+    }
+
+    /**
+     * Finds the setter method for a given field in the given owner class.
+     * Tries to find setters in this order:
+     * 1. By looking up a method setFieldname with the certain argument type
+     * 2. Looks for a setter method fieldname, i.e. with the exact same name as the field
+     * 3. Tries to access the field of that name directly through this lookup.
+     * <p>
+     * It will only look up virtual methods with void return type and the field's type as the
+     * sole argument.
+     * <p>
+     * If none of these apply, then it returns null.
+     *
+     * @param owner     Where to look for setters
+     * @param fieldName The plain field name
+     * @param types     The setter's expected argument types (can be multiple or none as well)
+     * @return The found {@link MethodHandle} of type (&lt;owner&gt;,&lt;type&gt;)void, or null otherwise
+     */
+    @Nullable
+    public static MethodHandle findSetter(Class<?> owner, String fieldName, Class<?>... types) {
+        return findSetter(publicLookup().in(owner), owner, fieldName, types);
     }
 
     /**
@@ -144,40 +250,39 @@ public class Methods {
     @Nullable
     public static MethodHandle findSetter(Lookup lookup, Class<?> owner, String fieldName, Class<?>... types) {
         String name = Strings.addLeading(fieldName, "set");
-        MethodHandle handle = findSetter0(lookup, owner, name, types);
-        if (handle != null) {
-            // Method is setFieldname
-            return handle;
-        }
-        if (types.length >= 1 && (types[0] == boolean.class || types[0] == Boolean.class)) {
-            name = Strings.removeLeading(fieldName, "is");
-            if (!name.equals(fieldName)) {
-                name = Strings.addLeading(name, "set");
-                handle = findSetter0(lookup, owner, name, types);
-                if (handle != null) {
-                    // Method is isFieldname
-                    return handle;
+        return attachTo(params -> {
+            String n = name;
+            MethodHandle h = findSetter0(lookup, owner, n, params);
+            if (h != null) {
+                // Method is setFieldname
+                return h;
+            }
+            if (types.length >= 1 && (types[0] == boolean.class || types[0] == Boolean.class)) {
+                // Check whether the name starts with "is", but the setter just starts with "set"
+                n = Strings.removeLeading(fieldName, "is");
+                if (!n.equals(fieldName)) {
+                    n = Strings.addLeading(n, "set");
+                    h = findSetter0(lookup, owner, n, params);
+                    if (h != null) {
+                        // Method is isFieldname
+                        return h;
+                    }
                 }
             }
-        }
-        // Look for a method with the exact same name
-        handle = findSetter0(lookup, owner, fieldName, types);
-        if (handle != null) {
-            // Method is fieldname
-            return handle;
-        }
-
-        // Try to find the direct field setter
-        if (types.length == 1) {
-            try {
-                return lookup.findSetter(owner, fieldName, types[0]);
-            } catch (NoSuchFieldException | IllegalAccessException ex) {
-                // Then the field's just not accessible, or there is no such field
-                return null;
+            // Look for a method with the exact same name
+            return findSetter0(lookup, owner, fieldName, params);
+        }, types, () -> {
+            // Try to find the direct field setter
+            if (types.length == 1) {
+                try {
+                    return lookup.findSetter(owner, fieldName, types[0]);
+                } catch (NoSuchFieldException | IllegalAccessException ex) {
+                    // Then the field's just not accessible, or there is no such field
+                    return null;
+                }
             }
-        }
-        // No handle found
-        return null;
+            return null;
+        });
     }
 
     @Nullable
@@ -193,15 +298,27 @@ public class Methods {
     }
 
     @Nullable
-    private static MethodHandle findGetter0(Lookup lookup, Class<?> owner, String name, Class<?> type) {
+    private static MethodHandle findGetter0(Lookup lookup, Class<?> owner, String name, Class<?> type, Class<?>[] additionalTypes) {
         try {
-            return lookup.findVirtual(owner, name, methodType(type));
+            return lookup.findVirtual(owner, name, methodType(type, additionalTypes));
         } catch (NoSuchMethodException ex) {
             // Then try next
             return null;
         } catch (IllegalAccessException ex) {
             throw new AssertionError("Cannot access getter for " + name, ex);
         }
+    }
+
+    /**
+     * Finds the method from an interface that is referenced by the finder argument.
+     *
+     * @param type   The interface type to look in
+     * @param finder Used to identify the method
+     * @param <T>    The interface type
+     * @return The found MethodHandle, or null if there is no such
+     */
+    public static <T> MethodHandle findUsing(Class<T> type, MethodFinderCallback<T> finder) {
+        return findUsing(publicLookup().in(type), type, finder);
     }
 
     /**
@@ -249,6 +366,18 @@ public class Methods {
      * Finds the method from all implemented interfaces of some particular argument instance.
      * The result will already be bound to that instance.
      *
+     * @param target The instance
+     * @param finder Used to identify the method
+     * @return The found MethodHandle, or null if there is no such
+     */
+    public static <T> MethodHandle bindUsing(T target, MethodFinderCallback<T> finder) {
+        return bindUsing(publicLookup().in(target.getClass()), target, finder);
+    }
+
+    /**
+     * Finds the method from all implemented interfaces of some particular argument instance.
+     * The result will already be bound to that instance.
+     *
      * @param lookup The lookup
      * @param target The instance
      * @param finder Used to identify the method
@@ -264,9 +393,22 @@ public class Methods {
     }
 
     private static Object createProxy(Class<?>... types) {
+        if (types.length == 0) {
+            throw new IllegalArgumentException("No interface implemented!");
+        }
         return Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(), types, (p, m, a) -> {
             throw new MethodFoundException(m, a);
         });
+    }
+
+    /**
+     * Finds all methods that are annotated either with {@link MethodFinder}, {@link ExecuteDirect} or {@link MethodHandleFactory}.
+     *
+     * @param prototype Contains all methods
+     * @param visitor   The callback for each found method
+     */
+    public static <V> V findUsing(Object prototype, V initialValue, MethodVisitor<V> visitor) {
+        return findUsing(publicLookup().in(prototype.getClass()), initialValue, visitor);
     }
 
     /**
@@ -297,7 +439,7 @@ public class Methods {
      *               The return type is irrelevant.
      * @return The first called method with that finder, or null if there is no such method called.
      */
-    public static MethodHandle findHandleByProxy(Lookup lookup, MethodHandle finder) {
+    private static MethodHandle findHandleByProxy(Lookup lookup, MethodHandle finder) {
         if (finder.type().parameterCount() != 1) {
             throw new AssertionError(finder + " should accept exactly one argument.");
         }
@@ -402,6 +544,22 @@ public class Methods {
      * This will visit all methods that the given lookup is able to find.
      * If some method overrides another, then only the overriding method gets visited.
      *
+     * @param type         The type to look up, including all super types
+     * @param initialValue The visitor's first value
+     * @param visitor      The method visitor
+     * @return The return value of the last visitor's run
+     */
+    public static <V> V visitAllMethods(Class<?> type, V initialValue, MethodVisitor<V> visitor) {
+        return visitAllMethods(publicLookup().in(type), type, initialValue, visitor);
+    }
+
+    /**
+     * Iterates over all visible methods of the given type.
+     * The visitor's MethodHandle will be the plain converted method, without any modifications.
+     * <p>
+     * This will visit all methods that the given lookup is able to find.
+     * If some method overrides another, then only the overriding method gets visited.
+     *
      * @param lookup       The lookup
      * @param type         The type to look up, including all super types
      * @param initialValue The visitor's first value
@@ -436,21 +594,46 @@ public class Methods {
      * This will visit all methods that the given lookup is able to find.
      * If some method overrides another, then only the overriding method gets visited.
      *
+     * @param type         Te type to look up, including all super types
+     * @param initialValue The visitor's first value
+     * @param visitor      The method visitor
+     * @return The return value of the last visitor's run
+     */
+    public static <V> V visitMethodsWithInstanceContext(Class<?> type, V initialValue, MethodVisitor<V> visitor) {
+        return visitMethodsWithInstanceContext(publicLookup().in(type), type, initialValue, visitor);
+    }
+
+    /**
+     * Iterates over all methods of the given type.
+     * The visitor's MethodHandle will be based on instances, that means, each MethodHandle has an instance
+     * of the given class type as the first parameter, which will be the instance.
+     * <p>
+     * If the Method is an instance method, then the MethodHandle will just be used, except that the
+     * instance argument will be casted to the given type.
+     * <p>
+     * If the Method is static, then the MethodHandle will still expect an instance of type as the first
+     * parameter. If the static method has a parameter of that type as the first argument, then it will
+     * be kept, otherwise it will be discarded.
+     * <p>
+     * That means, the visitor doesn't have to care whether the method is static or not.
+     * <p>
+     * This will visit all methods that the given lookup is able to find.
+     * If some method overrides another, then only the overriding method gets visited.
+     *
      * @param lookup       The lookup
      * @param type         Te type to look up, including all super types
      * @param initialValue The visitor's first value
      * @param visitor      The method visitor
      * @return The return value of the last visitor's run
      */
-    public static <V> V visitMethodsWithInstanceContext(Lookup lookup, final Class<?> type,
+    public static <V> V visitMethodsWithInstanceContext(Lookup lookup, Class<?> type,
                                                         V initialValue, MethodVisitor<V> visitor) {
-        final Lookup l = lookup.in(type);
-        return iterateOver(l, type, initialValue, visitor, (m) -> {
+        return iterateOver(lookup, type, initialValue, visitor, (m) -> {
             MethodHandle handle;
             try {
-                handle = l.unreflect(m);
+                handle = lookup.unreflect(m);
             } catch (IllegalAccessException ex) {
-                throw new AssertionError(m + " is not accessible in " + l, ex);
+                throw new AssertionError(m + " is not accessible in " + lookup, ex);
             }
             if (Modifier.isStatic(m.getModifiers()) &&
                     (m.getParameterCount() == 0 || !m.getParameterTypes()[0].isAssignableFrom(type))) {
@@ -458,6 +641,33 @@ public class Methods {
             }
             return handle.asType(handle.type().changeParameterType(0, type));
         });
+    }
+
+    /**
+     * Iterates over all methods of the given type.
+     * The visitor's MethodHandle will be static, that means, all MethodHandles are exactly of the Method's type
+     * without any instance context.
+     * <p>
+     * If the Method is an instance method, then the given reference is bound to the handle.
+     * <p>
+     * That means, the visitor doesn't have to care whether the method is static or not.
+     * <p>
+     * The reference can either by a Class; in that case, the visitor creates a new instance as a reference to
+     * the MethodHandle as soon as the first instance method is unreflected. That means, the class needs an
+     * empty constructor visible from the given lookup unless all visited methods are static.
+     * <p>
+     * Or it can be any other object, which is the method's context then.
+     * <p>
+     * This will visit all methods that the given lookup is able to find.
+     * If some method overrides another, then only the overriding method gets visited.
+     *
+     * @param reference    Either a Class or a prototype instance
+     * @param initialValue The visitor's first value
+     * @param visitor      The method visitor
+     * @return The return value of the last visitor's run
+     */
+    public static <V> V visitMethodsWithStaticContext(Object reference, V initialValue, MethodVisitor<V> visitor) {
+        return visitMethodsWithStaticContext0(null, reference, initialValue, visitor);
     }
 
     /**
@@ -504,7 +714,32 @@ public class Methods {
             type = t;
             factory = () -> reference;
         }
-        return visitMethodsWithStaticContext(lookup, type, factory, initialValue, visitor);
+        Lookup l = lookup == null ? publicLookup().in(type) : lookup;
+        return visitMethodsWithStaticContext(l, type, factory, initialValue, visitor);
+    }
+
+    /**
+     * Iterates over all methods of the given type.
+     * The visitor's MethodHandle will be static, that means, all MethodHandles are exactly of the Method's type
+     * without any instance context.
+     * <p>
+     * If the Method is an instance method, then the given factory should create an instance of the given type.
+     * This is bound to that handle then.
+     * <p>
+     * That means, the visitor doesn't have to care whether the method is static or not.
+     * <p>
+     * This will visit all methods that the given lookup is able to find.
+     * If some method overrides another, then only the overriding method gets visited.
+     *
+     * @param type         Iterates over this type's methods
+     * @param factory      Used to instantiate a member if the created method handle is of an instance method
+     * @param initialValue The visitor's first value
+     * @param visitor      The method visitor
+     * @return The return value of the last visitor's run
+     */
+    public static <T, V> V visitMethodsWithStaticContext(Class<? extends T> type, Supplier<T> factory,
+                                                         V initialValue, MethodVisitor<V> visitor) {
+        return visitMethodsWithStaticContext(publicLookup().in(type), type, factory, initialValue, visitor);
     }
 
     /**
@@ -530,13 +765,12 @@ public class Methods {
     public static <T, V> V visitMethodsWithStaticContext(Lookup lookup, Class<? extends T> type, Supplier<T> factory,
                                                          V initialValue, MethodVisitor<V> visitor) {
         Object[] instance = new Object[1];
-        Lookup l = lookup.in(type);
-        return iterateOver(l, type, initialValue, visitor, (m) -> {
+        return iterateOver(lookup, type, initialValue, visitor, (m) -> {
             MethodHandle handle;
             try {
-                handle = l.unreflect(m);
+                handle = lookup.unreflect(m);
             } catch (IllegalAccessException ex) {
-                throw new AssertionError(m + " is not accessible in " + l, ex);
+                throw new AssertionError(m + " is not accessible in " + lookup, ex);
             }
             if (Modifier.isStatic(m.getModifiers())) {
                 return handle;
@@ -613,17 +847,27 @@ public class Methods {
 
     static {
         try {
-            nullCheck = MethodHandles.lookup().findStatic(Objects.class, "isNull", methodType(boolean.class, Object.class));
-            notNullCheck = MethodHandles.lookup().findStatic(Objects.class, "nonNull", methodType(boolean.class, Object.class));
+            nullCheck = publicLookup().findStatic(Objects.class, "isNull", methodType(boolean.class, Object.class));
+            notNullCheck = publicLookup().findStatic(Objects.class, "nonNull", methodType(boolean.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new AssertionError("Objects.isNull()", ex);
         }
     }
 
+    /**
+     * Returns a method handle that accepts an Object and returns true if this is null.
+     *
+     * @return (Object)boolean
+     */
     public static MethodHandle nullCheck() {
         return nullCheck;
     }
 
+    /**
+     * Returns a method handle that accepts an Object and returns true if this is not null.
+     *
+     * @return (Object)boolean
+     */
     public static MethodHandle notNullCheck() {
         return notNullCheck;
     }
@@ -732,13 +976,26 @@ public class Methods {
     private static final MethodHandle exceptionHandlerCaller = findUsing(MethodHandles.lookup(), ExceptionHandler.class,
             (h) -> h.handleNotExisting(null, null, null, null));
 
-    public static <E extends Enum<E>> MethodHandle convertEnumToString(Class<E> type) {
+    /**
+     * Creates a handle that converts some enum to a String.
+     * Instead of just calling name(), it is checked whether some fields should be treated specifically; in that case,
+     * those values will be used.
+     *
+     * An example would be to check whether some enum field is annotated somehow.
+     *
+     * @param type The enum type
+     * @param specialHandler Can return a special value for some field and its value.
+     *                       If it returns null, name() is used. If it returns an empty String, null will be returned.
+     * @param <E> The enum
+     * @return (E)String
+     */
+    public static <E extends Enum<E>> MethodHandle convertEnumToString(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
         Map<E, String> map = new EnumMap<>(type);
         E[] enumConstants = type.getEnumConstants();
         if (enumConstants == null) {
             throw new IllegalArgumentException(type.getName() + " should be an enum.");
         }
-        boolean isAnnotated = false;
+        boolean isSpecial = false;
         Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) type::getFields);
         for (java.lang.reflect.Field f : fields) {
             int m = f.getModifiers();
@@ -754,19 +1011,19 @@ public class Methods {
             } catch (IllegalAccessException ex) {
                 throw new AssertionError("Cannot access " + f, ex);
             }
-            IndexedAs annotated = f.getAnnotation(IndexedAs.class);
-            if (annotated == null) {
+            String value = specialHandler.apply(f, v);
+            if (value == null) {
+                // The default handling.
                 map.put(v, v.name());
                 continue;
             }
-            isAnnotated = true;
-            String value = annotated.value();
+            isSpecial = true;
             map.put(v, value.isEmpty() ? null : value);
         }
-        if (isAnnotated) {
+        if (isSpecial) {
             MethodHandle getFromMap;
             try {
-                getFromMap = MethodHandles.publicLookup().bind(map, "get", methodType(Object.class, Object.class));
+                getFromMap = publicLookup().bind(map, "get", methodType(Object.class, Object.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
                 throw new AssertionError("Map.get()", ex);
             }
@@ -774,7 +1031,7 @@ public class Methods {
         } else {
             // No @IndexedAs annotations
             try {
-                return MethodHandles.publicLookup().findVirtual(type, "name", methodType(String.class));
+                return publicLookup().findVirtual(type, "name", methodType(String.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
                 throw new AssertionError("Map.get()", ex);
             }
@@ -815,60 +1072,56 @@ public class Methods {
 
     static void checkArgumentLength(MethodType targetType, int argumentNumber) {
         if (targetType.parameterCount() <= argumentNumber) {
-            throw new IllegalArgumentException("Target " + targetType + " must have at least "
-                    + (argumentNumber + 1) + " input values.");
+            throw new IllegalArgumentException("Index " + argumentNumber + " is out of range: Target " + targetType + " has only "
+                    + targetType.parameterCount() + " arguments.");
         }
     }
 
     /**
-     * Drops all incoming arguments from referenceType that are not already implemented by the target handle.
+     * Converts the type of the target handle to accept all given parameters.
+     *
+     * Let's be n the target type's parameter count, and k the length of the expected parameter types,
+     * then n&lt;=k, and the resulting handle will accept all k given parameters, where all parameters at index
+     * i &gt; n are being skipped.
      *
      * @param target This will be executed
-     * @param referenceType Describes the returning handle's type
-     * @return A handle that calls target but drops all trailing arguments
+     * @param expectedParameterTypes Describes the returning handle's parameter types; the return type stays untouched
+     * @return A handle that calls target but drops all trailing arguments if expectedParameterTypes are more than in target
      */
-    public static MethodHandle dropAllOf(MethodHandle target, MethodType referenceType) {
-        int index = target.type().parameterCount();
-        if (index == referenceType.parameterCount()) {
-            return target;
+    public static MethodHandle acceptThese(MethodHandle target, Class<?>... expectedParameterTypes) {
+        int n = target.type().parameterCount();
+        MethodType resultType = methodType(target.type().returnType(), expectedParameterTypes);
+        int k = expectedParameterTypes.length;
+        if (n == k) {
+            return MethodHandles.explicitCastArguments(target, resultType);
         }
-        checkArgumentLength(referenceType, index);
+        if (n > k) {
+            throw new IllegalArgumentException(target + " has less parameters than " + Arrays.toString(expectedParameterTypes));
+        }
         Class<?>[] parameterTypes;
-        if (index == 0) {
-            parameterTypes = referenceType.parameterArray();
+        if (n == 0) {
+            parameterTypes = expectedParameterTypes;
         } else {
-            parameterTypes = new Class<?>[referenceType.parameterCount() - index];
-            System.arraycopy(referenceType.parameterArray(), index, parameterTypes, 0, parameterTypes.length);
+            parameterTypes = new Class<?>[k - n];
+            System.arraycopy(expectedParameterTypes, n, parameterTypes, 0, parameterTypes.length);
         }
-        return MethodHandles.dropArguments(target, index, parameterTypes);
+        return MethodHandles.explicitCastArguments(MethodHandles.dropArguments(target, n, parameterTypes), resultType);
     }
 
     /**
-     * Modifies the given target handle so that it will return a value of the given type which will always be null.
+     * Modifies the given target handle so that it will return a value of the given type which will always be null or zero.
      *
-     * @param target Some target to execute = the return type must be void
+     * @param target Some target to execute
      * @param returnType The type to return
-     * @return A handle with the same arguments as the target, but which returns a null value or a zero=like value if returnType is a primitive
+     * @return A handle with the same arguments as the target, but which returns a null value, or a zero-like value if returnType is a primitive
      */
     public static MethodHandle returnEmptyValue(MethodHandle target, Class<?> returnType) {
-        if (target.type().returnType() != void.class) {
-            throw new IllegalArgumentException("Expected void method, but it's " + target);
-        }
+        MethodHandle h = target.asType(target.type().changeReturnType(void.class));
         if (returnType == void.class) {
-            return target;
+            return h;
         }
-        MethodHandle returnHandle;
-        if (returnType.isPrimitive()) {
-            if (returnType == boolean.class) {
-                returnHandle = MethodHandles.constant(boolean.class, false);
-            } else {
-                returnHandle = MethodHandles.constant(int.class, 0);
-                returnHandle = MethodHandles.explicitCastArguments(returnHandle, methodType(returnType));
-            }
-        } else {
-            returnHandle = MethodHandles.constant(returnType, null);
-        }
-        return MethodHandles.filterReturnValue(target, returnHandle);
+        MethodHandle returnHandle = getConstantNullHandle(returnType);
+        return MethodHandles.filterReturnValue(h, returnHandle);
     }
 
     /**
@@ -879,7 +1132,7 @@ public class Methods {
      */
     public static MethodHandle instanceCheck(Class<?> check) {
         if (check.isPrimitive()) {
-            throw new IllegalArgumentException(check.getName() + " must be a reference type.");
+            return MethodHandles.dropArguments(FALSE, 0, Object.class);
         }
         if (Object.class.equals(check)) {
             return notNullCheck;
@@ -918,7 +1171,7 @@ public class Methods {
             return handles[start];
         }
         MethodHandle remaining = and(handles, start + 1);
-        return MethodHandles.guardWithTest(handles[start], remaining, dropAllOf(FALSE, remaining.type()));
+        return MethodHandles.guardWithTest(handles[start], remaining, acceptThese(FALSE, remaining.type().parameterArray()));
     }
 
     /**
@@ -944,7 +1197,7 @@ public class Methods {
             return handles[start];
         }
         MethodHandle remaining = or(handles, start + 1);
-        return MethodHandles.guardWithTest(handles[start], dropAllOf(TRUE, remaining.type()), remaining);
+        return MethodHandles.guardWithTest(handles[start], acceptThese(TRUE, remaining.type().parameterArray()), remaining);
     }
 
     /**
@@ -955,7 +1208,7 @@ public class Methods {
      * simply not being called at all if there is a null value.
      */
     public static MethodHandle secureNull(MethodHandle target) {
-        return secureNull(target, (BitSet) null);
+        return secureNull(target, i -> true);
     }
 
     /**
@@ -966,42 +1219,93 @@ public class Methods {
      * simply not being called at all if there is a null value.
      */
     public static MethodHandle secureNull(MethodHandle target, int... argumentIndexes) {
-        int n = target.type().parameterCount();
-        BitSet toCheck = new BitSet(n);
-        for (int i : argumentIndexes) {
-            if (i >= n) {
-                throw new IllegalArgumentException("Index " + i + " is out of range: Method has only " + n + " arguments.");
-            }
-            toCheck.set(i);
-        }
-        return secureNull(target, toCheck);
+        return secureNull(target, argumentTester(target.type(), argumentIndexes));
     }
 
-    private static MethodHandle secureNull(MethodHandle target, BitSet toCheck) {
+    private static IntPredicate argumentTester(MethodType type, int... argumentIndexes) {
+        switch (argumentIndexes.length) {
+            case 0:
+                return i -> true;
+            case 1:
+                int index = argumentIndexes[0];
+                checkArgumentLength(type, index);
+                return i -> i == index;
+            default:
+                BitSet toCheck = new BitSet(type.parameterCount());
+                for (int i : argumentIndexes) {
+                    checkArgumentLength(type, i);
+                    toCheck.set(i);
+                }
+                return toCheck::get;
+        }
+    }
+
+    private static MethodHandle secureNull(MethodHandle target, IntPredicate toCheck) {
+        return checkForNullValues(target, toCheck, Methods::rejectIf);
+    }
+
+    /**
+     * Creates a handle that executes the given target, but validates the given arguments before by checking for null.
+     * The handle will throw the given exception if some of these values is null.
+     *
+     * @param target The target to execute; all specified arguments are guaranteed to be non-null
+     * @param exceptionToThrow This exception will be thrown
+     * @param argumentIndexes The arguments to check. If none is given, then all arguments are being checked
+     * @return The null-safe handle
+     */
+    public static MethodHandle assertNotNull(MethodHandle target, Throwable exceptionToThrow, int... argumentIndexes) {
+        MethodType type = target.type();
+        MethodHandle throwException = MethodHandles.throwException(type.returnType(), exceptionToThrow.getClass()).bindTo(exceptionToThrow);
+        MethodHandle nullCase  = MethodHandles.dropArguments(throwException, 0, type.parameterArray());
+        return checkForNullValues(target, argumentTester(type, argumentIndexes), (t, g) -> MethodHandles.guardWithTest(g, nullCase, t));
+    }
+
+    /**
+     * Creates a handle that executes the given target, but validates the given argument before by checking for null.
+     * The handle will throw a null pointer exception if the parameter is null.
+     *
+     * @param target The target to execute; all specified arguments are guaranteed to be non-null
+     * @param argument The argument to check
+     * @param argumentNames This is used as a message in the exception
+     * @return The null-safe handle
+     */
+    public static MethodHandle assertNotNull(MethodHandle target, int argument, String... argumentNames) {
+        if (argumentNames.length == 0) {
+            throw new IllegalArgumentException("No names given");
+        }
+        MethodHandle h = target;
+        int i = argument;
+        for (String n : argumentNames) {
+            h = assertNotNull(h, new NullPointerException(n + " must not be null"), i++);
+        }
+        return h;
+    }
+
+    private static MethodHandle checkForNullValues(MethodHandle target, IntPredicate toCheck, BinaryOperator<MethodHandle> resultBuilder) {
         MethodType targetType = target.type();
         Class<?>[] parameterArray = targetType.parameterArray();
         MethodHandle[] checks = new MethodHandle[parameterArray.length];
-        int targetCount = 0;
         int checkCount = 0;
         MethodType nullCheckType = targetType.changeReturnType(boolean.class);
         int i = 0;
         for (Class<?> p : parameterArray) {
-            if ((toCheck != null && !toCheck.get(i++)) || p.isPrimitive()) {
-                targetCount++;
+            if (!toCheck.test(i++) || p.isPrimitive()) {
                 continue;
             }
             MethodHandle castedNullCheck = nullCheck.asType(methodType(boolean.class, p));
-            MethodHandle checkArgI = MethodHandles.permuteArguments(castedNullCheck, nullCheckType, targetCount++);
+            MethodHandle checkArgI = MethodHandles.permuteArguments(castedNullCheck, nullCheckType, i - 1);
             checks[checkCount++] = checkArgI;
         }
         if (checkCount == 0) {
+            // All parameters were primitives
             return target;
         }
-        if (checkCount < targetCount) {
+        if (checkCount < i) {
+            // Not all parameters need to get checked
             checks = Arrays.copyOf(checks, checkCount);
         }
         MethodHandle checkNull = or(checks);
-        return rejectIf(target, checkNull);
+        return resultBuilder.apply(target, checkNull);
     }
 
     /**
@@ -1044,20 +1348,22 @@ public class Methods {
      */
     public static MethodHandle constantNullHandle(MethodType type) {
         Class<?> returnType = type.returnType();
-        MethodHandle constantNull;
+        MethodHandle constantNull = getConstantNullHandle(returnType);
+        return acceptThese(constantNull, type.parameterArray());
+    }
+
+    private static MethodHandle getConstantNullHandle(Class<?> returnType) {
         if (returnType == void.class) {
-            constantNull = DO_NOTHING;
+            return DO_NOTHING;
         } else if (returnType == int.class || returnType == long.class || returnType == short.class || returnType == byte.class || returnType == float.class || returnType == double.class) {
-            constantNull = MethodHandles.constant(returnType, 0);
+            return MethodHandles.constant(returnType, 0);
         } else if (returnType == char.class) {
-            constantNull = MethodHandles.constant(returnType, (char) Character.UNASSIGNED);
+            return MethodHandles.constant(returnType, (char) Character.UNASSIGNED);
         } else if (returnType == boolean.class) {
-            constantNull = MethodHandles.constant(returnType, false);
+            return MethodHandles.constant(returnType, false);
         } else {
-            constantNull = MethodHandles.constant(returnType, null);
+            return MethodHandles.constant(returnType, null);
         }
-        constantNull = dropAllOf(constantNull, type);
-        return constantNull;
     }
 
     /**
@@ -1280,6 +1586,36 @@ public class Methods {
      * As a result, the returned handle will have exactly the given reference method type, without any additional
      * object instance.
      *
+     * @param object    The object (Class or some instance) to investigate
+     * @param reference The method type to look for
+     * @return The found method handle
+     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
+     * @throws NoSuchMethodError        If no method was found
+     */
+    public static MethodHandle findMethodHandleOfType(Object object, MethodType reference) {
+        return findMethodHandleOfType(null, object, reference);
+    }
+
+    /**
+     * Finds the method handle to the only unique method that fits to the given method type.
+     * <p>
+     * A method is a unique method if it is the only one with the given type within one class. If there are more
+     * in its super classes, then it doesn't matter.
+     * <p>
+     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
+     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
+     * if there is one method that is more generic, and another one is more specific, then uniqueness still
+     * is given and the more generic one is chosen.
+     * <p>
+     * The object to look up may either be an instance: Then its class type will be searched. If the found method then
+     * is static, it will simply be used, otherwise the given instance is bound to it.
+     * <p>
+     * If the object is a Class, and the found method is an instance method, then an empty constructor is expected
+     * and a new instance is created now.
+     * <p>
+     * As a result, the returned handle will have exactly the given reference method type, without any additional
+     * object instance.
+     *
      * @param lookup    The lookup
      * @param object    The object (Class or some instance) to investigate
      * @param reference The method type to look for
@@ -1290,6 +1626,27 @@ public class Methods {
     public static MethodHandle findMethodHandleOfType(Lookup lookup, Object object, MethodType reference) {
         MethodHandle handle = findSingleMethodHandle(lookup, object, reference);
         return handle.asType(reference);
+    }
+
+    /**
+     * Finds the method to the only unique method that fits to the given method type.
+     * <p>
+     * A method is a unique method if it is the only one with the given type within one class. If there are more
+     * in its super classes, then it doesn't matter.
+     * <p>
+     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
+     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
+     * if there is one method that is more generic, and another one is more specific, then uniqueness still
+     * is given and the more generic one is chosen.
+     *
+     * @param type      The reference type to investigate
+     * @param reference The method type to look for
+     * @return The found method handle
+     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
+     * @throws NoSuchMethodError        If no method was found
+     */
+    public static Method findMethodOfType(Class<?> type, MethodType reference) {
+        return findMethodOfType(null, type, reference);
     }
 
     /**
@@ -1328,10 +1685,11 @@ public class Methods {
             }
             type = object.getClass();
         }
-        Method m = findMethodOfType(lookup, type, reference);
+        Lookup l = lookup == null ? publicLookup().in(type) : lookup;
+        Method m = findMethodOfType(l, type, reference);
         MethodHandle handle;
         try {
-            handle = lookup.unreflect(m);
+            handle = l.unreflect(m);
         } catch (IllegalAccessException ex) {
             throw new AssertionError(m + " should be visible.", ex);
         }
@@ -1424,7 +1782,7 @@ public class Methods {
         MethodHandle targetWithFinally = MethodHandles.catchException(target, Throwable.class, finallyBlock);
         MethodHandle acquireAndExecute = MethodHandles.foldArguments(targetWithFinally, acquire);
         if (returnType == void.class) {
-            return MethodHandles.foldArguments(dropAllOf(release, type), acquireAndExecute);
+            return MethodHandles.foldArguments(acceptThese(release, type.parameterArray()), acquireAndExecute);
         }
         MethodHandle returnValue = MethodHandles.identity(returnType);
         if (type.parameterCount() > 0) {

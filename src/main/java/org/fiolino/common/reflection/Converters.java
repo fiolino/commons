@@ -39,6 +39,21 @@ public final class Converters {
      * Or, if the given type is a primitive, parseXXX() is called on the wrapper type, which works for all
      * primitive types except char and void.
      */
+    public static MethodHandle createSimpleConverter(Class<?> inputType, Class<?> returnType) {
+        return createSimpleConverter(publicLookup(), inputType, returnType);
+    }
+
+    /**
+     * Creates a MethodHandle that accepts some value as the only argument and returns the specified type.
+     * <p/>
+     * A static valueOf() method is called on the specified type, which works for all Number types and all Enums
+     * plus a few more.
+     * <p/>
+     * For String/Number pairs, toString() resp. the constructor is used as well.
+     * <p/>
+     * Or, if the given type is a primitive, parseXXX() is called on the wrapper type, which works for all
+     * primitive types except char and void.
+     */
     public static MethodHandle createSimpleConverter(MethodHandles.Lookup lookup,
                                                      Class<?> inputType, Class<?> returnType) {
         if (inputType.equals(returnType)) {
@@ -64,7 +79,7 @@ public final class Converters {
             pure = l.findStatic(returnType, "valueOf", methodType(returnType, inputType));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             // Or try to find a constructor accepting the input
-            if (Number.class.isAssignableFrom(returnType)) { // Date is handled explicitely
+            if (Number.class.isAssignableFrom(returnType)) { // Date is handled explicitly
                 try {
                     pure = l.findConstructor(returnType, methodType(void.class, inputType));
                 } catch (NoSuchMethodException | IllegalAccessException next) {
@@ -75,7 +90,7 @@ public final class Converters {
         }
         if (pure != null) {
             if (String.class.equals(inputType)) {
-                return MethodHandles.filterArguments(pure, 0, trim);
+                return trimStringInput(pure);
             }
             return pure;
         }
@@ -114,8 +129,12 @@ public final class Converters {
                     methodType(primitiveType, String.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             // Could only be the case for void
-            throw new AssertionError("Cannot convert from String to " + primitiveType.getName(), ex);
+            throw new IllegalArgumentException("Cannot convert from String to " + primitiveType.getName(), ex);
         }
+        return trimStringInput(pure);
+    }
+
+    private static MethodHandle trimStringInput(MethodHandle pure) {
         return MethodHandles.filterArguments(pure, 0, trim);
     }
 
@@ -186,7 +205,7 @@ public final class Converters {
         ExtendableConverterLocator loc = ExtendableConverterLocator.EMPTY.register(lookup, new Object() {
             @ConvertValue
             @SuppressWarnings("unused")
-            private MethodHandle convertBasicTypes(Class<?> source, Class<?> target) {
+            MethodHandle convertBasicTypes(Class<?> source, Class<?> target) {
                 if (target == Object.class) {
                     return null;
                 }
@@ -204,7 +223,7 @@ public final class Converters {
             MethodHandle getTime = lookup.findVirtual(Date.class, "getTime", methodType(long.class));
             loc = loc.register(getTime);
 
-            // Convert java.sql tytpes to Date
+            // Convert java.sql types to Date
             loc = loc.register(MethodHandles.filterArguments(dateConstructor, 0, getTime.asType(
                     methodType(long.class, Timestamp.class))));
             loc = loc.register(MethodHandles.filterArguments(dateConstructor, 0, getTime.asType(
@@ -212,7 +231,7 @@ public final class Converters {
             loc = loc.register(MethodHandles.filterArguments(dateConstructor, 0, getTime.asType(
                     methodType(long.class, java.sql.Date.class))));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("Date", ex);
+            throw new InternalError("Date", ex);
         }
 
         // Convert from boolean
@@ -233,6 +252,9 @@ public final class Converters {
         loc = loc.register(charToBool); // char to boolean
         loc = loc.register(stringToBool);
 
+        MethodHandle returnT = MethodHandles.dropArguments(MethodHandles.constant(char.class, 't'), 0, boolean.class);
+        MethodHandle returnF = MethodHandles.dropArguments(MethodHandles.constant(char.class, 'f'), 0, boolean.class);
+        loc = loc.register(MethodHandles.guardWithTest(MethodHandles.identity(boolean.class), returnT, returnF));
         defaultConverters = loc;
     }
 
@@ -275,15 +297,18 @@ public final class Converters {
      *
      * @param loc    The locator
      * @param source From here...
-     * @param target ... to here
+     * @param targetTypes ... to one of these
      * @return (&lt;source&gt;)&lt;target&gt;
      */
-    public static MethodHandle findConverter(ConverterLocator loc, Class<?> source, Class<?> target) {
-        MethodHandle c = loc.find(source, target).getConverter();
-        if (c == null) {
-            c = MethodHandles.identity(target);
+    public static MethodHandle findConverter(ConverterLocator loc, Class<?> source, Class<?>... targetTypes) {
+        Converter converter = loc.find(source, targetTypes);
+        MethodHandle c;
+        if (converter.getRank() == ConversionRank.NEEDS_CONVERSION) {
+            c = converter.getConverter();
+        } else {
+            c = MethodHandles.identity(targetTypes[0]);
         }
-        return MethodHandles.explicitCastArguments(c, methodType(target, source));
+        return MethodHandles.explicitCastArguments(c, methodType(converter.getTargetType(), source));
     }
 
     /**

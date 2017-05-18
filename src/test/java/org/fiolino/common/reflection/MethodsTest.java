@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import javax.annotation.concurrent.ThreadSafe;
 import java.awt.event.ActionListener;
+import java.io.FileNotFoundException;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
 import java.lang.invoke.MethodHandles;
@@ -42,6 +43,14 @@ public class MethodsTest {
         public void setValue(int value) {
             this.value = value * 10;
         }
+
+        public int getValue(int plus) {
+            return value + plus;
+        }
+
+        public void setValue(int value, int multi) {
+            this.value = value * multi;
+        }
     }
 
     @Test
@@ -65,6 +74,52 @@ public class MethodsTest {
         Bean bean = new Bean();
         handle.invokeExact(bean, 588);
         assertEquals(5880, bean.value);
+    }
+
+    @Test
+    public void testFindGetterWithInt() throws Throwable {
+        Field field = Bean.class.getDeclaredField("value");
+        MethodHandle handle = Methods.findGetter(lookup(), field, int.class);
+        assertNotNull(handle);
+
+        Bean bean = new Bean();
+        bean.value = 1230;
+        int result = (int) handle.invokeExact(bean, 70);
+        assertEquals(1300, result);
+    }
+
+    @Test
+    public void testFindSetterWithIntAndString() throws Throwable {
+        Field field = Bean.class.getDeclaredField("value");
+        MethodHandle handle = Methods.findSetter(lookup(), field, int.class, String.class); // String is ignored
+        assertNotNull(handle);
+
+        Bean bean = new Bean();
+        handle.invokeExact(bean, 13, 2);
+        assertEquals(26, bean.value);
+    }
+
+    @Test
+    public void testFindGetterWithIntAndDate() throws Throwable {
+        Field field = Bean.class.getDeclaredField("value");
+        MethodHandle handle = Methods.findGetter(lookup(), field, int.class, Date.class); // Date is ignored
+        assertNotNull(handle);
+
+        Bean bean = new Bean();
+        bean.value = 55;
+        int result = (int) handle.invokeExact(bean, 15);
+        assertEquals(70, result);
+    }
+
+    @Test
+    public void testFindSetterWithInt() throws Throwable {
+        Field field = Bean.class.getDeclaredField("value");
+        MethodHandle handle = Methods.findSetter(lookup(), field, int.class);
+        assertNotNull(handle);
+
+        Bean bean = new Bean();
+        handle.invokeExact(bean, 588, -1);
+        assertEquals(-588, bean.value);
     }
 
     private static class BeanWithoutMethods {
@@ -256,6 +311,28 @@ public class MethodsTest {
         fail("Should not be here!");
     }
 
+    @Test
+    public void testEnumToStringNoSpecial() throws Throwable {
+        MethodHandle handle = Methods.convertEnumToString(TimeUnit.class, (f, u) -> null); // Normally you would just use findVirtual("name")
+        for (TimeUnit u : TimeUnit.values()) {
+            String name = (String) handle.invokeExact(u);
+            assertEquals(u.name(), name);
+        }
+    }
+
+    @Test
+    public void testEnumToStringWithSpecial() throws Throwable {
+        MethodHandle handle = Methods.convertEnumToString(TimeUnit.class, (f, u) -> u == TimeUnit.DAYS || u == TimeUnit.HOURS ? "Boing!" : null);
+        for (TimeUnit u : TimeUnit.values()) {
+            String name = (String) handle.invokeExact(u);
+            if (u == TimeUnit.DAYS || u == TimeUnit.HOURS) {
+                assertEquals("Boing!", name);
+            } else {
+                assertEquals(u.name(), name);
+            }
+        }
+    }
+
     @SuppressWarnings("unused")
     private static boolean checkEquals(String first, String second, AtomicInteger counter) {
         counter.incrementAndGet();
@@ -382,26 +459,72 @@ public class MethodsTest {
 
     @Test
     public void testSecureArgument() throws Throwable {
-        MethodHandle addToList = Methods.findUsing(lookup(), List.class, new MethodFinderCallback<List>() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public void callMethodFrom(List prototype) throws Throwable {
-                prototype.add(null);
-            }
-        });
+        @SuppressWarnings({"unchecked", "rawTypes"})
+        MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
         MethodHandle check = lookup().findVirtual(String.class, "startsWith", methodType(boolean.class, String.class));
         check = MethodHandles.insertArguments(check, 1, "Foo");
         MethodHandle dontAddFoo = Methods.rejectIfArgument(addToList, 1, check);
 
         List<String> list = new ArrayList<>();
-        boolean drop = (boolean) dontAddFoo.invokeExact(list, (Object) "Hello");
-        drop = (boolean) dontAddFoo.invokeExact(list, (Object) "Foobar");
-        drop = (boolean) dontAddFoo.invokeExact(list, (Object) "World");
+        boolean added = (boolean) dontAddFoo.invokeExact(list, (Object) "Hello");
+        assertTrue(added);
+        added = (boolean) dontAddFoo.invokeExact(list, (Object) "Foobar");
+        assertFalse(added);
+        added = (boolean) dontAddFoo.invokeExact(list, (Object) "World");
+        assertTrue(added);
 
         assertEquals(2, list.size());
         assertEquals("Hello", list.get(0));
         assertEquals("World", list.get(1));
         assertFalse(list.contains("Foobar"));
+    }
+
+    @Test
+    public void testAssertNotNull() throws Throwable {
+        @SuppressWarnings({"unchecked", "rawTypes"})
+        MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
+        addToList = Methods.assertNotNull(addToList, 1, "blubber");
+        List<Object> list = new ArrayList<>();
+
+        assertTrue((boolean) addToList.invokeExact(list, (Object) "Not null")); // Should not fail
+        try {
+            assertTrue((boolean) addToList.invokeExact(list, (Object) null));
+        } catch (NullPointerException npe) {
+            assertTrue(npe.getMessage().contains("blubber"));
+            return;
+        }
+
+        fail("Should have thrown NPE");
+    }
+
+    @Test(expected = FileNotFoundException.class)
+    public void testAssertNotNullOwnException() throws Throwable {
+        @SuppressWarnings({"unchecked", "rawTypes"})
+        MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
+        addToList = Methods.assertNotNull(addToList, new FileNotFoundException());
+        List<Object> list = new ArrayList<>();
+
+        assertTrue((boolean) addToList.invokeExact(list, (Object) null));
+    }
+
+    @Test
+    public void testReturnEmpty() throws Throwable {
+        Date date = new Date();
+        MethodHandle getTime = publicLookup().findVirtual(Date.class, "getTime", methodType(long.class));
+        MethodHandle returnEmpty = Methods.returnEmptyValue(getTime, long.class);
+        long time = (long) returnEmpty.invokeExact(date);
+        assertEquals(0L, time);
+
+        returnEmpty = Methods.returnEmptyValue(getTime, String.class);
+        String emptyString = (String) returnEmpty.invokeExact(date);
+        assertNull(emptyString);
+
+        returnEmpty = Methods.returnEmptyValue(getTime, boolean.class);
+        boolean falseValue = (boolean) returnEmpty.invokeExact(date);
+        assertFalse(falseValue);
+
+        returnEmpty = Methods.returnEmptyValue(getTime, void.class);
+        returnEmpty.invokeExact(date);
     }
 
     @Test
@@ -445,11 +568,6 @@ public class MethodsTest {
         assertTrue("String is not null", isInstance);
         isInstance = (boolean) instanceCheck.invokeExact((Object) null);
         assertFalse("null check", isInstance);
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testInstanceCheckWithPrimitive() {
-        Methods.instanceCheck(int.class);
     }
 
     @Test

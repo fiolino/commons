@@ -285,8 +285,8 @@ public class ConvertersTest {
         assertEquals('t', (char) c.invokeExact(true));
         assertEquals('f', (char) c.invokeExact(false));
         c = getHandle(Converters.defaultConverters, String.class, getBool);
-        assertEquals("t", (String) c.invokeExact(true));
-        assertEquals("f", (String) c.invokeExact(false));
+        assertEquals("true", (String) c.invokeExact(true));
+        assertEquals("false", (String) c.invokeExact(false));
         c = getHandle(Converters.defaultConverters, boolean.class, getChar);
         assertTrue((boolean) c.invokeExact('t'));
         assertFalse((boolean) c.invokeExact('f'));

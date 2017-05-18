@@ -7,6 +7,7 @@ import org.fiolino.common.util.Strings;
 import org.fiolino.common.util.Types;
 import org.fiolino.data.annotation.TargetType;
 
+import javax.annotation.Nullable;
 import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -17,7 +18,6 @@ import java.lang.reflect.Type;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Function;
 
 import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
@@ -28,7 +28,7 @@ import static java.lang.invoke.MethodType.methodType;
 public class ModelDescription extends AbstractConfigurationContainer {
     private final Class<?> modelType;
     private final MethodHandles.Lookup lookup;
-    private final Map<String, ValueDescription> valueDescriptions = new HashMap<>();
+    private final Map<Object, FieldDescription> valueDescriptions = new HashMap<>();
 
     /**
      * Public constructor for initial creation of root model.
@@ -49,15 +49,11 @@ public class ModelDescription extends AbstractConfigurationContainer {
     /**
      * Creates a sub-model description from a parent path.
      */
-    private ModelDescription(ValueDescription relationHolder) throws ModelInconsistencyException {
+    private ModelDescription(FieldDescription relationHolder) throws ModelInconsistencyException {
         super(relationHolder.getConfiguration());
         ModelDescription parent = relationHolder.owningModel();
         this.modelType = relationHolder.getTargetType();
         this.lookup = parent.lookup.in(modelType);
-        Class<?> valueType = relationHolder.getValueType();
-        if (Map.class.isAssignableFrom(valueType)) {
-            valueType = Types.rawArgument(relationHolder.getGenericType(), Map.class, 1, Types.Bounded.UPPER);
-        }
     }
 
     public Class<?> getModelType() {
@@ -72,13 +68,8 @@ public class ModelDescription extends AbstractConfigurationContainer {
         }
     }
 
-    private ValueDescription getValueDescription(String name, Function<String, ValueDescription> factory) {
-        return valueDescriptions.computeIfAbsent(name, factory);
-    }
-
-    public ValueDescription getValueDescription(final Field field) {
-        String name = field.getName();
-        return getValueDescription(name, n -> new FieldValueDescription(field));
+    public FieldDescription getValueDescription(Field field) {
+        return valueDescriptions.computeIfAbsent(field, f -> new FieldValueDescription((Field) f));
     }
 
     private String getNameFor(Method method) {
@@ -99,25 +90,15 @@ public class ModelDescription extends AbstractConfigurationContainer {
         }
     }
 
-    public ValueDescription getValueDescription(final Method method) throws ModelInconsistencyException {
-        final String name = getNameFor(method);
-        return getValueDescription(name, n -> {
-            Class<?> valueType;
-            Type type;
-            Type[] parameterTypes = method.getGenericParameterTypes();
-            switch (parameterTypes.length) {
-                case 0:
-                    type = method.getGenericReturnType();
-                    valueType = method.getReturnType();
-                    break;
-                case 1:
-                    type = parameterTypes[0];
-                    valueType = method.getParameterTypes()[0];
-                    break;
-                default:
-                    throw new AssertionError(method + " is neither a getter nor a setter.");
+    public FieldDescription getValueDescription(Method method) throws ModelInconsistencyException {
+        return valueDescriptions.computeIfAbsent(method, m -> {
+            if (method.getReturnType() == void.class) {
+                if (method.getParameterCount() == 0) {
+                    throw new ModelInconsistencyException(method + " is neither a getter nor a setter.");
+                }
+                return new SetterMethodFieldDescription(method);
             }
-            return new MethodValueDescription(name, type, valueType, method);
+            return new GetterMethodFieldDescription(method);
         });
     }
 
@@ -137,48 +118,17 @@ public class ModelDescription extends AbstractConfigurationContainer {
         return modelType.hashCode() + 101;
     }
 
-    private Class<?> getTargetTypeFor(Type genericType, AccessibleObject annotated) {
-        Class<?> valueType = Types.rawType(genericType);
-        if (Map.class.isAssignableFrom(valueType)) {
-            if (!String.class.equals(Types.rawArgument(genericType, Map.class, 0, Types.Bounded.LOWER))) {
-                throw new AssertionError("Bad type for " + annotated + ": Can only index Maps with String keys.");
-            }
-            genericType = Types.genericArgument(genericType, Map.class, 1);
-            valueType = Types.rawType(genericType);
-        }
-        if (Collection.class.isAssignableFrom(valueType)) {
-            valueType = Types.rawArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
-        }
-        TargetType annotation = annotated.getAnnotation(TargetType.class);
-        if (annotation == null) {
-            return valueType;
-        }
-        Class<?> redirect = annotation.value();
-        if (!valueType.isAssignableFrom(redirect)) {
-            throw new ModelInconsistencyException("Wrong annotation @" + TargetType.class.getSimpleName() + " on " + annotated
-                    + ": " + redirect.getName() + " is not a subclass of " + valueType.getName());
-        }
-        return redirect;
-    }
+    private abstract class AbstractFieldDescription extends AbstractConfigurationContainer implements FieldDescription {
 
-    private abstract class AbstractValueDescription extends AbstractConfigurationContainer implements ValueDescription {
-
-        private final String name;
         private ModelDescription target;
 
-        AbstractValueDescription(String name) {
+        AbstractFieldDescription() {
             super(ModelDescription.this.getConfiguration().createSubContainer());
-            this.name = name;
         }
 
         @Override
         public final ModelDescription owningModel() {
             return ModelDescription.this;
-        }
-
-        @Override
-        public String getName() {
-            return name;
         }
 
         @Override
@@ -197,14 +147,46 @@ public class ModelDescription extends AbstractConfigurationContainer {
         String printString() {
             return getName();
         }
+
+        @Override
+        public final Class<?> getTargetType() throws ModelInconsistencyException {
+            Class<?> valueType = getValueType();
+            Type genericType = getGenericType();
+            if (Map.class.isAssignableFrom(valueType)) {
+                if (!String.class.equals(Types.rawArgument(genericType, Map.class, 0, Types.Bounded.LOWER))) {
+                    throw new AssertionError("Bad type for " + getName() + ": Can only index Maps with String keys.");
+                }
+                genericType = Types.genericArgument(genericType, Map.class, 1);
+                valueType = Types.rawType(genericType);
+            }
+            if (Collection.class.isAssignableFrom(valueType)) {
+                valueType = Types.rawArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
+            }
+            TargetType annotation = getAnnotation(TargetType.class);
+            if (annotation == null) {
+                return valueType;
+            }
+            Class<?> redirect = annotation.value();
+            if (!valueType.isAssignableFrom(redirect)) {
+                throw new ModelInconsistencyException("Wrong annotation @" + TargetType.class.getSimpleName() + " on " + getName()
+                        + ": " + redirect.getName() + " is not a subclass of " + valueType.getName());
+            }
+            return redirect;
+        }
+
     }
 
-    private class FieldValueDescription extends AbstractValueDescription {
+    private class FieldValueDescription extends AbstractFieldDescription {
         private final Field field;
 
-        public FieldValueDescription(Field f) {
-            super(f.getName());
+        FieldValueDescription(Field f) {
+            super();
             this.field = f;
+        }
+
+        @Override
+        public String getName() {
+            return field.getName();
         }
 
         @Override
@@ -219,18 +201,20 @@ public class ModelDescription extends AbstractConfigurationContainer {
         }
 
         @Override
-        public Class<?> getTargetType() throws ModelInconsistencyException {
-            return getTargetTypeFor(getGenericType(), field);
+        public AccessibleObject getAttachedInstance() {
+            return field;
         }
 
+        @Nullable
         @Override
-        public MethodHandle createGetter() {
-            return Methods.findGetter(lookup, field);
+        public MethodHandle createGetter(Class<?>... additionalTypes) {
+            return Methods.findGetter(lookup, field, additionalTypes);
         }
 
+        @Nullable
         @Override
-        public MethodHandle createSetter() {
-            return Methods.findSetter(lookup, field);
+        public MethodHandle createSetter(Class<?>... additionalTypes) {
+            return Methods.findSetter(lookup, field, additionalTypes);
         }
 
         @Override
@@ -239,46 +223,110 @@ public class ModelDescription extends AbstractConfigurationContainer {
         }
     }
 
-    private class MethodValueDescription extends AbstractValueDescription {
-        private final Type type;
-        private final Class<?> valueType;
-        private final Method method;
+    private abstract class MethodFieldDescription extends AbstractFieldDescription {
+        private final String name;
+        final Method method;
 
-        public MethodValueDescription(String name, Type type, Class<?> valueType, Method method) {
-            super(name);
-            this.type = type;
-            this.valueType = valueType;
+        MethodFieldDescription(Method method) {
+            super();
             this.method = method;
+            name = getNameFor(method);
         }
 
         @Override
-        public Class<?> getValueType() {
-            return valueType;
+        public String getName() {
+            return name;
         }
 
         @Override
-        public Type getGenericType() {
-            return type;
-        }
-
-        @Override
-        public Class<?> getTargetType() {
-            return getTargetTypeFor(type, method);
-        }
-
-        @Override
-        public MethodHandle createGetter() {
-            return Methods.findGetter(lookup, owningModel().getModelType(), getName(), getValueType());
-        }
-
-        @Override
-        public MethodHandle createSetter() {
-            return Methods.findSetter(lookup, owningModel().getModelType(), getName(), getValueType());
+        public AccessibleObject getAttachedInstance() {
+            return method;
         }
 
         @Override
         public <A extends Annotation> A getAnnotation(Class<A> annotationType) {
             return method.getAnnotation(annotationType);
+        }
+
+        MethodHandle transform(Class<?>[] additionalTypes, int leading) {
+            Class<?>[] parameterTypes = method.getParameterTypes();
+            int numberOfMatching = parameterTypes.length - leading;
+
+            for (int i=0; i < numberOfMatching; i++) {
+                if (!additionalTypes[i].equals(parameterTypes[i + leading])) return null;
+            }
+            MethodHandle h;
+            try {
+                h = lookup.unreflect(method);
+            } catch (IllegalAccessException ex) {
+                throw new IllegalStateException(lookup + " does not seem to be able to unreflect " + method, ex);
+            }
+            int numberOfIgnored = additionalTypes.length - numberOfMatching;
+            if (numberOfIgnored == 0) {
+                return h;
+            }
+            Class<?>[] ignoredArgument = new Class<?>[numberOfIgnored];
+            System.arraycopy(additionalTypes, numberOfMatching, ignoredArgument, 0, numberOfIgnored);
+            return MethodHandles.dropArguments(h, numberOfMatching + leading + 1, ignoredArgument);
+        }
+    }
+
+    private class GetterMethodFieldDescription extends MethodFieldDescription {
+        GetterMethodFieldDescription(Method method) {
+            super(method);
+            assert method.getReturnType() != void.class;
+        }
+
+        @Override
+        public Class<?> getValueType() {
+            return method.getReturnType();
+        }
+
+        @Override
+        public Type getGenericType() {
+            return method.getGenericReturnType();
+        }
+
+        @Nullable
+        @Override
+        public MethodHandle createGetter(Class<?>[] additionalTypes) {
+            return transform(additionalTypes, 0);
+        }
+
+        @Nullable
+        @Override
+        public MethodHandle createSetter(Class<?>[] additionalTypes) {
+            return null;
+        }
+    }
+
+    private class SetterMethodFieldDescription extends MethodFieldDescription {
+        SetterMethodFieldDescription(Method method) {
+            super(method);
+            assert method.getParameterCount() != 0;
+            assert method.getReturnType() == void.class;
+        }
+
+        @Override
+        public Class<?> getValueType() {
+            return method.getParameterTypes()[0];
+        }
+
+        @Override
+        public Type getGenericType() {
+            return method.getGenericParameterTypes()[0];
+        }
+
+        @Nullable
+        @Override
+        public MethodHandle createGetter(Class<?>[] additionalTypes) {
+            return null;
+        }
+
+        @Nullable
+        @Override
+        public MethodHandle createSetter(Class<?>[] additionalTypes) {
+            return transform(additionalTypes, 1);
         }
     }
 }

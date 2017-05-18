@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import javax.annotation.concurrent.ThreadSafe;
 import java.awt.event.ActionListener;
+import java.io.FileNotFoundException;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
 import java.lang.invoke.MethodHandles;
@@ -458,26 +459,52 @@ public class MethodsTest {
 
     @Test
     public void testSecureArgument() throws Throwable {
-        MethodHandle addToList = Methods.findUsing(lookup(), List.class, new MethodFinderCallback<List>() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public void callMethodFrom(List prototype) throws Throwable {
-                prototype.add(null);
-            }
-        });
+        @SuppressWarnings({"unchecked", "rawTypes"})
+        MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
         MethodHandle check = lookup().findVirtual(String.class, "startsWith", methodType(boolean.class, String.class));
         check = MethodHandles.insertArguments(check, 1, "Foo");
         MethodHandle dontAddFoo = Methods.rejectIfArgument(addToList, 1, check);
 
         List<String> list = new ArrayList<>();
-        boolean drop = (boolean) dontAddFoo.invokeExact(list, (Object) "Hello");
-        drop = (boolean) dontAddFoo.invokeExact(list, (Object) "Foobar");
-        drop = (boolean) dontAddFoo.invokeExact(list, (Object) "World");
+        boolean added = (boolean) dontAddFoo.invokeExact(list, (Object) "Hello");
+        assertTrue(added);
+        added = (boolean) dontAddFoo.invokeExact(list, (Object) "Foobar");
+        assertFalse(added);
+        added = (boolean) dontAddFoo.invokeExact(list, (Object) "World");
+        assertTrue(added);
 
         assertEquals(2, list.size());
         assertEquals("Hello", list.get(0));
         assertEquals("World", list.get(1));
         assertFalse(list.contains("Foobar"));
+    }
+
+    @Test
+    public void testAssertNotNull() throws Throwable {
+        @SuppressWarnings({"unchecked", "rawTypes"})
+        MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
+        addToList = Methods.assertNotNull(addToList, 1, "blubber");
+        List<Object> list = new ArrayList<>();
+
+        assertTrue((boolean) addToList.invokeExact(list, (Object) "Not null")); // Should not fail
+        try {
+            assertTrue((boolean) addToList.invokeExact(list, (Object) null));
+        } catch (NullPointerException npe) {
+            assertTrue(npe.getMessage().contains("blubber"));
+            return;
+        }
+
+        fail("Should have thrown NPE");
+    }
+
+    @Test(expected = FileNotFoundException.class)
+    public void testAssertNotNullOwnException() throws Throwable {
+        @SuppressWarnings({"unchecked", "rawTypes"})
+        MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
+        addToList = Methods.assertNotNull(addToList, new FileNotFoundException());
+        List<Object> list = new ArrayList<>();
+
+        assertTrue((boolean) addToList.invokeExact(list, (Object) null));
     }
 
     @Test

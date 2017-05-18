@@ -15,9 +15,7 @@ import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.*;
 import java.util.concurrent.Semaphore;
-import java.util.function.BiFunction;
-import java.util.function.Function;
-import java.util.function.Supplier;
+import java.util.function.*;
 
 import static java.lang.invoke.MethodHandles.*;
 import static java.lang.invoke.MethodType.methodType;
@@ -1074,8 +1072,8 @@ public class Methods {
 
     static void checkArgumentLength(MethodType targetType, int argumentNumber) {
         if (targetType.parameterCount() <= argumentNumber) {
-            throw new IllegalArgumentException("Target " + targetType + " must have at least "
-                    + (argumentNumber + 1) + " input values.");
+            throw new IllegalArgumentException("Index " + argumentNumber + " is out of range: Target " + targetType + " has only "
+                    + targetType.parameterCount() + " arguments.");
         }
     }
 
@@ -1210,7 +1208,7 @@ public class Methods {
      * simply not being called at all if there is a null value.
      */
     public static MethodHandle secureNull(MethodHandle target) {
-        return secureNull(target, (BitSet) null);
+        return secureNull(target, i -> true);
     }
 
     /**
@@ -1221,42 +1219,85 @@ public class Methods {
      * simply not being called at all if there is a null value.
      */
     public static MethodHandle secureNull(MethodHandle target, int... argumentIndexes) {
-        int n = target.type().parameterCount();
-        BitSet toCheck = new BitSet(n);
-        for (int i : argumentIndexes) {
-            if (i >= n) {
-                throw new IllegalArgumentException("Index " + i + " is out of range: Method has only " + n + " arguments.");
-            }
-            toCheck.set(i);
-        }
-        return secureNull(target, toCheck);
+        return secureNull(target, argumentTester(target.type(), argumentIndexes));
     }
 
-    private static MethodHandle secureNull(MethodHandle target, BitSet toCheck) {
+    private static IntPredicate argumentTester(MethodType type, int... argumentIndexes) {
+        switch (argumentIndexes.length) {
+            case 0:
+                return i -> true;
+            case 1:
+                int index = argumentIndexes[0];
+                checkArgumentLength(type, index);
+                return i -> i == index;
+            default:
+                BitSet toCheck = new BitSet(type.parameterCount());
+                for (int i : argumentIndexes) {
+                    checkArgumentLength(type, i);
+                    toCheck.set(i);
+                }
+                return toCheck::get;
+        }
+    }
+
+    private static MethodHandle secureNull(MethodHandle target, IntPredicate toCheck) {
+        return checkForNullValues(target, toCheck, Methods::rejectIf);
+    }
+
+    /**
+     * Creates a handle that executes the given target, but validates the given arguments before by checking for null.
+     * The handle will throw the given exception if some of these values is null.
+     *
+     * @param target The target to execute; all specified arguments are guaranteed to be non-null
+     * @param exceptionToThrow This exception will be thrown
+     * @param argumentIndexes The arguments to check. If none is given, then all arguments are being checked
+     * @return The null-safe handle
+     */
+    public static MethodHandle assertNotNull(MethodHandle target, Throwable exceptionToThrow, int... argumentIndexes) {
+        MethodType type = target.type();
+        MethodHandle throwException = MethodHandles.throwException(type.returnType(), exceptionToThrow.getClass()).bindTo(exceptionToThrow);
+        MethodHandle nullCase  = MethodHandles.dropArguments(throwException, 0, type.parameterArray());
+        return checkForNullValues(target, argumentTester(type, argumentIndexes), (t, g) -> MethodHandles.guardWithTest(g, nullCase, t));
+    }
+
+    /**
+     * Creates a handle that executes the given target, but validates the given argument before by checking for null.
+     * The handle will throw a null pointer exception if the parameter is null.
+     *
+     * @param target The target to execute; all specified arguments are guaranteed to be non-null
+     * @param argument The argument to check
+     * @param argumentName This is used as a message in the exception
+     * @return The null-safe handle
+     */
+    public static MethodHandle assertNotNull(MethodHandle target, int argument, String argumentName) {
+        return assertNotNull(target, new NullPointerException(argumentName + " must not be null"), argument);
+    }
+
+    private static MethodHandle checkForNullValues(MethodHandle target, IntPredicate toCheck, BinaryOperator<MethodHandle> resultBuilder) {
         MethodType targetType = target.type();
         Class<?>[] parameterArray = targetType.parameterArray();
         MethodHandle[] checks = new MethodHandle[parameterArray.length];
-        int targetCount = 0;
         int checkCount = 0;
         MethodType nullCheckType = targetType.changeReturnType(boolean.class);
         int i = 0;
         for (Class<?> p : parameterArray) {
-            if ((toCheck != null && !toCheck.get(i++)) || p.isPrimitive()) {
-                targetCount++;
+            if (!toCheck.test(i++) || p.isPrimitive()) {
                 continue;
             }
             MethodHandle castedNullCheck = nullCheck.asType(methodType(boolean.class, p));
-            MethodHandle checkArgI = MethodHandles.permuteArguments(castedNullCheck, nullCheckType, targetCount++);
+            MethodHandle checkArgI = MethodHandles.permuteArguments(castedNullCheck, nullCheckType, i - 1);
             checks[checkCount++] = checkArgI;
         }
         if (checkCount == 0) {
+            // All parameters were primitives
             return target;
         }
-        if (checkCount < targetCount) {
+        if (checkCount < i) {
+            // Not all parameters need to get checked
             checks = Arrays.copyOf(checks, checkCount);
         }
         MethodHandle checkNull = or(checks);
-        return rejectIf(target, checkNull);
+        return resultBuilder.apply(target, checkNull);
     }
 
     /**

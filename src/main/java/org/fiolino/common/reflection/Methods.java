@@ -1266,11 +1266,19 @@ public class Methods {
      *
      * @param target The target to execute; all specified arguments are guaranteed to be non-null
      * @param argument The argument to check
-     * @param argumentName This is used as a message in the exception
+     * @param argumentNames This is used as a message in the exception
      * @return The null-safe handle
      */
-    public static MethodHandle assertNotNull(MethodHandle target, int argument, String argumentName) {
-        return assertNotNull(target, new NullPointerException(argumentName + " must not be null"), argument);
+    public static MethodHandle assertNotNull(MethodHandle target, int argument, String... argumentNames) {
+        if (argumentNames.length == 0) {
+            throw new IllegalArgumentException("No names given");
+        }
+        MethodHandle h = target;
+        int i = argument;
+        for (String n : argumentNames) {
+            h = assertNotNull(h, new NullPointerException(n + " must not be null"), i++);
+        }
+        return h;
     }
 
     private static MethodHandle checkForNullValues(MethodHandle target, IntPredicate toCheck, BinaryOperator<MethodHandle> resultBuilder) {

@@ -405,6 +405,40 @@ public class MethodsTest {
         assertFalse(val);
     }
 
+    @Test
+    public void testDoNothing() throws Throwable {
+        MethodHandle doNothing = Methods.DO_NOTHING;
+        doNothing.invokeExact();
+    }
+
+    @Test
+    public void testIsNull() throws Throwable {
+        MethodHandle isNull = Methods.nullCheck(String.class);
+        boolean test = (boolean) isNull.invokeExact("ABC");
+        assertFalse(test);
+
+        test = (boolean) isNull.invokeExact((String) null);
+        assertTrue(test);
+
+        isNull = Methods.nullCheck(int.class);
+        test = (boolean) isNull.invokeExact(123);
+        assertFalse(test);
+    }
+
+    @Test
+    public void testNotNull() throws Throwable {
+        MethodHandle isNotNull = Methods.notNullCheck(Object.class);
+        boolean test = (boolean) isNotNull.invokeExact((Object) new Date());
+        assertTrue(test);
+
+        test = (boolean) isNotNull.invokeExact((Object) null);
+        assertFalse(test);
+
+        isNotNull = Methods.notNullCheck(char.class);
+        test = (boolean) isNotNull.invokeExact('x');
+        assertTrue(test);
+    }
+
     @SuppressWarnings("unused")
     private static String concatenate(String head, int number, String middle, boolean bool, String tail) {
         return head + number + middle + bool + tail;

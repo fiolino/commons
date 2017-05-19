@@ -1367,13 +1367,15 @@ public class Methods {
             return MethodHandles.constant(returnType, (char) Character.UNASSIGNED);
         } else if (returnType == boolean.class) {
             return MethodHandles.constant(returnType, false);
+        } else if (returnType.isPrimitive()) {
+            throw new AssertionError("Huh? Forgot type " + returnType.getName());
         } else {
             return MethodHandles.constant(returnType, null);
         }
     }
 
     /**
-     * Creates a method handle that doesn't execute its target if the guard returns true.
+     * Creates a method handle that doesn't execute its target if at least one of the guards returns true.
      * <p/>
      * The guard must accept exactly one argument with the type of the given argument of the target, and return a
      * boolean value.
@@ -1381,17 +1383,14 @@ public class Methods {
      * The resulting handle has the same type as the target, and returns a null value or zero if the guard doesn't
      * allow to execute.
      */
-    public static MethodHandle rejectIfArgument(MethodHandle target, int argumentNumber, MethodHandle guard) {
-        MethodType targetType = target.type();
-        checkArgumentLength(targetType, argumentNumber);
+    public static MethodHandle rejectIfArgument(MethodHandle target, int argumentNumber,
+                                                MethodHandle... guards) {
 
-        MethodHandle argumentGuard = argumentGuard(guard, targetType, argumentNumber);
-
-        return rejectIf(target, argumentGuard);
+        return doOnArguments(target, argumentNumber, Methods::rejectIf, guards);
     }
 
     /**
-     * Creates a method handle that executes only if its target if the guard returns true.
+     * Creates a method handle that executes its target only if all the guard return true.
      * <p/>
      * This methods is just the exact opposite to rejectIfArgument().
      * <p/>
@@ -1404,9 +1403,15 @@ public class Methods {
     public static MethodHandle invokeOnlyIfArgument(MethodHandle target, int argumentNumber,
                                                     MethodHandle... guards) {
 
+        return doOnArguments(target, argumentNumber, Methods::invokeOnlyIf, guards);
+    }
+
+    private static MethodHandle doOnArguments(MethodHandle target, int argumentNumber, BinaryOperator<MethodHandle> action,
+                                              MethodHandle... guards) {
+
         int n = guards.length;
         if (n == 0) {
-            throw new IllegalArgumentException("No guards given.");
+            return target;
         }
         MethodType targetType = target.type();
         checkArgumentLength(targetType, argumentNumber + n - 1);
@@ -1414,9 +1419,13 @@ public class Methods {
         MethodHandle handle = target;
         int a = argumentNumber;
         for (MethodHandle g : guards) {
+            if (g == null) {
+                a++;
+                continue;
+            }
             MethodHandle argumentGuard = argumentGuard(g, targetType, a++);
 
-            handle = invokeOnlyIf(handle, argumentGuard);
+            handle = action.apply(handle, argumentGuard);
         }
         return handle;
     }

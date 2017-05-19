@@ -204,7 +204,7 @@ public final class Instantiator {
         MethodHandle identity = MethodHandles.identity(r);
         identity = Methods.acceptThese(identity, existing.type().parameterArray());
 
-        MethodHandle nullCheck = Methods.nullCheck().asType(methodType(boolean.class, r));
+        MethodHandle nullCheck = Methods.nullCheck(r);
         MethodHandle checkedExisting = MethodHandles.guardWithTest(nullCheck, existing, identity);
         checkedExisting = checkedExisting.asType(checkedExisting.type().changeParameterType(0, r));
         return MethodHandles.foldArguments(checkedExisting, provider);

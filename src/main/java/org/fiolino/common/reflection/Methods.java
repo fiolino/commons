@@ -441,11 +441,11 @@ public class Methods {
      */
     private static MethodHandle findHandleByProxy(Lookup lookup, MethodHandle finder) {
         if (finder.type().parameterCount() != 1) {
-            throw new AssertionError(finder + " should accept exactly one argument.");
+            throw new IllegalArgumentException(finder + " should accept exactly one argument.");
         }
         Class<?> proxyType = finder.type().parameterType(0);
         if (!proxyType.isInterface()) {
-            throw new AssertionError(finder + " should only accept one interface.");
+            throw new IllegalArgumentException(finder + " should only accept one interface.");
         }
         Object proxy = createProxy(proxyType);
         Method found = null;
@@ -850,26 +850,32 @@ public class Methods {
             nullCheck = publicLookup().findStatic(Objects.class, "isNull", methodType(boolean.class, Object.class));
             notNullCheck = publicLookup().findStatic(Objects.class, "nonNull", methodType(boolean.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("Objects.isNull()", ex);
+            throw new InternalError("Objects.isNull()", ex);
         }
     }
 
     /**
-     * Returns a method handle that accepts an Object and returns true if this is null.
+     * Returns a method handle that accepts the given type and returns true if this is null.
      *
-     * @return (Object)boolean
+     * @return (&lt;toCheck&gt;)boolean
      */
-    public static MethodHandle nullCheck() {
-        return nullCheck;
+    public static MethodHandle nullCheck(Class<?> toCheck) {
+        if (toCheck.isPrimitive()) {
+            return acceptThese(FALSE, toCheck);
+        }
+        return nullCheck.asType(methodType(boolean.class, toCheck));
     }
 
     /**
-     * Returns a method handle that accepts an Object and returns true if this is not null.
+     * Returns a method handle that accepts the given type and returns true if this is not null.
      *
-     * @return (Object)boolean
+     * @return (&lt;toCheck&gt;)boolean
      */
-    public static MethodHandle notNullCheck() {
-        return notNullCheck;
+    public static MethodHandle notNullCheck(Class<?> toCheck) {
+        if (toCheck.isPrimitive()) {
+            return acceptThese(TRUE, toCheck);
+        }
+        return notNullCheck.asType(methodType(boolean.class, toCheck));
     }
 
     /**
@@ -942,7 +948,7 @@ public class Methods {
         try {
             getFromMap = MethodHandles.publicLookup().bind(map, "get", methodType(Object.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("Map.get()", ex);
+            throw new InternalError("Map.get()", ex);
         }
         return getFromMap.asType(methodType(enumType, String.class));
     }
@@ -954,7 +960,7 @@ public class Methods {
         try {
             valueOf = lookup.findStatic(enumType, "valueOf", methodType(enumType, String.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("No valueOf in " + enumType.getName() + "?", ex);
+            throw new InternalError("No valueOf in " + enumType.getName() + "?", ex);
         }
 
         if (exceptionHandler != null) {
@@ -1025,7 +1031,7 @@ public class Methods {
             try {
                 getFromMap = publicLookup().bind(map, "get", methodType(Object.class, Object.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
-                throw new AssertionError("Map.get()", ex);
+                throw new InternalError("Map.get()", ex);
             }
             return getFromMap.asType(methodType(String.class, type));
         } else {
@@ -1033,7 +1039,7 @@ public class Methods {
             try {
                 return publicLookup().findVirtual(type, "name", methodType(String.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
-                throw new AssertionError("Map.get()", ex);
+                throw new InternalError("Map.get()", ex);
             }
         }
     }
@@ -1140,7 +1146,7 @@ public class Methods {
         try {
             return publicLookup().in(check).bind(check, "isInstance", methodType(boolean.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("No isInstance for " + check.getName() + "?");
+            throw new InternalError("No isInstance for " + check.getName() + "?");
         }
 
     }
@@ -1292,7 +1298,7 @@ public class Methods {
             if (!toCheck.test(i++) || p.isPrimitive()) {
                 continue;
             }
-            MethodHandle castedNullCheck = nullCheck.asType(methodType(boolean.class, p));
+            MethodHandle castedNullCheck = nullCheck(p);
             MethodHandle checkArgI = MethodHandles.permuteArguments(castedNullCheck, nullCheckType, i - 1);
             checks[checkCount++] = checkArgI;
         }
@@ -1361,13 +1367,15 @@ public class Methods {
             return MethodHandles.constant(returnType, (char) Character.UNASSIGNED);
         } else if (returnType == boolean.class) {
             return MethodHandles.constant(returnType, false);
+        } else if (returnType.isPrimitive()) {
+            throw new AssertionError("Huh? Forgot type " + returnType.getName());
         } else {
             return MethodHandles.constant(returnType, null);
         }
     }
 
     /**
-     * Creates a method handle that doesn't execute its target if the guard returns true.
+     * Creates a method handle that doesn't execute its target if at least one of the guards returns true.
      * <p/>
      * The guard must accept exactly one argument with the type of the given argument of the target, and return a
      * boolean value.
@@ -1375,17 +1383,14 @@ public class Methods {
      * The resulting handle has the same type as the target, and returns a null value or zero if the guard doesn't
      * allow to execute.
      */
-    public static MethodHandle rejectIfArgument(MethodHandle target, int argumentNumber, MethodHandle guard) {
-        MethodType targetType = target.type();
-        checkArgumentLength(targetType, argumentNumber);
+    public static MethodHandle rejectIfArgument(MethodHandle target, int argumentNumber,
+                                                MethodHandle... guards) {
 
-        MethodHandle argumentGuard = argumentGuard(guard, targetType, argumentNumber);
-
-        return rejectIf(target, argumentGuard);
+        return doOnArguments(target, argumentNumber, Methods::rejectIf, guards);
     }
 
     /**
-     * Creates a method handle that executes only if its target if the guard returns true.
+     * Creates a method handle that executes its target only if all the guard return true.
      * <p/>
      * This methods is just the exact opposite to rejectIfArgument().
      * <p/>
@@ -1398,9 +1403,15 @@ public class Methods {
     public static MethodHandle invokeOnlyIfArgument(MethodHandle target, int argumentNumber,
                                                     MethodHandle... guards) {
 
+        return doOnArguments(target, argumentNumber, Methods::invokeOnlyIf, guards);
+    }
+
+    private static MethodHandle doOnArguments(MethodHandle target, int argumentNumber, BinaryOperator<MethodHandle> action,
+                                              MethodHandle... guards) {
+
         int n = guards.length;
         if (n == 0) {
-            throw new IllegalArgumentException("No guards given.");
+            return target;
         }
         MethodType targetType = target.type();
         checkArgumentLength(targetType, argumentNumber + n - 1);
@@ -1408,9 +1419,13 @@ public class Methods {
         MethodHandle handle = target;
         int a = argumentNumber;
         for (MethodHandle g : guards) {
+            if (g == null) {
+                a++;
+                continue;
+            }
             MethodHandle argumentGuard = argumentGuard(g, targetType, a++);
 
-            handle = invokeOnlyIf(handle, argumentGuard);
+            handle = action.apply(handle, argumentGuard);
         }
         return handle;
     }
@@ -1999,7 +2014,7 @@ public class Methods {
         } catch (RuntimeException | Error e) {
             throw e;
         } catch (Throwable t) {
-            throw new AssertionError("Creating lambda " + lambdaType.getName() + " failed.", t);
+            throw new InternalError("Creating lambda " + lambdaType.getName() + " failed.", t);
         }
     }
 

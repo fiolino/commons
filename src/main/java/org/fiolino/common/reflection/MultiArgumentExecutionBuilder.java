@@ -129,7 +129,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
             nullFallback = null;
         } else {
             OneTimeExecution ex = OneTimeExecution.createFor(targetHandle);
-            MethodHandle nullCheck = Methods.nullCheck().asType(methodType(boolean.class, expectedType.parameterType(0)));
+            MethodHandle nullCheck = Methods.nullCheck(expectedType.parameterType(0));
             setIfAbsent = MethodHandles.guardWithTest(nullCheck, ex.getAccessor(), setIfAbsent);
             update = MethodHandles.guardWithTest(nullCheck, ex.getUpdater(), update);
             nullFallback = ex;

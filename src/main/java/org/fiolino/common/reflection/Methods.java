@@ -1018,6 +1018,10 @@ public class Methods {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private static final MethodHandle exceptionHandlerCaller = findUsing(lookup(), ExceptionHandler.class,
+            h -> h.handle(null, null));
+
     /**
      * Wraps the given method handle by an exception handler that is called then.
      *
@@ -1030,13 +1034,7 @@ public class Methods {
     public static <E extends Throwable> MethodHandle wrapWithExceptionHandler(MethodHandle target, Class<E> catchedExceptionType,
                                                                               ExceptionHandler<? super E> exceptionHandler) {
         MethodType targetType = target.type();
-        MethodHandle handlerHandle;
-        try {
-            handlerHandle = lookup().bind(exceptionHandler, "handle", methodType(Object.class, Throwable.class, Object[].class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new InternalError(ex);
-        }
-        handlerHandle = handlerHandle.asCollector(Object[].class, targetType.parameterCount());
+        MethodHandle handlerHandle = exceptionHandlerCaller.bindTo(exceptionHandler).asCollector(Object[].class, targetType.parameterCount());
         handlerHandle = handlerHandle.asType(targetType.insertParameterTypes(0, catchedExceptionType));
 
         return MethodHandles.catchException(target, catchedExceptionType, handlerHandle);

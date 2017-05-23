@@ -108,55 +108,55 @@ public class TypesTest {
     @TestWithParameter
     @SuppressWarnings("rawtypes")
     void testRawType1(Map unused, Type t) {
-        assertEquals(Map.class, Types.rawType(t));
+        assertEquals(Map.class, Types.erasureOf(t));
     }
 
     @TestWithParameter
     void testRawType2(Map<? extends List<?>, ?> unused, Type t) {
-        assertEquals(Map.class, Types.rawType(t));
+        assertEquals(Map.class, Types.erasureOf(t));
     }
 
     @TestWithParameter
     <T> void testRawType3(ThreadLocal<T> unused, Type t) {
-        assertEquals(ThreadLocal.class, Types.rawType(t));
+        assertEquals(ThreadLocal.class, Types.erasureOf(t));
     }
 
     @TestWithParameter(expected = IllegalArgumentException.class)
     <T> void testRawType4(T unused, Type t) {
-        Types.rawType(t);
+        Types.erasureOf(t);
     }
 
     @TestWithParameter
     void testRawType5(List<? extends Map<?, ?>> unused, Type t) {
         Type argument = ((ParameterizedType) t).getActualTypeArguments()[0];
-        assertEquals(Map.class, Types.rawType(argument, Types.Bounded.UPPER));
+        assertEquals(Map.class, Types.erasureOf(argument, Types.Bounded.UPPER));
     }
 
     @TestWithParameter
     void testRawType6(List<? super Map<?, ?>> unused, Type t) {
         Type argument = ((ParameterizedType) t).getActualTypeArguments()[0];
-        assertEquals(Map.class, Types.rawType(argument, Types.Bounded.LOWER));
+        assertEquals(Map.class, Types.erasureOf(argument, Types.Bounded.LOWER));
     }
 
     @TestWithParameter(expected = IllegalArgumentException.class)
     void testRawType7(List<? extends Map<?, ?>> unused, Type t) {
         Type argument = ((ParameterizedType) t).getActualTypeArguments()[0];
-        Types.rawType(argument, Types.Bounded.LOWER);
+        Types.erasureOf(argument, Types.Bounded.LOWER);
     }
 
     @TestWithParameter
     void testSimpleArguments(Map<?, String> unused, Type t) {
-        assertEquals(String.class, Types.rawArgument(t, Map.class, 1, Types.Bounded.EXACT));
+        assertEquals(String.class, Types.erasedArgument(t, Map.class, 1, Types.Bounded.EXACT));
     }
 
     @TestWithParameter(expected = IllegalArgumentException.class)
     void testOutOfBounds(Map<?, String> unused, Type t) {
-        Types.rawArgument(t, Map.class, 2, Types.Bounded.EXACT);
+        Types.erasedArgument(t, Map.class, 2, Types.Bounded.EXACT);
     }
 
     @TestWithParameter(expected = IllegalArgumentException.class)
     void testRawType(Map unused, Type t) {
-        Types.rawArgument(t, Map.class, 0, Types.Bounded.EXACT);
+        Types.erasedArgument(t, Map.class, 0, Types.Bounded.EXACT);
     }
 
     private static interface SwapParameters<A, B> extends Map<B, A> {
@@ -164,7 +164,7 @@ public class TypesTest {
 
     @TestWithParameter
     void testSwappedArguments(SwapParameters<Integer, String> unused, Type t) {
-        assertEquals(Integer.class, Types.rawArgument(t, Map.class, 1, Types.Bounded.EXACT));
+        assertEquals(Integer.class, Types.erasedArgument(t, Map.class, 1, Types.Bounded.EXACT));
     }
 
     private interface FixedParameters extends SwapParameters<Integer, String> {
@@ -172,8 +172,8 @@ public class TypesTest {
 
     @TestWithParameter
     void testFixedArguments(FixedParameters unused, Type t) {
-        assertEquals(Integer.class, Types.rawArgument(t, Map.class, 1, Types.Bounded.EXACT));
-        assertEquals(String.class, Types.rawArgument(t, SwapParameters.class, 1, Types.Bounded.EXACT));
+        assertEquals(Integer.class, Types.erasedArgument(t, Map.class, 1, Types.Bounded.EXACT));
+        assertEquals(String.class, Types.erasedArgument(t, SwapParameters.class, 1, Types.Bounded.EXACT));
     }
 
     private interface OneParameter<A extends List<?>> extends Map<Date, A> {
@@ -181,7 +181,7 @@ public class TypesTest {
 
     @TestWithParameter
     void testOneArgument(OneParameter<?> unused, Type t) {
-        assertEquals(Date.class, Types.rawArgument(t, Map.class, 0, Types.Bounded.EXACT));
-        assertEquals(List.class, Types.rawArgument(t, Map.class, 1, Types.Bounded.UPPER));
+        assertEquals(Date.class, Types.erasedArgument(t, Map.class, 0, Types.Bounded.EXACT));
+        assertEquals(List.class, Types.erasedArgument(t, Map.class, 1, Types.Bounded.UPPER));
     }
 }

@@ -136,22 +136,22 @@ public final class Types {
     /**
      * Gets the raw class of some type, i.e. the non-generic raw value.
      */
-    public static Class<?> rawType(Type type) {
-        return rawType(type, Bounded.EXACT);
+    public static Class<?> erasureOf(Type type) {
+        return erasureOf(type, Bounded.EXACT);
     }
 
     /**
-     * Gets the raw class of some type, i.e. the non-generic raw value.
+     * Gets the erasure of some type, i.e. the non-generic raw value.
      */
-    public static Class<?> rawType(Type type, Bounded b) {
+    public static Class<?> erasureOf(Type type, Bounded b) {
         if (type instanceof Class) return toWrapper((Class<?>) type);
         if (type instanceof ParameterizedType) {
-            return rawType(((ParameterizedType) type).getRawType(), b);
+            return erasureOf(((ParameterizedType) type).getRawType(), b);
         }
         if (type instanceof WildcardType) {
             Type[] bounds = b.getBounds((WildcardType) type);
             if (bounds.length == 1) {
-                return rawType(bounds[0], b);
+                return erasureOf(bounds[0], b);
             }
             throw new IllegalArgumentException("Type " + type + " has multiple bounds");
         }
@@ -209,12 +209,12 @@ public final class Types {
      * @param b Needed when it's a bounded type
      * @return The found argument
      */
-    public static Class<?> rawArgument(Type type, Class<?> reference, int index, Bounded b) {
-        return rawType(genericArgument(type, reference, index), b);
+    public static Class<?> erasedArgument(Type type, Class<?> reference, int index, Bounded b) {
+        return erasureOf(genericArgument(type, reference, index), b);
     }
 
     private static Type genericArgument0(Type type, Class<?> reference, int index) {
-        Class<?> rawType = rawType(type);
+        Class<?> rawType = erasureOf(type);
         if (rawType.equals(reference)) {
             return genericArgumentOf(type, index, null, null);
         }
@@ -284,9 +284,9 @@ public final class Types {
     }
 
     private static boolean isBelow(Type toCheck, Type[] bounds) {
-        Class<?> r = rawType(toCheck, Bounded.UPPER);
+        Class<?> r = erasureOf(toCheck, Bounded.UPPER);
         for (Type b : bounds) {
-            Class<?> rawBound = rawType(b, Bounded.UPPER);
+            Class<?> rawBound = erasureOf(b, Bounded.UPPER);
             if (r.isAssignableFrom(rawBound)) return true;
         }
         return false;

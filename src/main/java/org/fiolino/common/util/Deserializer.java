@@ -181,7 +181,7 @@ public final class Deserializer {
         }
 
         if (valueType.isAssignableFrom(List.class)) {
-            Class<?> itemType = Types.rawArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
+            Class<?> itemType = Types.erasedArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
             MethodHandle addToList = LIST_ADD_HANDLE.asType(methodType(void.class, List.class, itemType));
             MethodHandle adder = createSetterForValueType(addToList, itemType);
             MethodHandle listBuilder = MethodHandles.insertArguments(STRING_TO_LIST_HANDLE, 0, adder);
@@ -199,13 +199,17 @@ public final class Deserializer {
     private MethodHandle createSetterForValueType(MethodHandle setter, Class<?> valueType) {
         MethodHandle pointerSetter = Converters.convertArgumentTypesTo(setter, Converters.defaultConverters, 1, String.class);
         if (valueType.isEnum()) {
-            pointerSetter = Methods.wrapWithExceptionHandler(pointerSetter, 1, IllegalArgumentException.class,
-                    (ex, vType, outputType, inputValue) ->
-                            logger.warn("No such enum value " + inputValue + " in " + outputType.getName()));
+            pointerSetter = Methods.wrapWithExceptionHandler(pointerSetter, IllegalArgumentException.class,
+                    (ex, v) -> {
+                        logger.warn("No such enum value " + v[0] + " in " + valueType.getName());
+                        return null;
+                    });
         } else {
-            pointerSetter = Methods.wrapWithExceptionHandler(pointerSetter, 1, NumberFormatException.class,
-                    (ex, vType, outputType, inputValue) ->
-                            logger.warn("Illegal number value " + inputValue));
+            pointerSetter = Methods.wrapWithExceptionHandler(pointerSetter, NumberFormatException.class,
+                    (ex, v) -> {
+                        logger.warn("Illegal number value " + v[0]);
+                        return null;
+                    });
         }
         return pointerSetter;
     }

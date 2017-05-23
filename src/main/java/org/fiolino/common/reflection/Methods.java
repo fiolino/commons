@@ -4,7 +4,6 @@ import org.fiolino.common.analyzing.AmbiguousTypesException;
 import org.fiolino.common.util.Instantiator;
 import org.fiolino.common.util.Strings;
 import org.fiolino.common.util.Types;
-import org.fiolino.data.annotation.IndexedAs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,6 +12,7 @@ import java.lang.invoke.*;
 import java.lang.reflect.*;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
+import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.Semaphore;
 import java.util.function.*;
@@ -883,88 +883,66 @@ public class Methods {
      * It already contains a null check: If the input string is null, then the return value is null as well
      * without any complains.
      *
+     * @param type The enum type
+     * @param specialHandler Can return a special value for some field and its value.
+     *                       If it returns null, name() is used. If it returns an empty String, null will be returned.
+     * @param <E> The enum
      * @throws IllegalArgumentException If the input string is invalid, i.e. none of the accepted enumeration values
      */
-    public static <E extends Enum<E>> MethodHandle convertStringToEnum(Class<E> enumType) {
-        return convertStringToEnum(enumType, null);
-    }
-
-    /**
-     * Creates a MethodHandle which accepts a String as the only parameter and returns an enum of type enumType.
-     * It already contains a null check: If the input string is null, then the return value is null as well
-     * without any complains.
-     * <p/>
-     * If the input string is invalid, i.e. none of the accepted enumeration values, then the exceptionHandler is
-     * called, which can either throw an exception again or return another enum (or null). If no exceptionHandler is
-     * given, then the exception is not catched at all.
-     */
-    public static <E extends Enum<E>> MethodHandle convertStringToEnum(Class<E> enumType,
-                                                                       ExceptionHandler<? super IllegalArgumentException> exceptionHandler) {
-        assert enumType.isEnum();
-        Map<String, Object> map = null;
-        E[] enumConstants = enumType.getEnumConstants();
+    public static <E extends Enum<E>> MethodHandle convertStringToEnum(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
+        assert type.isEnum();
+        Map<String, Object> map = new HashMap<>();
+        E[] enumConstants = type.getEnumConstants();
         if (enumConstants == null) {
-            throw new IllegalArgumentException(enumType.getName() + " should be an enum.");
+            throw new IllegalArgumentException(type.getName() + " should be an enum.");
         }
-        Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) enumType::getFields);
+        Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) type::getFields);
+        boolean isSpecial = false;
+
         for (java.lang.reflect.Field f : fields) {
             int m = f.getModifiers();
             if (!Modifier.isStatic(m) || !Modifier.isPublic(m)) {
                 continue;
             }
-            if (!enumType.isAssignableFrom(f.getType())) {
+            if (!type.isAssignableFrom(f.getType())) {
                 continue;
             }
-            IndexedAs annotated = f.getAnnotation(IndexedAs.class);
-            if (annotated == null) {
-                continue;
-            }
-            Object v;
+            E v;
             try {
-                v = f.get(null);
+                v = type.cast(f.get(null));
             } catch (IllegalAccessException ex) {
                 throw new AssertionError("Cannot access " + f, ex);
             }
-            if (map == null) {
-                map = new HashMap<>(enumConstants.length * 4);
+            String value = specialHandler.apply(f, v);
+            if (value == null) {
+                // The default handling.
+                put(map, v.name(), v);
+                continue;
             }
-            put(map, annotated.value(), v);
-            for (String a : annotated.alternatives()) {
-                put(map, a, v);
-            }
+            isSpecial = true;
+            put(map, value, v);
         }
-        if (map == null) {
-            // No @IndexedAs annotations
-            return convertStringToNormalEnum(enumType, exceptionHandler);
+        if (!isSpecial) {
+            // No special handling
+            return convertStringToNormalEnum(type);
         }
         // There are annotations, bind to Map.get() method
-        for (E v : enumConstants) {
-            String n = v.name();
-            if (!map.containsKey(n)) {
-                map.put(n, v);
-            }
-        }
         MethodHandle getFromMap;
         try {
-            getFromMap = MethodHandles.publicLookup().bind(map, "get", methodType(Object.class, Object.class));
+            getFromMap = publicLookup().bind(map, "get", methodType(Object.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError("Map.get()", ex);
         }
-        return getFromMap.asType(methodType(enumType, String.class));
+        return getFromMap.asType(methodType(type, String.class));
     }
 
-    private static MethodHandle convertStringToNormalEnum(Class<?> enumType,
-                                                          ExceptionHandler<? super IllegalArgumentException> exceptionHandler) {
+    private static MethodHandle convertStringToNormalEnum(Class<?> enumType) {
         Lookup lookup = publicLookup().in(enumType);
         MethodHandle valueOf;
         try {
             valueOf = lookup.findStatic(enumType, "valueOf", methodType(enumType, String.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError("No valueOf in " + enumType.getName() + "?", ex);
-        }
-
-        if (exceptionHandler != null) {
-            valueOf = wrapWithExceptionHandler(valueOf, 0, IllegalArgumentException.class, exceptionHandler);
         }
 
         return secureNull(valueOf);
@@ -977,10 +955,6 @@ public class Methods {
         }
         map.put(key, value);
     }
-
-    @SuppressWarnings("unchecked")
-    private static final MethodHandle exceptionHandlerCaller = findUsing(MethodHandles.lookup(), ExceptionHandler.class,
-            (h) -> h.handleNotExisting(null, null, null, null));
 
     /**
      * Creates a handle that converts some enum to a String.
@@ -1035,7 +1009,7 @@ public class Methods {
             }
             return getFromMap.asType(methodType(String.class, type));
         } else {
-            // No @IndexedAs annotations
+            // No special handling
             try {
                 return publicLookup().findVirtual(type, "name", methodType(String.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
@@ -1048,32 +1022,82 @@ public class Methods {
      * Wraps the given method handle by an exception handler that is called then.
      *
      * @param target           The method handle to wrap.
-     * @param argumentNumber   Which argument shall be transferred to the exception handler. If -1, then null value if given instead, and the input type is void.
-     * @param exceptionType    Which type shall be catched.
+     * @param catchedExceptionType Which type shall be catched.
      * @param exceptionHandler The handler.
      * @param <E>              The exception type
      * @return A method handle of the same type as the target, which won't throw E but call the handler instead.
      */
-    public static <E extends Throwable> MethodHandle wrapWithExceptionHandler(MethodHandle target, int argumentNumber,
-                                                                              Class<E> exceptionType,
+    public static <E extends Throwable> MethodHandle wrapWithExceptionHandler(MethodHandle target, Class<E> catchedExceptionType,
                                                                               ExceptionHandler<? super E> exceptionHandler) {
         MethodType targetType = target.type();
-        Class<?> outputType = targetType.returnType();
-        MethodHandle warnNotExisting = exceptionHandlerCaller.bindTo(exceptionHandler);
-        if (argumentNumber < 0) {
-            warnNotExisting = MethodHandles.insertArguments(warnNotExisting, 1, void.class, outputType, null);
-        } else {
-            checkArgumentLength(targetType, argumentNumber);
-            Class<?> inputType = targetType.parameterType(argumentNumber);
-            warnNotExisting = warnNotExisting.asType(warnNotExisting.type().changeParameterType(3, inputType));
-            if (argumentNumber > 0) {
-                Class<?>[] firstParameterTypes = Arrays.copyOf(targetType.parameterArray(), argumentNumber);
-                warnNotExisting = MethodHandles.dropArguments(warnNotExisting, 3, firstParameterTypes);
-            }
-            warnNotExisting = MethodHandles.insertArguments(warnNotExisting, 1, inputType, outputType);
+        MethodHandle handlerHandle;
+        try {
+            handlerHandle = lookup().bind(exceptionHandler, "handle", methodType(Object.class, Throwable.class, Object[].class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new InternalError(ex);
         }
-        warnNotExisting = returnEmptyValue(warnNotExisting, outputType);
-        return MethodHandles.catchException(target, exceptionType, warnNotExisting);
+        handlerHandle = handlerHandle.asCollector(Object[].class, targetType.parameterCount());
+        handlerHandle = handlerHandle.asType(targetType.insertParameterTypes(0, catchedExceptionType));
+
+        return MethodHandles.catchException(target, catchedExceptionType, handlerHandle);
+    }
+
+    /**
+     * Catches an exception of a certain type, and throws a new one which includes some detailed information about the context.
+     *
+     * The resulting handle will of of exactly the same type as the given target. It will invoke this target, but catch any exception
+     * of type catchedException, and pack it into a new exception of type thrownException. That class must have a public constructor
+     * with a String and a Throwable as parameters; this is the default for Java exception classes anyway.
+     *
+     * The created exception will get a new message string which is defined by the exceptionMessage parameter. This is passed
+     * to {@link MessageFormat}, with all given injection values plus all called parameter values of the target call.
+     *
+     * So if 0..k are the indexes of the injection parameters, and 0..n are the indexes of the target's parameters of the
+     * failed call, then you can refer to these values in the exceptionMessage via parameters {0}..{k} for the injection values,
+     * and {k+1}..{k+n+1} for the target call's parameters.
+     *
+     * @param target The target to call
+     * @param catchedException All of this and all subclasses are being catched
+     * @param thrownException This will be the new exception type, with the original one as the wrapped exception. Must have a
+     *                        public constructor of type (String,Throwable).
+     * @param exceptionMessage As defined in {@link MessageFormat}
+     * @param injections Added as the first n values to the exceptionMessage
+     * @return A handle of the same type as target
+     */
+    public static MethodHandle rethrowException(MethodHandle target, Class<? extends Throwable> catchedException,
+                                                Class<? extends Throwable> thrownException, String exceptionMessage,
+                                                Object... injections) {
+
+        int formatParameterCount = target.type().parameterCount() + injections.length;
+
+        MethodHandle exConstructor;
+        try {
+            exConstructor = publicLookup().in(thrownException).findConstructor(thrownException, methodType(void.class, String.class, Throwable.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new IllegalArgumentException(thrownException.getClass().getName() + " must have constructor with String and Throwable", ex);
+        }
+        exConstructor = exConstructor.asType(methodType(thrownException, String.class, catchedException));
+
+        if (formatParameterCount == 0) {
+            exConstructor = exConstructor.bindTo(exceptionMessage);
+        } else {
+            MethodHandle messageFormat;
+            try {
+                messageFormat = publicLookup().findStatic(MessageFormat.class, "format", methodType(String.class, String.class, Object[].class));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                throw new InternalError("MessageFormat.format()", ex);
+            }
+
+            exConstructor = MethodHandles.permuteArguments(exConstructor, methodType(thrownException, catchedException, String.class), 1, 0);
+            messageFormat = messageFormat.bindTo(exceptionMessage).asCollector(Object[].class, formatParameterCount);
+            messageFormat = MethodHandles.insertArguments(messageFormat, 0, injections);
+            messageFormat = messageFormat.asType(target.type().changeReturnType(String.class));
+            exConstructor = MethodHandles.collectArguments(exConstructor, 1, messageFormat);
+        }
+
+        MethodHandle throwException = MethodHandles.throwException(target.type().returnType(), thrownException);
+        throwException = MethodHandles.collectArguments(throwException, 0, exConstructor);
+        return MethodHandles.catchException(target, catchedException, throwException);
     }
 
     static void checkArgumentLength(MethodType targetType, int argumentNumber) {
@@ -1439,7 +1463,7 @@ public class Methods {
     }
 
     /**
-     * Creates a method handle that executes its target, and then returns the argument of the given number.
+     * Creates a method handle that executes its target, and then returns the argument at the given index.
      * <p/>
      * The resulting handle will have the same type as the target except that the return type is the same as the
      * one of the given argument.

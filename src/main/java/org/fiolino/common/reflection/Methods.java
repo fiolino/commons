@@ -1046,8 +1046,8 @@ public class Methods {
      * Catches an exception of a certain type, and throws a new one which includes some detailed information about the context.
      *
      * The resulting handle will of of exactly the same type as the given target. It will invoke this target, but catch any exception
-     * of type catchedException, and pack it into a new exception of type thrownException. That class must have a public constructor
-     * with a String and a Throwable as parameters; this is the default for Java exception classes anyway.
+     * of type catchedException, and pack it into a new exception constructed by thrownExceptionFactory. This factory gets
+     * a String and a Throwable as parameters and returns the exception that will be thrown.
      *
      * The created exception will get a new message string which is defined by the exceptionMessage parameter. This is passed
      * to {@link MessageFormat}, with all given injection values plus all called parameter values of the target call.
@@ -1058,46 +1058,24 @@ public class Methods {
      *
      * @param target The target to call
      * @param catchedException All of this and all subclasses are being catched
-     * @param thrownException This will be the new exception type, with the original one as the wrapped exception. Must have a
-     *                        public constructor of type (String,Throwable).
+     * @param thrownExceptionFactory This will be the new exception type, with the original one as the wrapped exception.
+     *                               Gets the constructed message String and the catched Exception.
      * @param exceptionMessage As defined in {@link MessageFormat}
      * @param injections Added as the first n values to the exceptionMessage
      * @return A handle of the same type as target
      */
-    public static MethodHandle rethrowException(MethodHandle target, Class<? extends Throwable> catchedException,
-                                                Class<? extends Throwable> thrownException, String exceptionMessage,
-                                                Object... injections) {
+    public static <E extends Throwable> MethodHandle rethrowException(MethodHandle target, Class<E> catchedException,
+                                                                      BiFunction<? super String, ? super E, ? extends Throwable> thrownExceptionFactory,
+                                                                      String exceptionMessage, Object... injections) {
 
-        int formatParameterCount = target.type().parameterCount() + injections.length;
-
-        MethodHandle exConstructor;
-        try {
-            exConstructor = publicLookup().in(thrownException).findConstructor(thrownException, methodType(void.class, String.class, Throwable.class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new IllegalArgumentException(thrownException.getClass().getName() + " must have constructor with String and Throwable", ex);
-        }
-        exConstructor = exConstructor.asType(methodType(thrownException, String.class, catchedException));
-
-        if (formatParameterCount == 0) {
-            exConstructor = exConstructor.bindTo(exceptionMessage);
-        } else {
-            MethodHandle messageFormat;
-            try {
-                messageFormat = publicLookup().findStatic(MessageFormat.class, "format", methodType(String.class, String.class, Object[].class));
-            } catch (NoSuchMethodException | IllegalAccessException ex) {
-                throw new InternalError("MessageFormat.format()", ex);
-            }
-
-            exConstructor = MethodHandles.permuteArguments(exConstructor, methodType(thrownException, catchedException, String.class), 1, 0);
-            messageFormat = messageFormat.bindTo(exceptionMessage).asCollector(Object[].class, formatParameterCount);
-            messageFormat = MethodHandles.insertArguments(messageFormat, 0, injections);
-            messageFormat = messageFormat.asType(target.type().changeReturnType(String.class));
-            exConstructor = MethodHandles.collectArguments(exConstructor, 1, messageFormat);
-        }
-
-        MethodHandle throwException = MethodHandles.throwException(target.type().returnType(), thrownException);
-        throwException = MethodHandles.collectArguments(throwException, 0, exConstructor);
-        return MethodHandles.catchException(target, catchedException, throwException);
+        return wrapWithExceptionHandler(target, catchedException, (ex, v) -> {
+            int k = injections.length;
+            int n = v.length;
+            Object[] params = Arrays.copyOf(injections, k+n);
+            System.arraycopy(v, 0, params, k, n);
+            String thrownMessage = MessageFormat.format(exceptionMessage, params);
+            throw thrownExceptionFactory.apply(thrownMessage, ex);
+        });
     }
 
     static void checkArgumentLength(MethodType targetType, int argumentNumber) {

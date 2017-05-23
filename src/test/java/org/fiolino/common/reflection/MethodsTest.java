@@ -322,7 +322,7 @@ public class MethodsTest {
     @Test
     public void testRethrowExceptionNoArguments() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
-        booom = Methods.rethrowException(booom, FileNotFoundException.class, UnsupportedOperationException.class,
+        booom = Methods.rethrowException(booom, FileNotFoundException.class, UnsupportedOperationException::new,
                 "I have no {0} parameters");
         try {
             booom.invokeExact();
@@ -338,7 +338,7 @@ public class MethodsTest {
     @Test
     public void testRethrowExceptionWithInjections() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
-        booom = Methods.rethrowException(booom, FileNotFoundException.class, UnsupportedOperationException.class,
+        booom = Methods.rethrowException(booom, FileNotFoundException.class, UnsupportedOperationException::new,
                 "No. 1: {0}, no. 2: {1}", "One", 2);
         try {
             booom.invokeExact();
@@ -359,7 +359,7 @@ public class MethodsTest {
     @Test
     public void testRethrowExceptionWithParameters() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class, int.class, String.class));
-        booom = Methods.rethrowException(booom, FileNotFoundException.class, UnsupportedOperationException.class,
+        booom = Methods.rethrowException(booom, FileNotFoundException.class, UnsupportedOperationException::new,
                 "Injection 1: {0}, injection 2: {1}, param 1: {2}, param 2: {3}", "One", 2);
         try {
             booom.invokeExact(5, "Hello");

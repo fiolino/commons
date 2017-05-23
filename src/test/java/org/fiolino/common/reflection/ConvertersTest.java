@@ -137,6 +137,19 @@ public class ConvertersTest {
         assertEquals("DAYS", (String) c.invokeExact());
     }
 
+    @Test
+    public void testFromNullEnum() throws Throwable {
+        Object getEnum = new Object() {
+            TimeUnit getEnum() {
+                return null;
+            }
+        };
+        MethodHandle c = getHandle(Converters.defaultConverters, Object.class, getEnum);
+        assertNull((Object) c.invokeExact());
+        c = getHandle(Converters.defaultConverters, String.class, getEnum);
+        assertNull((String) c.invokeExact());
+    }
+
     public static class ValueOfTest {
         final int len;
 
@@ -170,6 +183,7 @@ public class ConvertersTest {
         assertEquals("xx", (Object) c.invokeExact("xx"));
         c = getHandle(Converters.defaultConverters, TimeUnit.class, getString);
         assertEquals(TimeUnit.MINUTES, (TimeUnit) c.invokeExact("MINUTES"));
+        assertNull((TimeUnit) c.invokeExact((String) null));
         c = getHandle(Converters.defaultConverters, int.class, getString);
         assertEquals(188, (int) c.invokeExact("188"));
         c = getHandle(Converters.defaultConverters, float.class, getString);

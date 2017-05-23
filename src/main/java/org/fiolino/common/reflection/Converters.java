@@ -90,16 +90,18 @@ public final class Converters {
         }
         if (pure != null) {
             if (String.class.equals(inputType)) {
-                return trimStringInput(pure);
+                return Methods.secureNull(trimStringInput(pure));
             }
-            return pure;
+            return Methods.secureNull(pure);
         }
         if (returnType == String.class && Number.class.isAssignableFrom(inputType)) {
+            MethodHandle numberToString;
             try {
-                return lookup.findVirtual(inputType, "toString", methodType(String.class));
+                numberToString = lookup.findVirtual(inputType, "toString", methodType(String.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
                 throw new AssertionError(inputType.getName() + ".toString() not available");
             }
+            return Methods.secureNull(numberToString);
         }
 
         return null;
@@ -192,7 +194,7 @@ public final class Converters {
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError("String.charAt(int)", ex);
         }
-        getFirstChar = rejectIf(MethodHandles.insertArguments(charAt, 1, 0), stringEmptyCheck);
+        getFirstChar = Methods.secureNull(rejectIf(MethodHandles.insertArguments(charAt, 1, 0), stringEmptyCheck));
         CharSet trueChars = CharSet.of("tTyYwWX1");
         try {
             charToBool = lookup.findVirtual(CharSet.class, "contains", methodType(boolean.class, char.class))
@@ -215,7 +217,7 @@ public final class Converters {
         try {
             // Convert enums to String
             MethodHandle enumName = lookup.findVirtual(Enum.class, "name", methodType(String.class));
-            loc = loc.register(enumName);
+            loc = loc.register(Methods.secureNull(enumName));
 
             // Convert Date/long
             MethodHandle dateConstructor = lookup.findConstructor(Date.class, methodType(void.class, long.class));
@@ -255,6 +257,7 @@ public final class Converters {
         MethodHandle returnT = MethodHandles.dropArguments(MethodHandles.constant(char.class, 't'), 0, boolean.class);
         MethodHandle returnF = MethodHandles.dropArguments(MethodHandles.constant(char.class, 'f'), 0, boolean.class);
         loc = loc.register(MethodHandles.guardWithTest(MethodHandles.identity(boolean.class), returnT, returnF));
+
         defaultConverters = loc;
     }
 

@@ -153,14 +153,14 @@ public class ModelDescription extends AbstractConfigurationContainer {
             Class<?> valueType = getValueType();
             Type genericType = getGenericType();
             if (Map.class.isAssignableFrom(valueType)) {
-                if (!String.class.equals(Types.rawArgument(genericType, Map.class, 0, Types.Bounded.LOWER))) {
+                if (!String.class.equals(Types.erasedArgument(genericType, Map.class, 0, Types.Bounded.LOWER))) {
                     throw new AssertionError("Bad type for " + getName() + ": Can only index Maps with String keys.");
                 }
                 genericType = Types.genericArgument(genericType, Map.class, 1);
-                valueType = Types.rawType(genericType);
+                valueType = Types.erasureOf(genericType);
             }
             if (Collection.class.isAssignableFrom(valueType)) {
-                valueType = Types.rawArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
+                valueType = Types.erasedArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
             }
             TargetType annotation = getAnnotation(TargetType.class);
             if (annotation == null) {

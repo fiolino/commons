@@ -4,7 +4,6 @@ import org.fiolino.common.analyzing.AmbiguousTypesException;
 import org.fiolino.common.util.Instantiator;
 import org.fiolino.common.util.Strings;
 import org.fiolino.common.util.Types;
-import org.fiolino.data.annotation.IndexedAs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -883,88 +882,66 @@ public class Methods {
      * It already contains a null check: If the input string is null, then the return value is null as well
      * without any complains.
      *
+     * @param type The enum type
+     * @param specialHandler Can return a special value for some field and its value.
+     *                       If it returns null, name() is used. If it returns an empty String, null will be returned.
+     * @param <E> The enum
      * @throws IllegalArgumentException If the input string is invalid, i.e. none of the accepted enumeration values
      */
-    public static <E extends Enum<E>> MethodHandle convertStringToEnum(Class<E> enumType) {
-        return convertStringToEnum(enumType, null);
-    }
-
-    /**
-     * Creates a MethodHandle which accepts a String as the only parameter and returns an enum of type enumType.
-     * It already contains a null check: If the input string is null, then the return value is null as well
-     * without any complains.
-     * <p/>
-     * If the input string is invalid, i.e. none of the accepted enumeration values, then the exceptionHandler is
-     * called, which can either throw an exception again or return another enum (or null). If no exceptionHandler is
-     * given, then the exception is not catched at all.
-     */
-    public static <E extends Enum<E>> MethodHandle convertStringToEnum(Class<E> enumType,
-                                                                       ExceptionHandler<? super IllegalArgumentException> exceptionHandler) {
-        assert enumType.isEnum();
-        Map<String, Object> map = null;
-        E[] enumConstants = enumType.getEnumConstants();
+    public static <E extends Enum<E>> MethodHandle convertStringToEnum(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
+        assert type.isEnum();
+        Map<String, Object> map = new HashMap<>();
+        E[] enumConstants = type.getEnumConstants();
         if (enumConstants == null) {
-            throw new IllegalArgumentException(enumType.getName() + " should be an enum.");
+            throw new IllegalArgumentException(type.getName() + " should be an enum.");
         }
-        Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) enumType::getFields);
+        Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) type::getFields);
+        boolean isSpecial = false;
+
         for (java.lang.reflect.Field f : fields) {
             int m = f.getModifiers();
             if (!Modifier.isStatic(m) || !Modifier.isPublic(m)) {
                 continue;
             }
-            if (!enumType.isAssignableFrom(f.getType())) {
+            if (!type.isAssignableFrom(f.getType())) {
                 continue;
             }
-            IndexedAs annotated = f.getAnnotation(IndexedAs.class);
-            if (annotated == null) {
-                continue;
-            }
-            Object v;
+            E v;
             try {
-                v = f.get(null);
+                v = type.cast(f.get(null));
             } catch (IllegalAccessException ex) {
                 throw new AssertionError("Cannot access " + f, ex);
             }
-            if (map == null) {
-                map = new HashMap<>(enumConstants.length * 4);
+            String value = specialHandler.apply(f, v);
+            if (value == null) {
+                // The default handling.
+                put(map, v.name(), v);
+                continue;
             }
-            put(map, annotated.value(), v);
-            for (String a : annotated.alternatives()) {
-                put(map, a, v);
-            }
+            isSpecial = true;
+            put(map, value, v);
         }
-        if (map == null) {
-            // No @IndexedAs annotations
-            return convertStringToNormalEnum(enumType, exceptionHandler);
+        if (!isSpecial) {
+            // No special handling
+            return convertStringToNormalEnum(type);
         }
         // There are annotations, bind to Map.get() method
-        for (E v : enumConstants) {
-            String n = v.name();
-            if (!map.containsKey(n)) {
-                map.put(n, v);
-            }
-        }
         MethodHandle getFromMap;
         try {
-            getFromMap = MethodHandles.publicLookup().bind(map, "get", methodType(Object.class, Object.class));
+            getFromMap = publicLookup().bind(map, "get", methodType(Object.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError("Map.get()", ex);
         }
-        return getFromMap.asType(methodType(enumType, String.class));
+        return getFromMap.asType(methodType(type, String.class));
     }
 
-    private static MethodHandle convertStringToNormalEnum(Class<?> enumType,
-                                                          ExceptionHandler<? super IllegalArgumentException> exceptionHandler) {
+    private static MethodHandle convertStringToNormalEnum(Class<?> enumType) {
         Lookup lookup = publicLookup().in(enumType);
         MethodHandle valueOf;
         try {
             valueOf = lookup.findStatic(enumType, "valueOf", methodType(enumType, String.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError("No valueOf in " + enumType.getName() + "?", ex);
-        }
-
-        if (exceptionHandler != null) {
-            valueOf = wrapWithExceptionHandler(valueOf, 0, IllegalArgumentException.class, exceptionHandler);
         }
 
         return secureNull(valueOf);
@@ -977,10 +954,6 @@ public class Methods {
         }
         map.put(key, value);
     }
-
-    @SuppressWarnings("unchecked")
-    private static final MethodHandle exceptionHandlerCaller = findUsing(MethodHandles.lookup(), ExceptionHandler.class,
-            (h) -> h.handleNotExisting(null, null, null, null));
 
     /**
      * Creates a handle that converts some enum to a String.
@@ -1035,7 +1008,7 @@ public class Methods {
             }
             return getFromMap.asType(methodType(String.class, type));
         } else {
-            // No @IndexedAs annotations
+            // No special handling
             try {
                 return publicLookup().findVirtual(type, "name", methodType(String.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
@@ -1044,36 +1017,53 @@ public class Methods {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private static final MethodHandle exceptionHandlerCaller = findUsing(lookup(), ExceptionHandler.class,
+            h -> h.handle(null, null));
+
     /**
-     * Wraps the given method handle by an exception handler that is called then.
+     * Wraps the given method handle by an exception handler that is called in case.
+     *
+     * The given exception handler gets an array of objects, including all static injection parameters plus all parameters
+     * of the failed target handle call.
+     *
+     * So if 0..k are the indexes of the injection parameters, and 0..n are the indexes of the target's parameters of the
+     * failed call, then you can refer to these values in the exception handler via parameters [0]..[k[ for the injection values,
+     * and [k+1]..[k+n+1] for the target call's parameters.
      *
      * @param target           The method handle to wrap.
-     * @param argumentNumber   Which argument shall be transferred to the exception handler. If -1, then null value if given instead, and the input type is void.
-     * @param exceptionType    Which type shall be catched.
+     * @param catchedExceptionType Which type shall be catched.
      * @param exceptionHandler The handler.
+     * @param injections       These will be the first static values of the given parameter array in the exception handler
      * @param <E>              The exception type
      * @return A method handle of the same type as the target, which won't throw E but call the handler instead.
      */
-    public static <E extends Throwable> MethodHandle wrapWithExceptionHandler(MethodHandle target, int argumentNumber,
-                                                                              Class<E> exceptionType,
-                                                                              ExceptionHandler<? super E> exceptionHandler) {
+    public static <E extends Throwable> MethodHandle wrapWithExceptionHandler(MethodHandle target, Class<E> catchedExceptionType,
+                                                                              ExceptionHandler<? super E> exceptionHandler,
+                                                                              Object... injections) {
+
+        return wrapWithExceptionHandler(target, catchedExceptionType, exceptionHandlerCaller.bindTo(exceptionHandler), injections);
+    }
+
+    /**
+     * Wraps the given method handle by an exception handler that is called in case. The exception handle gets the catched
+     * exception and an Object array of the injections and all called parameter values.
+     *
+     * @param target           The method handle to wrap.
+     * @param catchedExceptionType Which type shall be catched.
+     * @param exceptionHandler The handler: (&lt;? super catchedExceptionType&gt;,Object[])&lt;? super target return type&gt;
+     * @param injections       These will be the first static values of the given parameter array in the exception handler
+     * @return A method handle of the same type as the target, which won't throw the exception but call the handler instead.
+     */
+    public static MethodHandle wrapWithExceptionHandler(MethodHandle target, Class<? extends Throwable> catchedExceptionType,
+                                                        MethodHandle exceptionHandler, Object... injections) {
         MethodType targetType = target.type();
-        Class<?> outputType = targetType.returnType();
-        MethodHandle warnNotExisting = exceptionHandlerCaller.bindTo(exceptionHandler);
-        if (argumentNumber < 0) {
-            warnNotExisting = MethodHandles.insertArguments(warnNotExisting, 1, void.class, outputType, null);
-        } else {
-            checkArgumentLength(targetType, argumentNumber);
-            Class<?> inputType = targetType.parameterType(argumentNumber);
-            warnNotExisting = warnNotExisting.asType(warnNotExisting.type().changeParameterType(3, inputType));
-            if (argumentNumber > 0) {
-                Class<?>[] firstParameterTypes = Arrays.copyOf(targetType.parameterArray(), argumentNumber);
-                warnNotExisting = MethodHandles.dropArguments(warnNotExisting, 3, firstParameterTypes);
-            }
-            warnNotExisting = MethodHandles.insertArguments(warnNotExisting, 1, inputType, outputType);
-        }
-        warnNotExisting = returnEmptyValue(warnNotExisting, outputType);
-        return MethodHandles.catchException(target, exceptionType, warnNotExisting);
+        MethodHandle handlerHandle = exceptionHandler.asCollector(Object[].class, injections.length + targetType.parameterCount());
+        handlerHandle = MethodHandles.insertArguments(handlerHandle, 1, injections);
+        handlerHandle = changeNullSafeReturnType(handlerHandle, targetType.returnType());
+        handlerHandle = handlerHandle.asType(targetType.insertParameterTypes(0, catchedExceptionType));
+
+        return MethodHandles.catchException(target, catchedExceptionType, handlerHandle);
     }
 
     static void checkArgumentLength(MethodType targetType, int argumentNumber) {
@@ -1081,6 +1071,35 @@ public class Methods {
             throw new IllegalArgumentException("Index " + argumentNumber + " is out of range: Target " + targetType + " has only "
                     + targetType.parameterCount() + " arguments.");
         }
+    }
+
+    /**
+     * Returns the given target with a different return type.
+     * Returning null in the target handle will be safe even if the new return type is a primitive, which would fail
+     * in case of a normal asType() conversion. So it is safe to return null from target in all cases.
+     *
+     * The returned value will be zero-like if null was originally returned.
+     *
+     * @param target The handle to call
+     * @param returnType The new return type
+     * @return A handle of the same type as the target type, modified to the new return type
+     */
+    public static MethodHandle changeNullSafeReturnType(MethodHandle target, Class<?> returnType) {
+        MethodType targetType = target.type();
+        Class<?> existingType = targetType.returnType();
+        if (existingType.equals(returnType)) return target;
+        if (existingType == void.class) {
+            return returnEmptyValue(target, returnType);
+        }
+        if (!returnType.isPrimitive() || returnType == void.class || existingType.isPrimitive()) {
+            return target.asType(targetType.changeReturnType(returnType));
+        }
+
+        MethodHandle caseNull = constantNullHandle(methodType(returnType, existingType));
+        MethodHandle caseNotNull = MethodHandles.identity(existingType).asType(methodType(returnType, existingType));
+        MethodHandle checkReturnValueForNull = MethodHandles.guardWithTest(nullCheck(existingType), caseNull, caseNotNull);
+
+        return MethodHandles.filterReturnValue(target, checkReturnValueForNull);
     }
 
     /**
@@ -1126,7 +1145,7 @@ public class Methods {
         if (returnType == void.class) {
             return h;
         }
-        MethodHandle returnHandle = getConstantNullHandle(returnType);
+        MethodHandle returnHandle = constantNullHandle(returnType);
         return MethodHandles.filterReturnValue(h, returnHandle);
     }
 
@@ -1354,11 +1373,11 @@ public class Methods {
      */
     public static MethodHandle constantNullHandle(MethodType type) {
         Class<?> returnType = type.returnType();
-        MethodHandle constantNull = getConstantNullHandle(returnType);
+        MethodHandle constantNull = constantNullHandle(returnType);
         return acceptThese(constantNull, type.parameterArray());
     }
 
-    private static MethodHandle getConstantNullHandle(Class<?> returnType) {
+    private static MethodHandle constantNullHandle(Class<?> returnType) {
         if (returnType == void.class) {
             return DO_NOTHING;
         } else if (returnType == int.class || returnType == long.class || returnType == short.class || returnType == byte.class || returnType == float.class || returnType == double.class) {
@@ -1439,7 +1458,7 @@ public class Methods {
     }
 
     /**
-     * Creates a method handle that executes its target, and then returns the argument of the given number.
+     * Creates a method handle that executes its target, and then returns the argument at the given index.
      * <p/>
      * The resulting handle will have the same type as the target except that the return type is the same as the
      * one of the given argument.

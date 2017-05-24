@@ -528,7 +528,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
             Class[] classes = AccessController.doPrivileged((PrivilegedAction<Class[]>) () -> lookup.lookupClass().getDeclaredClasses());
             for (Class<?> pc : classes) {
                 if (!ParameterContainer.class.isAssignableFrom(pc)) continue;
-                Class<?> arrayType = Types.rawArgument(pc, ParameterContainer.class, 0, Types.Bounded.EXACT);
+                Class<?> arrayType = Types.erasedArgument(pc, ParameterContainer.class, 0, Types.Bounded.EXACT);
                 if (!arrayType.isArray()) {
                     throw new InternalError(arrayType.getName());
                 }

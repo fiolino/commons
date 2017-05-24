@@ -33,6 +33,8 @@ import static org.junit.Assert.*;
  */
 public class MethodsTest {
 
+    private static final MethodHandles.Lookup LOOKUP = lookup();
+
     private static class Bean {
         int value;
 
@@ -56,7 +58,7 @@ public class MethodsTest {
     @Test
     public void testFindGetter() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findGetter(lookup(), field);
+        MethodHandle handle = Methods.findGetter(LOOKUP, field);
         assertNotNull(handle);
 
         Bean bean = new Bean();
@@ -68,7 +70,7 @@ public class MethodsTest {
     @Test
     public void testFindSetter() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findSetter(lookup(), field);
+        MethodHandle handle = Methods.findSetter(LOOKUP, field);
         assertNotNull(handle);
 
         Bean bean = new Bean();
@@ -79,7 +81,7 @@ public class MethodsTest {
     @Test
     public void testFindGetterWithInt() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findGetter(lookup(), field, int.class);
+        MethodHandle handle = Methods.findGetter(LOOKUP, field, int.class);
         assertNotNull(handle);
 
         Bean bean = new Bean();
@@ -91,7 +93,7 @@ public class MethodsTest {
     @Test
     public void testFindSetterWithIntAndString() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findSetter(lookup(), field, int.class, String.class); // String is ignored
+        MethodHandle handle = Methods.findSetter(LOOKUP, field, int.class, String.class); // String is ignored
         assertNotNull(handle);
 
         Bean bean = new Bean();
@@ -102,7 +104,7 @@ public class MethodsTest {
     @Test
     public void testFindGetterWithIntAndDate() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findGetter(lookup(), field, int.class, Date.class); // Date is ignored
+        MethodHandle handle = Methods.findGetter(LOOKUP, field, int.class, Date.class); // Date is ignored
         assertNotNull(handle);
 
         Bean bean = new Bean();
@@ -114,7 +116,7 @@ public class MethodsTest {
     @Test
     public void testFindSetterWithInt() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findSetter(lookup(), field, int.class);
+        MethodHandle handle = Methods.findSetter(LOOKUP, field, int.class);
         assertNotNull(handle);
 
         Bean bean = new Bean();
@@ -129,7 +131,7 @@ public class MethodsTest {
     @Test
     public void testFindGetterWithoutMethods() throws Throwable {
         Field field = BeanWithoutMethods.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findGetter(lookup(), field);
+        MethodHandle handle = Methods.findGetter(LOOKUP, field);
         assertNotNull(handle);
 
         BeanWithoutMethods bean = new BeanWithoutMethods();
@@ -141,7 +143,7 @@ public class MethodsTest {
     @Test
     public void testFindSetterWithoutMethods() throws Throwable {
         Field field = BeanWithoutMethods.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findSetter(lookup(), field);
+        MethodHandle handle = Methods.findSetter(LOOKUP, field);
         assertNotNull(handle);
 
         BeanWithoutMethods bean = new BeanWithoutMethods();
@@ -174,9 +176,9 @@ public class MethodsTest {
     @Test
     public void testFindBooleanWithGetAndIs() throws Throwable {
         Field field = BeanWithBooleanValues.class.getDeclaredField("isWithIsInGetterAndSetter");
-        MethodHandle getter = Methods.findGetter(lookup(), field);
+        MethodHandle getter = Methods.findGetter(LOOKUP, field);
         assertNotNull(getter);
-        MethodHandle setter = Methods.findSetter(lookup(), field);
+        MethodHandle setter = Methods.findSetter(LOOKUP, field);
         assertNotNull(setter);
 
         BeanWithBooleanValues bean = new BeanWithBooleanValues();
@@ -188,9 +190,9 @@ public class MethodsTest {
     @Test
     public void testFindBooleanWithoutGetAndIs() throws Throwable {
         Field field = BeanWithBooleanValues.class.getDeclaredField("isWithoutIsInGetterAndSetter");
-        MethodHandle getter = Methods.findGetter(lookup(), field);
+        MethodHandle getter = Methods.findGetter(LOOKUP, field);
         assertNotNull(getter);
-        MethodHandle setter = Methods.findSetter(lookup(), field);
+        MethodHandle setter = Methods.findSetter(LOOKUP, field);
         assertNotNull(setter);
 
         BeanWithBooleanValues bean = new BeanWithBooleanValues();
@@ -202,13 +204,7 @@ public class MethodsTest {
     @Test
     public void testFindViaConsumer() throws Throwable {
         @SuppressWarnings("unchecked")
-        MethodHandle handle = Methods.findUsing(lookup(), List.class, new MethodFinderCallback<List>() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public void callMethodFrom(List l) throws Exception {
-                l.add(null);
-            }
-        });
+        MethodHandle handle = Methods.findUsing(LOOKUP, List.class, l -> l.add(null));
         assertNotNull(handle);
         List<String> testList = new ArrayList<>();
         boolean added = (boolean) handle.invokeExact(testList, (Object) "Hello World");
@@ -218,14 +214,9 @@ public class MethodsTest {
     }
 
     @Test
-    public void testBindToConsumer() throws Throwable {
+    public void testBindUsing() throws Throwable {
         List<String> testList = new ArrayList<>();
-        MethodHandle handle = Methods.bindUsing(lookup(), testList, new MethodFinderCallback<Object>() {
-            @Override
-            public void callMethodFrom(Object l) throws Exception {
-                ((List<?>) l).add(null);
-            }
-        });
+        MethodHandle handle = Methods.bindUsing(LOOKUP, testList, l -> l.add(null));
         assertNotNull(handle);
         boolean added = (boolean) handle.invokeExact((Object) "Hello World");
         assertTrue(added);
@@ -252,7 +243,7 @@ public class MethodsTest {
     @Test
     public void testFindUsingPrototype() throws Throwable {
         final MethodHandle[] handles = new MethodHandle[2];
-        Methods.findUsing(lookup(), new Prototype(), null, (v, m, handleSupplier) -> {
+        Methods.findUsing(LOOKUP, new Prototype(), null, (v, m, handleSupplier) -> {
             handles[m.getName().equals("createAddHandle") ? 0 : 1] = handleSupplier.get();
             return null;
         });
@@ -269,43 +260,33 @@ public class MethodsTest {
 
     @Test
     public void testEnumConversion() throws Throwable {
-        MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class);
+        MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class, (f, v) -> null);
         assertNotNull(handle);
         TimeUnit unit = (TimeUnit) handle.invokeExact("DAYS");
         assertEquals(TimeUnit.DAYS, unit);
     }
 
     @Test
+    public void testEnumConversionWithSpecial() throws Throwable {
+        MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class, (f, v) -> v == TimeUnit.DAYS ? "hola!" : null);
+        assertNotNull(handle);
+        TimeUnit unit = (TimeUnit) handle.invokeExact("MINUTES");
+        assertEquals(TimeUnit.MINUTES, unit);
+        unit = (TimeUnit) handle.invokeExact("hola!");
+        assertEquals(TimeUnit.DAYS, unit);
+    }
+
+    @Test
     public void testEnumConversionWithNullValue() throws Throwable {
-        MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class);
+        MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class, (f, v) -> null);
         assertNotNull(handle);
         TimeUnit unit = (TimeUnit) handle.invokeExact((String) null);
         assertNull(unit);
     }
 
-    @Test
-    public void testEnumConversionWithNotExisting() throws Throwable {
-        final AtomicInteger check = new AtomicInteger();
-        ExceptionHandler<IllegalArgumentException> handler = new ExceptionHandler<IllegalArgumentException>() {
-            @Override
-            public void handleNotExisting(IllegalArgumentException exception, Class<?> valueType, Class<?> outputType, Object inputValue) throws Throwable {
-                assertTrue(exception instanceof IllegalArgumentException);
-                assertEquals(TimeUnit.class, outputType);
-                assertEquals("Boom!", inputValue);
-                check.set(199);
-            }
-        };
-
-        MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class, handler);
-        assertNotNull(handle);
-        TimeUnit unit = (TimeUnit) handle.invokeExact("Boom!");
-        assertNull(unit);
-        assertEquals(199, check.intValue());
-    }
-
     @Test(expected = IllegalArgumentException.class)
     public void testEnumConversionWithException() throws Throwable {
-        MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class);
+        MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class, (f, v) -> null);
         assertNotNull(handle);
         TimeUnit unit = (TimeUnit) handle.invokeExact("Boom!");
         fail("Should not be here!");
@@ -334,6 +315,212 @@ public class MethodsTest {
     }
 
     @SuppressWarnings("unused")
+    private static void booom() throws FileNotFoundException {
+        throw new FileNotFoundException("Booom!");
+    }
+    
+    @Test
+    public void testRethrowExceptionNoArguments() throws Throwable {
+        MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
+        booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
+                ExceptionHandler.rethrowException(UnsupportedOperationException::new, "I have no {0} parameters"));
+        try {
+            booom.invokeExact();
+        } catch (UnsupportedOperationException ex) {
+            assertEquals("I have no {0} parameters", ex.getMessage());
+            assertTrue(ex.getCause() instanceof FileNotFoundException);
+            assertEquals("Booom!", ex.getCause().getMessage());
+            return;
+        }
+        fail("Should not be here");
+    }
+
+    @Test
+    public void testRethrowExceptionWithInjections() throws Throwable {
+        MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
+        booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
+                ExceptionHandler.rethrowException(UnsupportedOperationException::new, "No. 1: {0}, no. 2: {1}"), "One", 2);
+        try {
+            booom.invokeExact();
+        } catch (UnsupportedOperationException ex) {
+            assertEquals("No. 1: One, no. 2: 2", ex.getMessage());
+            assertTrue(ex.getCause() instanceof FileNotFoundException);
+            assertEquals("Booom!", ex.getCause().getMessage());
+            return;
+        }
+        fail("Should not be here");
+    }
+
+    @SuppressWarnings("unused")
+    private static void booom(int a, String b) throws FileNotFoundException {
+        throw new FileNotFoundException(b);
+    }
+
+    @Test
+    public void testRethrowExceptionWithParameters() throws Throwable {
+        MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class, int.class, String.class));
+        booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
+                ExceptionHandler.rethrowException(UnsupportedOperationException::new, "Injection 1: {0}, injection 2: {1}, param 1: {2}, param 2: {3}"),
+                "One", 2);
+        try {
+            booom.invokeExact(5, "Hello");
+        } catch (UnsupportedOperationException ex) {
+            assertEquals("Injection 1: One, injection 2: 2, param 1: 5, param 2: Hello", ex.getMessage());
+            assertTrue(ex.getCause() instanceof FileNotFoundException);
+            assertEquals("Hello", ex.getCause().getMessage());
+            return;
+        }
+        fail("Should not be here");
+    }
+
+    @Test
+    public void testWrapExceptionNoArguments() throws Throwable {
+        MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
+        AtomicInteger ref = new AtomicInteger();
+        booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class, (ex, v) -> {
+            assertEquals(0, v.length);
+            ref.set(100);
+            return null;
+        });
+        booom.invokeExact();
+        assertEquals(100, ref.get());
+    }
+
+    @Test
+    public void testWrapExceptionTwoArguments() throws Throwable {
+        MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class, int.class, String.class));
+        AtomicInteger refInt = new AtomicInteger();
+        AtomicReference<String> refString = new AtomicReference<>();
+        booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class, (ex, v) -> {
+            assertEquals(2, v.length);
+            refInt.set((int) v[0]);
+            refString.set((String) v[1]);
+            assertEquals(v[1], ex.getMessage());
+            return null;
+        });
+        booom.invokeExact(36, "Fnord");
+        assertEquals(36, refInt.get());
+        assertEquals("Fnord", refString.get());
+    }
+
+    @Test(expected = UnsupportedOperationException.class)
+    public void testWrapExceptionAndThrow() throws Throwable {
+        MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
+        booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class, (ex, v) -> {
+            throw new UnsupportedOperationException(ex);
+        });
+        booom.invokeExact();
+    }
+
+    @Test
+    public void testWrapExceptionReturnSomethingElse() throws Throwable {
+        MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        AtomicReference<String> ref = new AtomicReference<>();
+        parseInt = Methods.wrapWithExceptionHandler(parseInt, NumberFormatException.class, (ex, v) -> {
+            assertEquals(1, v.length);
+            assertEquals("Not a number", v[0]);
+            ref.set((String) v[0]);
+            return -5;
+        });
+        int value = (int) parseInt.invokeExact("10");
+        assertEquals(10, value);
+        assertNull(ref.get());
+
+        value = (int) parseInt.invokeExact("Not a number");
+        assertEquals(-5, value);
+        assertEquals("Not a number", ref.get());
+    }
+
+    @Test
+    public void testWrapExceptionReturnNull() throws Throwable {
+        MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        AtomicReference<String> ref = new AtomicReference<>();
+        parseInt = Methods.wrapWithExceptionHandler(parseInt, NumberFormatException.class, (ex, v) -> {
+            assertEquals(1, v.length);
+            assertEquals("Not a number", v[0]);
+            ref.set((String) v[0]);
+            return null;
+        });
+        int value = (int) parseInt.invokeExact("10");
+        assertEquals(10, value);
+        assertNull(ref.get());
+
+        value = (int) parseInt.invokeExact("Not a number");
+        assertEquals(0, value);
+        assertEquals("Not a number", ref.get());
+    }
+
+    @Test
+    public void testNullSafeObjectToPrimitive() throws Throwable {
+        MethodHandle identity = MethodHandles.identity(Object.class);
+        MethodHandle handle = Methods.changeNullSafeReturnType(identity, int.class);
+
+        int intValue = (int) handle.invokeExact((Object) null);
+        assertEquals(0, intValue);
+
+        MethodHandle handle2 = Methods.changeNullSafeReturnType(identity, boolean.class);
+
+        boolean booleanValue = (boolean) handle2.invokeExact((Object) null);
+        assertFalse(booleanValue);
+    }
+
+    @Test
+    public void testNullSafeObjectToVoid() throws Throwable {
+        MethodHandle identity = MethodHandles.identity(Object.class);
+        MethodHandle handle = Methods.changeNullSafeReturnType(identity, void.class);
+
+        handle.invokeExact((Object) null);
+    }
+
+    @Test
+    public void testNullSafePrimitiveToObject() throws Throwable {
+        MethodHandle identity = MethodHandles.identity(int.class);
+        MethodHandle handle = Methods.changeNullSafeReturnType(identity, Object.class);
+
+        Object value = handle.invokeExact(10);
+        assertEquals(10, value);
+    }
+
+    @Test
+    public void testNullSafePrimitiveToPrimitive() throws Throwable {
+        MethodHandle identity = MethodHandles.identity(int.class);
+        MethodHandle handle = Methods.changeNullSafeReturnType(identity, long.class);
+
+        long value = (long) handle.invokeExact(10);
+        assertEquals(10l, value);
+    }
+
+    @Test
+    public void testNullSafePrimitiveToVoid() throws Throwable {
+        MethodHandle identity = MethodHandles.identity(int.class);
+        MethodHandle handle = Methods.changeNullSafeReturnType(identity, void.class);
+
+        handle.invokeExact(10);
+    }
+
+    @Test
+    public void testNullSafeVoidToObject() throws Throwable {
+        Date date = new Date();
+        MethodHandle setTime = publicLookup().bind(date, "setTime", methodType(void.class, long.class));
+        MethodHandle handle = Methods.changeNullSafeReturnType(setTime, Object.class);
+
+        Object value = handle.invokeExact(123456789l);
+        assertNull(value);
+        assertEquals(123456789l, date.getTime());
+    }
+
+    @Test
+    public void testNullSafeVoidToPrimitive() throws Throwable {
+        Date date = new Date();
+        MethodHandle setTime = publicLookup().bind(date, "setTime", methodType(void.class, long.class));
+        MethodHandle handle = Methods.changeNullSafeReturnType(setTime, double.class);
+
+        double value = (double) handle.invokeExact(123456789l);
+        assertEquals(0, value, 0.01);
+        assertEquals(123456789l, date.getTime());
+    }
+
+    @SuppressWarnings("unused")
     private static boolean checkEquals(String first, String second, AtomicInteger counter) {
         counter.incrementAndGet();
         return first.equals(second);
@@ -348,9 +535,9 @@ public class MethodsTest {
     @Test
     public void testAnd() throws Throwable {
         AtomicInteger counter = new AtomicInteger();
-        MethodHandle check = lookup().findStatic(MethodsTest.class, "checkEquals", methodType(boolean.class, String.class, String.class, AtomicInteger.class));
+        MethodHandle check = LOOKUP.findStatic(LOOKUP.lookupClass(), "checkEquals", methodType(boolean.class, String.class, String.class, AtomicInteger.class));
         check = MethodHandles.insertArguments(check, 2, counter);
-        MethodHandle check2 = lookup().findStatic(MethodsTest.class, "checkEqualsConcatenation", methodType(boolean.class, String.class, String.class, String.class, AtomicInteger.class));
+        MethodHandle check2 = LOOKUP.findStatic(LOOKUP.lookupClass(), "checkEqualsConcatenation", methodType(boolean.class, String.class, String.class, String.class, AtomicInteger.class));
         check2 = MethodHandles.insertArguments(check2, 3, counter);
 
         MethodHandle result = Methods.and();
@@ -376,9 +563,9 @@ public class MethodsTest {
     @Test
     public void testOr() throws Throwable {
         AtomicInteger counter = new AtomicInteger();
-        MethodHandle check = lookup().findStatic(MethodsTest.class, "checkEquals", methodType(boolean.class, String.class, String.class, AtomicInteger.class));
+        MethodHandle check = LOOKUP.findStatic(LOOKUP.lookupClass(), "checkEquals", methodType(boolean.class, String.class, String.class, AtomicInteger.class));
         check = MethodHandles.insertArguments(check, 2, counter);
-        MethodHandle check2 = lookup().findStatic(MethodsTest.class, "checkEqualsConcatenation", methodType(boolean.class, String.class, String.class, String.class, AtomicInteger.class));
+        MethodHandle check2 = LOOKUP.findStatic(LOOKUP.lookupClass(), "checkEqualsConcatenation", methodType(boolean.class, String.class, String.class, String.class, AtomicInteger.class));
         check2 = MethodHandles.insertArguments(check2, 3, counter);
 
         MethodHandle result = Methods.or();
@@ -451,7 +638,7 @@ public class MethodsTest {
 
     @Test
     public void testNullCheck() throws Throwable {
-        MethodHandle handle = lookup().findStatic(MethodsTest.class, "concatenate", methodType(String.class, String.class, int.class, String.class, boolean.class, String.class));
+        MethodHandle handle = LOOKUP.findStatic(LOOKUP.lookupClass(), "concatenate", methodType(String.class, String.class, int.class, String.class, boolean.class, String.class));
         handle = Methods.secureNull(handle);
         String notNull = (String) handle.invokeExact("Num ", 12, " is not ", true, ".");
         assertNotNull(notNull);
@@ -466,21 +653,21 @@ public class MethodsTest {
         isNull = (String) handle.invokeExact((String) null, 12, (String) null, true, (String) null);
         assertNull(isNull);
 
-        handle = lookup().findVirtual(String.class, "length", methodType(int.class));
+        handle = LOOKUP.findVirtual(String.class, "length", methodType(int.class));
         handle = Methods.secureNull(handle);
         int l = (int) handle.invokeExact("123");
         assertEquals(3, l);
         l = (int) handle.invokeExact((String) null);
         assertEquals(0, l);
 
-        handle = lookup().findVirtual(List.class, "isEmpty", methodType(boolean.class));
+        handle = LOOKUP.findVirtual(List.class, "isEmpty", methodType(boolean.class));
         handle = Methods.secureNull(handle);
         boolean isEmpty = (boolean) handle.invokeExact(Collections.emptyList());
         assertTrue(isEmpty);
         isEmpty = (boolean) handle.invokeExact((List) null);
         assertFalse(isEmpty);
 
-        handle = lookup().findStatic(MethodsTest.class, "increment", methodType(void.class, AtomicInteger.class, Object.class));
+        handle = LOOKUP.findStatic(LOOKUP.lookupClass(), "increment", methodType(void.class, AtomicInteger.class, Object.class));
         handle = Methods.secureNull(handle);
         AtomicInteger counter = new AtomicInteger();
         handle.invokeExact(counter, new Object());
@@ -495,7 +682,7 @@ public class MethodsTest {
     public void testSecureArgument() throws Throwable {
         @SuppressWarnings({"unchecked", "rawTypes"})
         MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
-        MethodHandle check = lookup().findVirtual(String.class, "startsWith", methodType(boolean.class, String.class));
+        MethodHandle check = LOOKUP.findVirtual(String.class, "startsWith", methodType(boolean.class, String.class));
         check = MethodHandles.insertArguments(check, 1, "Foo");
         MethodHandle dontAddFoo = Methods.rejectIfArgument(addToList, 1, check);
 
@@ -678,7 +865,7 @@ public class MethodsTest {
     @Test
     public void testFindSingleMethod() throws Throwable {
         final AtomicReference<String> ref = new AtomicReference<>();
-        MethodHandle handle = Methods.findMethodHandleOfType(lookup(), new Object() {
+        MethodHandle handle = Methods.findMethodHandleOfType(LOOKUP, new Object() {
             void set(String value) {
                 ref.set(value);
             }
@@ -687,7 +874,7 @@ public class MethodsTest {
         handle.invokeExact("Hello world.");
         assertEquals("Hello world.", ref.get());
 
-        handle = Methods.findMethodHandleOfType(lookup(), new Object() {
+        handle = Methods.findMethodHandleOfType(LOOKUP, new Object() {
             void set(String value) {
                 ref.set(value);
             }
@@ -699,7 +886,7 @@ public class MethodsTest {
 
     @Test(expected = NoSuchMethodError.class)
     public void testFindSingleMethodFailed() throws IllegalAccessException {
-        Methods.findMethodHandleOfType(lookup(), ActionListener.class, methodType(String.class));
+        Methods.findMethodHandleOfType(LOOKUP, ActionListener.class, methodType(String.class));
     }
 
     @Test
@@ -748,18 +935,18 @@ public class MethodsTest {
     @Test
     public void findSingleBestMatchingMethod() throws Throwable {
         // Also checks that no new instance ist created because returnHello() is static
-        MethodHandle handle = Methods.findMethodHandleOfType(lookup(), WithThreeMethods.class, methodType(String.class));
+        MethodHandle handle = Methods.findMethodHandleOfType(LOOKUP, WithThreeMethods.class, methodType(String.class));
         String s = (String) handle.invokeExact();
         assertEquals("Hello", s);
 
         // First find the exact match
-        handle = Methods.findMethodHandleOfType(lookup(), new WithThreeMethods(true),
+        handle = Methods.findMethodHandleOfType(LOOKUP, new WithThreeMethods(true),
                 methodType(String.class, String.class));
         s = (String) handle.invokeExact("My");
         assertEquals("My string", s);
 
         // then find the more generic one
-        handle = Methods.findMethodHandleOfType(lookup(), new WithThreeMethods(true),
+        handle = Methods.findMethodHandleOfType(LOOKUP, new WithThreeMethods(true),
                 methodType(Object.class, CharSequence.class));
         Object o = handle.invokeExact((CharSequence) "My");
         assertEquals("My", o);
@@ -768,7 +955,7 @@ public class MethodsTest {
     @Test(expected = AmbiguousMethodException.class)
     public void testFindSingleMethodAmbiguous() throws IllegalAccessException {
         // Both possible methods are more generic
-        Methods.findMethodHandleOfType(lookup(), WithThreeMethods.class,
+        Methods.findMethodHandleOfType(LOOKUP, WithThreeMethods.class,
                 methodType(CharSequence.class, String.class));
     }
 
@@ -794,8 +981,7 @@ public class MethodsTest {
     public void testSynchronizeWithException() throws Throwable {
         Semaphore p = new Semaphore(1);
         AtomicReference<String> ref = new AtomicReference<>("Initial");
-        MethodHandles.Lookup lookup = lookup();
-        MethodHandle checkValue = lookup.findStatic(lookup.lookupClass(), "check", methodType(void.class, AtomicReference.class, Object.class));
+        MethodHandle checkValue = LOOKUP.findStatic(LOOKUP.lookupClass(), "check", methodType(void.class, AtomicReference.class, Object.class));
         MethodHandle guarded = Methods.synchronizeWith(checkValue, p);
         guarded.invokeExact(ref, (Object) "not now");
         assertEquals(1, p.availablePermits());
@@ -819,8 +1005,7 @@ public class MethodsTest {
     @Test
     public void testSynchronizeConcurrent() throws Throwable {
         AtomicReference<String> ref = new AtomicReference<>("Initial");
-        MethodHandles.Lookup lookup = lookup();
-        MethodHandle sleepAndCompare = lookup.findStatic(lookup.lookupClass(), "sleepAndCompare", methodType(String.class, long.class, AtomicReference.class, String.class));
+        MethodHandle sleepAndCompare = LOOKUP.findStatic(LOOKUP.lookupClass(), "sleepAndCompare", methodType(String.class, long.class, AtomicReference.class, String.class));
         MethodHandle guarded = Methods.synchronize(sleepAndCompare);
         Thread thread = new Thread(() -> {
             try {
@@ -842,7 +1027,7 @@ public class MethodsTest {
     @Test
     public void testLambdaFactory() throws Throwable {
         MethodHandle mult = publicLookup().findStatic(Math.class, "multiplyExact", methodType(int.class, int.class, int.class));
-        MethodHandle lambdaFactory = Methods.createLambdaFactory(lookup(), mult, IntUnaryOperator.class);
+        MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, mult, IntUnaryOperator.class);
         assertNotNull(lambdaFactory);
 
         IntUnaryOperator multWithTen = (IntUnaryOperator) lambdaFactory.invokeExact(10);
@@ -859,7 +1044,7 @@ public class MethodsTest {
     @Test
     public void testLambdaFactoryWithMarkers() throws Throwable {
         MethodHandle mult = publicLookup().findStatic(Math.class, "multiplyExact", methodType(int.class, int.class, int.class));
-        MethodHandle lambdaFactory = Methods.createLambdaFactory(lookup(), mult, IntBinaryOperator.class,
+        MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, mult, IntBinaryOperator.class,
                 ThreadSafe.class, Override.class); // Hehe, annotations as marker interfaces
         assertNotNull(lambdaFactory);
 
@@ -880,9 +1065,8 @@ public class MethodsTest {
 
     @Test
     public void testLambdaFactoryWithConversion() throws Throwable {
-        MethodHandles.Lookup lookup = lookup();
-        MethodHandle sum = lookup.findStatic(lookup.lookupClass(), "sumUp", methodType(String.class, Integer.class, Object.class));
-        MethodHandle lambdaFactory = Methods.createLambdaFactory(lookup, sum, SumToString.class);
+        MethodHandle sum = LOOKUP.findStatic(LOOKUP.lookupClass(), "sumUp", methodType(String.class, Integer.class, Object.class));
+        MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, sum, SumToString.class);
         assertNotNull(lambdaFactory);
 
         SumToString demo = (SumToString) lambdaFactory.invokeExact();
@@ -894,10 +1078,9 @@ public class MethodsTest {
 
     @Test
     public void testLambdaFactoryNotDirect() throws NoSuchMethodException, IllegalAccessException {
-        MethodHandles.Lookup lookup = lookup();
-        MethodHandle sum = lookup.findStatic(lookup.lookupClass(), "sumUp", methodType(String.class, Integer.class, Object.class));
+        MethodHandle sum = LOOKUP.findStatic(LOOKUP.lookupClass(), "sumUp", methodType(String.class, Integer.class, Object.class));
         MethodHandle modified = MethodHandles.dropArguments(sum, 1, String.class);
-        MethodHandle lambdaFactory = Methods.createLambdaFactory(lookup, modified, SumToString.class);
+        MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, modified, SumToString.class);
         assertNull(lambdaFactory);
     }
 
@@ -953,12 +1136,11 @@ public class MethodsTest {
 
     @Test
     public void testLambdaInFull() throws Throwable {
-        MethodHandles.Lookup lookup = lookup();
-        MethodHandle loop = lookup.findVirtual(StringLoop.class, "loop", methodType(String.class, CharSequence.class));
-        MethodHandle lambdaFactory = Methods.createLambdaFactory(lookup, loop, UnaryOperator.class);
+        MethodHandle loop = LOOKUP.findVirtual(StringLoop.class, "loop", methodType(String.class, CharSequence.class));
+        MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, loop, UnaryOperator.class);
         assertNotNull(lambdaFactory);
 
-        MethodHandle constructor = lookup.findConstructor(StringLoop.class, methodType(void.class, int.class));
+        MethodHandle constructor = LOOKUP.findConstructor(StringLoop.class, methodType(void.class, int.class));
         MethodHandle withIntArgument = MethodHandles.filterArguments(lambdaFactory, 0, constructor);
         OperatorFactory factory = Methods.lambdafy(withIntArgument, OperatorFactory.class);
 

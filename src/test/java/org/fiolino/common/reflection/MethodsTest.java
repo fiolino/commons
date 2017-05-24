@@ -322,8 +322,8 @@ public class MethodsTest {
     @Test
     public void testRethrowExceptionNoArguments() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
-        booom = Methods.rethrowException(booom, FileNotFoundException.class, UnsupportedOperationException::new,
-                "I have no {0} parameters");
+        booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
+                ExceptionHandler.rethrowException(UnsupportedOperationException::new, "I have no {0} parameters"));
         try {
             booom.invokeExact();
         } catch (UnsupportedOperationException ex) {
@@ -338,8 +338,8 @@ public class MethodsTest {
     @Test
     public void testRethrowExceptionWithInjections() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
-        booom = Methods.rethrowException(booom, FileNotFoundException.class, UnsupportedOperationException::new,
-                "No. 1: {0}, no. 2: {1}", "One", 2);
+        booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
+                ExceptionHandler.rethrowException(UnsupportedOperationException::new, "No. 1: {0}, no. 2: {1}"), "One", 2);
         try {
             booom.invokeExact();
         } catch (UnsupportedOperationException ex) {
@@ -359,8 +359,9 @@ public class MethodsTest {
     @Test
     public void testRethrowExceptionWithParameters() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class, int.class, String.class));
-        booom = Methods.rethrowException(booom, FileNotFoundException.class, UnsupportedOperationException::new,
-                "Injection 1: {0}, injection 2: {1}, param 1: {2}, param 2: {3}", "One", 2);
+        booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
+                ExceptionHandler.rethrowException(UnsupportedOperationException::new, "Injection 1: {0}, injection 2: {1}, param 1: {2}, param 2: {3}"),
+                "One", 2);
         try {
             booom.invokeExact(5, "Hello");
         } catch (UnsupportedOperationException ex) {
@@ -428,6 +429,95 @@ public class MethodsTest {
         value = (int) parseInt.invokeExact("Not a number");
         assertEquals(-5, value);
         assertEquals("Not a number", ref.get());
+    }
+
+    @Test
+    public void testWrapExceptionReturnNull() throws Throwable {
+        MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        AtomicReference<String> ref = new AtomicReference<>();
+        parseInt = Methods.wrapWithExceptionHandler(parseInt, NumberFormatException.class, (ex, v) -> {
+            assertEquals(1, v.length);
+            assertEquals("Not a number", v[0]);
+            ref.set((String) v[0]);
+            return null;
+        });
+        int value = (int) parseInt.invokeExact("10");
+        assertEquals(10, value);
+        assertNull(ref.get());
+
+        value = (int) parseInt.invokeExact("Not a number");
+        assertEquals(0, value);
+        assertEquals("Not a number", ref.get());
+    }
+
+    @Test
+    public void testNullSafeObjectToPrimitive() throws Throwable {
+        MethodHandle identity = MethodHandles.identity(Object.class);
+        MethodHandle handle = Methods.changeNullSafeReturnType(identity, int.class);
+
+        int intValue = (int) handle.invokeExact((Object) null);
+        assertEquals(0, intValue);
+
+        MethodHandle handle2 = Methods.changeNullSafeReturnType(identity, boolean.class);
+
+        boolean booleanValue = (boolean) handle2.invokeExact((Object) null);
+        assertFalse(booleanValue);
+    }
+
+    @Test
+    public void testNullSafeObjectToVoid() throws Throwable {
+        MethodHandle identity = MethodHandles.identity(Object.class);
+        MethodHandle handle = Methods.changeNullSafeReturnType(identity, void.class);
+
+        handle.invokeExact((Object) null);
+    }
+
+    @Test
+    public void testNullSafePrimitiveToObject() throws Throwable {
+        MethodHandle identity = MethodHandles.identity(int.class);
+        MethodHandle handle = Methods.changeNullSafeReturnType(identity, Object.class);
+
+        Object value = handle.invokeExact(10);
+        assertEquals(10, value);
+    }
+
+    @Test
+    public void testNullSafePrimitiveToPrimitive() throws Throwable {
+        MethodHandle identity = MethodHandles.identity(int.class);
+        MethodHandle handle = Methods.changeNullSafeReturnType(identity, long.class);
+
+        long value = (long) handle.invokeExact(10);
+        assertEquals(10l, value);
+    }
+
+    @Test
+    public void testNullSafePrimitiveToVoid() throws Throwable {
+        MethodHandle identity = MethodHandles.identity(int.class);
+        MethodHandle handle = Methods.changeNullSafeReturnType(identity, void.class);
+
+        handle.invokeExact(10);
+    }
+
+    @Test
+    public void testNullSafeVoidToObject() throws Throwable {
+        Date date = new Date();
+        MethodHandle setTime = publicLookup().bind(date, "setTime", methodType(void.class, long.class));
+        MethodHandle handle = Methods.changeNullSafeReturnType(setTime, Object.class);
+
+        Object value = handle.invokeExact(123456789l);
+        assertNull(value);
+        assertEquals(123456789l, date.getTime());
+    }
+
+    @Test
+    public void testNullSafeVoidToPrimitive() throws Throwable {
+        Date date = new Date();
+        MethodHandle setTime = publicLookup().bind(date, "setTime", methodType(void.class, long.class));
+        MethodHandle handle = Methods.changeNullSafeReturnType(setTime, double.class);
+
+        double value = (double) handle.invokeExact(123456789l);
+        assertEquals(0, value, 0.01);
+        assertEquals(123456789l, date.getTime());
     }
 
     @SuppressWarnings("unused")

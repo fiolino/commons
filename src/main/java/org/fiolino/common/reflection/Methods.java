@@ -12,7 +12,6 @@ import java.lang.invoke.*;
 import java.lang.reflect.*;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.Semaphore;
 import java.util.function.*;
@@ -1023,57 +1022,48 @@ public class Methods {
             h -> h.handle(null, null));
 
     /**
-     * Wraps the given method handle by an exception handler that is called then.
+     * Wraps the given method handle by an exception handler that is called in case.
+     *
+     * The given exception handler gets an array of objects, including all static injection parameters plus all parameters
+     * of the failed target handle call.
+     *
+     * So if 0..k are the indexes of the injection parameters, and 0..n are the indexes of the target's parameters of the
+     * failed call, then you can refer to these values in the exception handler via parameters [0]..[k[ for the injection values,
+     * and [k+1]..[k+n+1] for the target call's parameters.
      *
      * @param target           The method handle to wrap.
      * @param catchedExceptionType Which type shall be catched.
      * @param exceptionHandler The handler.
+     * @param injections       These will be the first static values of the given parameter array in the exception handler
      * @param <E>              The exception type
      * @return A method handle of the same type as the target, which won't throw E but call the handler instead.
      */
     public static <E extends Throwable> MethodHandle wrapWithExceptionHandler(MethodHandle target, Class<E> catchedExceptionType,
-                                                                              ExceptionHandler<? super E> exceptionHandler) {
-        MethodType targetType = target.type();
-        MethodHandle handlerHandle = exceptionHandlerCaller.bindTo(exceptionHandler).asCollector(Object[].class, targetType.parameterCount());
-        handlerHandle = handlerHandle.asType(targetType.insertParameterTypes(0, catchedExceptionType));
+                                                                              ExceptionHandler<? super E> exceptionHandler,
+                                                                              Object... injections) {
 
-        return MethodHandles.catchException(target, catchedExceptionType, handlerHandle);
+        return wrapWithExceptionHandler(target, catchedExceptionType, exceptionHandlerCaller.bindTo(exceptionHandler), injections);
     }
 
     /**
-     * Catches an exception of a certain type, and throws a new one which includes some detailed information about the context.
+     * Wraps the given method handle by an exception handler that is called in case. The exception handle gets the catched
+     * exception and an Object array of the injections and all called parameter values.
      *
-     * The resulting handle will of of exactly the same type as the given target. It will invoke this target, but catch any exception
-     * of type catchedException, and pack it into a new exception constructed by thrownExceptionFactory. This factory gets
-     * a String and a Throwable as parameters and returns the exception that will be thrown.
-     *
-     * The created exception will get a new message string which is defined by the exceptionMessage parameter. This is passed
-     * to {@link MessageFormat}, with all given injection values plus all called parameter values of the target call.
-     *
-     * So if 0..k are the indexes of the injection parameters, and 0..n are the indexes of the target's parameters of the
-     * failed call, then you can refer to these values in the exceptionMessage via parameters {0}..{k} for the injection values,
-     * and {k+1}..{k+n+1} for the target call's parameters.
-     *
-     * @param target The target to call
-     * @param catchedException All of this and all subclasses are being catched
-     * @param thrownExceptionFactory This will be the new exception type, with the original one as the wrapped exception.
-     *                               Gets the constructed message String and the catched Exception.
-     * @param exceptionMessage As defined in {@link MessageFormat}
-     * @param injections Added as the first n values to the exceptionMessage
-     * @return A handle of the same type as target
+     * @param target           The method handle to wrap.
+     * @param catchedExceptionType Which type shall be catched.
+     * @param exceptionHandler The handler: (&lt;? super catchedExceptionType&gt;,Object[])&lt;? super target return type&gt;
+     * @param injections       These will be the first static values of the given parameter array in the exception handler
+     * @return A method handle of the same type as the target, which won't throw the exception but call the handler instead.
      */
-    public static <E extends Throwable> MethodHandle rethrowException(MethodHandle target, Class<E> catchedException,
-                                                                      BiFunction<? super String, ? super E, ? extends Throwable> thrownExceptionFactory,
-                                                                      String exceptionMessage, Object... injections) {
+    public static MethodHandle wrapWithExceptionHandler(MethodHandle target, Class<? extends Throwable> catchedExceptionType,
+                                                        MethodHandle exceptionHandler, Object... injections) {
+        MethodType targetType = target.type();
+        MethodHandle handlerHandle = exceptionHandler.asCollector(Object[].class, injections.length + targetType.parameterCount());
+        handlerHandle = MethodHandles.insertArguments(handlerHandle, 1, injections);
+        handlerHandle = changeNullSafeReturnType(handlerHandle, targetType.returnType());
+        handlerHandle = handlerHandle.asType(targetType.insertParameterTypes(0, catchedExceptionType));
 
-        return wrapWithExceptionHandler(target, catchedException, (ex, v) -> {
-            int k = injections.length;
-            int n = v.length;
-            Object[] params = Arrays.copyOf(injections, k+n);
-            System.arraycopy(v, 0, params, k, n);
-            String thrownMessage = MessageFormat.format(exceptionMessage, params);
-            throw thrownExceptionFactory.apply(thrownMessage, ex);
-        });
+        return MethodHandles.catchException(target, catchedExceptionType, handlerHandle);
     }
 
     static void checkArgumentLength(MethodType targetType, int argumentNumber) {
@@ -1081,6 +1071,35 @@ public class Methods {
             throw new IllegalArgumentException("Index " + argumentNumber + " is out of range: Target " + targetType + " has only "
                     + targetType.parameterCount() + " arguments.");
         }
+    }
+
+    /**
+     * Returns the given target with a different return type.
+     * Returning null in the target handle will be safe even if the new return type is a primitive, which would fail
+     * in case of a normal asType() conversion. So it is safe to return null from target in all cases.
+     *
+     * The returned value will be zero-like if null was originally returned.
+     *
+     * @param target The handle to call
+     * @param returnType The new return type
+     * @return A handle of the same type as the target type, modified to the new return type
+     */
+    public static MethodHandle changeNullSafeReturnType(MethodHandle target, Class<?> returnType) {
+        MethodType targetType = target.type();
+        Class<?> existingType = targetType.returnType();
+        if (existingType.equals(returnType)) return target;
+        if (existingType == void.class) {
+            return returnEmptyValue(target, returnType);
+        }
+        if (!returnType.isPrimitive() || returnType == void.class || existingType.isPrimitive()) {
+            return target.asType(targetType.changeReturnType(returnType));
+        }
+
+        MethodHandle caseNull = constantNullHandle(methodType(returnType, existingType));
+        MethodHandle caseNotNull = MethodHandles.identity(existingType).asType(methodType(returnType, existingType));
+        MethodHandle checkReturnValueForNull = MethodHandles.guardWithTest(nullCheck(existingType), caseNull, caseNotNull);
+
+        return MethodHandles.filterReturnValue(target, checkReturnValueForNull);
     }
 
     /**
@@ -1126,7 +1145,7 @@ public class Methods {
         if (returnType == void.class) {
             return h;
         }
-        MethodHandle returnHandle = getConstantNullHandle(returnType);
+        MethodHandle returnHandle = constantNullHandle(returnType);
         return MethodHandles.filterReturnValue(h, returnHandle);
     }
 
@@ -1354,11 +1373,11 @@ public class Methods {
      */
     public static MethodHandle constantNullHandle(MethodType type) {
         Class<?> returnType = type.returnType();
-        MethodHandle constantNull = getConstantNullHandle(returnType);
+        MethodHandle constantNull = constantNullHandle(returnType);
         return acceptThese(constantNull, type.parameterArray());
     }
 
-    private static MethodHandle getConstantNullHandle(Class<?> returnType) {
+    private static MethodHandle constantNullHandle(Class<?> returnType) {
         if (returnType == void.class) {
             return DO_NOTHING;
         } else if (returnType == int.class || returnType == long.class || returnType == short.class || returnType == byte.class || returnType == float.class || returnType == double.class) {

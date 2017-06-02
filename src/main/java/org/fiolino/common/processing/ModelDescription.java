@@ -5,7 +5,6 @@ import org.fiolino.common.container.Container;
 import org.fiolino.common.reflection.Methods;
 import org.fiolino.common.util.Strings;
 import org.fiolino.common.util.Types;
-import org.fiolino.data.annotation.TargetType;
 
 import javax.annotation.Nullable;
 import java.lang.annotation.Annotation;
@@ -162,16 +161,7 @@ public class ModelDescription extends AbstractConfigurationContainer {
             if (Collection.class.isAssignableFrom(valueType)) {
                 valueType = Types.erasedArgument(genericType, Collection.class, 0, Types.Bounded.UPPER);
             }
-            TargetType annotation = getAnnotation(TargetType.class);
-            if (annotation == null) {
-                return valueType;
-            }
-            Class<?> redirect = annotation.value();
-            if (!valueType.isAssignableFrom(redirect)) {
-                throw new ModelInconsistencyException("Wrong annotation @" + TargetType.class.getSimpleName() + " on " + getName()
-                        + ": " + redirect.getName() + " is not a subclass of " + valueType.getName());
-            }
-            return redirect;
+            return valueType;
         }
 
     }

@@ -2,8 +2,6 @@ package org.fiolino.common.util;
 
 import org.fiolino.common.analyzing.ClassWalker;
 import org.fiolino.common.reflection.*;
-import org.fiolino.data.annotation.SerialFieldIndex;
-import org.fiolino.data.annotation.SerializeEmbedded;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,61 +37,61 @@ public class SerializerBuilder {
     }).getAccessor();
 
     private void analyze() {
-        ClassWalker<RuntimeException> walker = new ClassWalker<>();
-        walker.onField(f -> {
-            SerialFieldIndex fieldAnno = f.getAnnotation(SerialFieldIndex.class);
-            SerializeEmbedded embedAnno = f.getAnnotation(SerializeEmbedded.class);
-            if (fieldAnno == null && embedAnno == null) {
-                return;
-            }
-            MethodHandle getter = Methods.findGetter(lookup, f);
-            if (getter == null) {
-                logger.warn("No getter for " + f);
-                return;
-            }
-            if (fieldAnno != null) {
-                addSerialField(getter, fieldAnno.value());
-            }
-            if (embedAnno != null) {
-                Class<?> embeddedType = f.getType();
-                Serializer s = BY_ANNOTATION_PROVIDER.apply(lookup.in(embeddedType));
-                addAppender(s.getAppender());
-                addSerialField(getter, embedAnno.value());
-            }
-        });
-
-        walker.onMethod(m -> {
-            SerialFieldIndex fieldAnno = m.getAnnotation(SerialFieldIndex.class);
-            SerializeEmbedded embedAnno = m.getAnnotation(SerializeEmbedded.class);
-            if (fieldAnno == null && embedAnno == null) {
-                return;
-            }
-            if (m.getParameterCount() != 0 || m.getReturnType() == void.class) {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Ignoring " + m + " because it's not a getter.");
-                }
-                return;
-            }
-            MethodHandle getter;
-            try {
-                getter = lookup.unreflect(m);
-            } catch (IllegalAccessException e) {
-                logger.warn(m + " is not accessible!");
-                return;
-            }
-            if (fieldAnno != null) {
-                addSerialField(getter, fieldAnno.value());
-            }
-            if (embedAnno != null) {
-                Class<?> embeddedType = m.getReturnType();
-                Serializer s = BY_ANNOTATION_PROVIDER.apply(lookup.in(embeddedType));
-                addAppender(s.getAppender());
-                addSerialField(getter, embedAnno.value());
-            }
-        });
-
-        walker.analyze(getType());
-        validateNotEmpty();
+//        ClassWalker<RuntimeException> walker = new ClassWalker<>();
+//        walker.onField(f -> {
+//            SerialFieldIndex fieldAnno = f.getAnnotation(SerialFieldIndex.class);
+//            SerializeEmbedded embedAnno = f.getAnnotation(SerializeEmbedded.class);
+//            if (fieldAnno == null && embedAnno == null) {
+//                return;
+//            }
+//            MethodHandle getter = Methods.findGetter(lookup, f);
+//            if (getter == null) {
+//                logger.warn("No getter for " + f);
+//                return;
+//            }
+//            if (fieldAnno != null) {
+//                addSerialField(getter, fieldAnno.value());
+//            }
+//            if (embedAnno != null) {
+//                Class<?> embeddedType = f.getType();
+//                Serializer s = BY_ANNOTATION_PROVIDER.apply(lookup.in(embeddedType));
+//                addAppender(s.getAppender());
+//                addSerialField(getter, embedAnno.value());
+//            }
+//        });
+//
+//        walker.onMethod(m -> {
+//            SerialFieldIndex fieldAnno = m.getAnnotation(SerialFieldIndex.class);
+//            SerializeEmbedded embedAnno = m.getAnnotation(SerializeEmbedded.class);
+//            if (fieldAnno == null && embedAnno == null) {
+//                return;
+//            }
+//            if (m.getParameterCount() != 0 || m.getReturnType() == void.class) {
+//                if (logger.isDebugEnabled()) {
+//                    logger.debug("Ignoring " + m + " because it's not a getter.");
+//                }
+//                return;
+//            }
+//            MethodHandle getter;
+//            try {
+//                getter = lookup.unreflect(m);
+//            } catch (IllegalAccessException e) {
+//                logger.warn(m + " is not accessible!");
+//                return;
+//            }
+//            if (fieldAnno != null) {
+//                addSerialField(getter, fieldAnno.value());
+//            }
+//            if (embedAnno != null) {
+//                Class<?> embeddedType = m.getReturnType();
+//                Serializer s = BY_ANNOTATION_PROVIDER.apply(lookup.in(embeddedType));
+//                addAppender(s.getAppender());
+//                addSerialField(getter, embedAnno.value());
+//            }
+//        });
+//
+//        walker.analyze(getType());
+//        validateNotEmpty();
     }
 
     private static final CharSet QUOTED_CHARACTERS = CharSet.of(":,()");

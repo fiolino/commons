@@ -20,7 +20,20 @@ public interface ExceptionHandler<E extends Throwable> {
      */
     Object handle(E exception, Object[] parameterValues) throws Throwable;
 
-   /**
+    /**
+     * Creates an exception handler that handles all exception of the given type with the new handler,
+     * and all remaining exceptions still as myself.
+     *
+     * @param exceptionType Some exception type, possibly a subtype of my own handled exception
+     * @param otherHandle This will handle all such exceptions then
+     * @param <F> The subtype
+     * @return A new handler
+     */
+    default <F extends E> ExceptionHandler<E> orIf(Class<F> exceptionType, ExceptionHandler<? super F> otherHandle) {
+        return (ex, v) -> exceptionType.isInstance(ex) ? otherHandle.handle(exceptionType.cast(ex), v) : handle(ex, v);
+    }
+
+    /**
      * Creates an ExceptionHandler that will throw a new exception which includes some detailed information about the context.
      *
      * This handler will pack catched exceptions into a new exception constructed by thrownExceptionFactory. This factory gets

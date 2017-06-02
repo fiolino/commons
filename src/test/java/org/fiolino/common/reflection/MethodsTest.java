@@ -439,7 +439,7 @@ public class MethodsTest {
             assertEquals(1, v.length);
             assertEquals("Not a number", v[0]);
             ref.set((String) v[0]);
-            return null;
+            return null; // Should be converted to zero-like value
         });
         int value = (int) parseInt.invokeExact("10");
         assertEquals(10, value);
@@ -448,6 +448,20 @@ public class MethodsTest {
         value = (int) parseInt.invokeExact("Not a number");
         assertEquals(0, value);
         assertEquals("Not a number", ref.get());
+    }
+
+    @Test
+    public void testWrapExceptionHandleAlternative() throws Throwable {
+        MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        ExceptionHandler<RuntimeException> exceptionHandler = (ex, v) -> 33;
+        parseInt = Methods.wrapWithExceptionHandler(parseInt, RuntimeException.class, exceptionHandler.orIf(NullPointerException.class, (ex, v) -> 77));
+        int value = (int) parseInt.invokeExact("10");
+        assertEquals(10, value);
+
+        value = (int) parseInt.invokeExact("Not a number");
+        assertEquals(33, value);
+        value = (int) parseInt.invokeExact((String) null);
+        assertEquals(77, value);
     }
 
     @Test

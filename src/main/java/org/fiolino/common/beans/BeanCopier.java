@@ -6,12 +6,12 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.fiolino.common.analyzing.ClassWalker;
 import org.fiolino.common.reflection.Methods;
 import org.fiolino.common.util.Types;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static java.lang.invoke.MethodType.methodType;
 
@@ -19,7 +19,7 @@ import static java.lang.invoke.MethodType.methodType;
  * Created by kuli on 20.02.16.
  */
 public final class BeanCopier<S, T> {
-    private static final Logger logger = LoggerFactory.getLogger(BeanCopier.class);
+    private static final Logger logger = Logger.getLogger(BeanCopier.class.getName());
 
     private static class Builder {
 
@@ -63,12 +63,12 @@ public final class BeanCopier<S, T> {
         void copyFromTo(Field source, Field target) {
             MethodHandle getter = Methods.findGetter(sourceLookup, source);
             if (getter == null) {
-                logger.warn("No getter for " + source);
+                logger.log(Level.WARNING, () -> "No getter for " + source);
                 return;
             }
             MethodHandle setter = Methods.findSetter(targetLookup, target);
             if (setter == null) {
-                logger.warn("No setter for " + target);
+                logger.log(Level.WARNING, () -> "No setter for " + target);
                 return;
             }
 

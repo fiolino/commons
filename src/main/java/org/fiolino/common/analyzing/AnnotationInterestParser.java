@@ -14,13 +14,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.fiolino.common.container.Container;
 import org.fiolino.common.processing.Analyzer;
 import org.fiolino.common.processing.ModelDescription;
 import org.fiolino.common.processing.FieldDescription;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
@@ -30,7 +30,7 @@ import static java.lang.invoke.MethodType.methodType;
  */
 public class AnnotationInterestParser {
 
-    private static final Logger logger = LoggerFactory.getLogger(AnnotationInterestParser.class);
+    private static final Logger logger = Logger.getLogger(AnnotationInterestParser.class.getName());
 
     private static class InterestEnvironment {
         private final String name;
@@ -49,9 +49,7 @@ public class AnnotationInterestParser {
                 };
             }
             return f -> {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Calling " + name + " for field " + f);
-                }
+                logger.finer(() -> "Calling " + name + " for field " + f);
                 Object child = execute(analyzeable, analyzer, () -> analyzer.getModelDescription().getValueDescription(f), f, null);
                 if (child == null || child == analyzeable) {
                     return;
@@ -66,9 +64,7 @@ public class AnnotationInterestParser {
                 };
             }
             return m -> {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Calling " + name + " for method " + m);
-                }
+                logger.finer(() -> "Calling " + name + " for method " + m);
                 Object child = execute(analyzeable, analyzer, () -> analyzer.getModelDescription().getValueDescription(m), null, m);
                 if (child == null || child == analyzeable) {
                     return;
@@ -168,7 +164,7 @@ public class AnnotationInterestParser {
         try {
             handle = lookup.unreflect(method);
         } catch (IllegalAccessException ex) {
-            logger.warn("Method " + method + " is not accessible!");
+            logger.log(Level.WARNING, () -> "Method " + method + " is not accessible!");
             return;
         }
         if (Modifier.isStatic(method.getModifiers())) {
@@ -224,15 +220,15 @@ public class AnnotationInterestParser {
         }
         InterestEnvironment env;
         if (annotationType.equals(Annotation.class)) {
-            if (logger.isDebugEnabled()) {
-                logger.debug("Method " + method + " will be called for all " + logInfo(elements));
+            if (logger.isLoggable(Level.FINER)) {
+                logger.finer("Method " + method + " will be called for all " + logInfo(elements));
             }
             handle = MethodHandles.permuteArguments(handle, methodType(Object.class, Object.class, Analyzer.class,
                     FieldDescription.class, Container.class, Field.class, Method.class), parameterIndexes);
             env = new InterestEnvironment(method.toGenericString(), elements, handle);
         } else {
-            if (logger.isDebugEnabled()) {
-                logger.debug("Method " + method + " will be called for all " + logInfo(elements) + " annotated with "
+            if (logger.isLoggable(Level.FINER)) {
+                logger.finer("Method " + method + " will be called for all " + logInfo(elements) + " annotated with "
                         + annotationType.getName());
             }
             handle = MethodHandles.permuteArguments(handle, methodType(Object.class, Object.class, Analyzer.class,

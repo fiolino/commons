@@ -2,8 +2,6 @@ package org.fiolino.common.util;
 
 import org.fiolino.common.reflection.Converters;
 import org.fiolino.common.reflection.Methods;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -13,6 +11,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
@@ -25,7 +25,7 @@ import static java.lang.invoke.MethodType.methodType;
  */
 public final class Deserializer {
 
-    private static final Logger logger = LoggerFactory.getLogger(Deserializer.class);
+    private static final Logger logger = Logger.getLogger(Deserializer.class.getName());
 
     private static final MethodHandle POINTER_CONSTRUCTOR;
 
@@ -201,13 +201,13 @@ public final class Deserializer {
         if (valueType.isEnum()) {
             pointerSetter = Methods.wrapWithExceptionHandler(pointerSetter, IllegalArgumentException.class,
                     (ex, v) -> {
-                        logger.warn("No such enum value " + v[0] + " in " + valueType.getName());
+                        logger.log(Level.WARNING, () -> "No such enum value " + v[0] + " in " + valueType.getName());
                         return null;
                     });
         } else {
             pointerSetter = Methods.wrapWithExceptionHandler(pointerSetter, NumberFormatException.class,
                     (ex, v) -> {
-                        logger.warn("Illegal number value " + v[0]);
+                        logger.log(Level.WARNING, () -> "Illegal number value " + v[0]);
                         return null;
                     });
         }

@@ -7,6 +7,7 @@ import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
 
 /**
+ * This class builds a MethodHandle that prints the content
  * Created by kuli on 21.03.17.
  */
 public final class Serializer {

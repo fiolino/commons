@@ -1,18 +1,16 @@
 package org.fiolino.common.util;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Logger;
 
 /**
  * Created by kuli on 07.01.16.
  */
 public final class DeserializerBuilder {
-    private static final Logger logger = LoggerFactory.getLogger(DeserializerBuilder.class);
+    private static final Logger logger = Logger.getLogger(DeserializerBuilder.class.getName());
 
     private final Instantiator instantiator;
     private final Map<Class<?>, MethodHandle> deserializers = new HashMap<>();

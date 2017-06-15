@@ -22,6 +22,14 @@ import static java.lang.invoke.MethodType.methodType;
  * Creates a {@link Supplier} or {@link Function} to instantiate objects.
  * <p>
  * Instantiators may have individual {@link java.lang.invoke.MethodHandles.Lookup} instances as well as own providers.
+ * A provider can be:
+ * <ul>
+ *     <li>A {@link Method}: Will be used as a factory method to instantiate if the return type matches.</li>
+ *     <li>A {@link MethodHandle}: Like the method.</li>
+ *     <li>A {@link Class}: Tries to find all methods ,with a @{@link org.fiolino.common.ioc.Factory} annotation which will serve as factory methods then.
+ *     Static methods will be used directly, while for instance methods, a factory instance gets constructed on every call.</li>
+ *     <li>Any object: Like the class case, but for instance methods, the given instance will be the only factory instance.</li>
+ * </ul>
  * <p>
  * Lookups are used to identify constructors and factory methods.
  * <p>
@@ -32,7 +40,7 @@ public final class Instantiator {
     private static final Instantiator DEFAULT = new Instantiator();
 
     /**
-     * The default instantiator, whoch is an instance without any specific providers.
+     * The default instantiator, which is an instance without any specific providers.
      */
     public static Instantiator getDefault() {
         return DEFAULT;
@@ -48,10 +56,23 @@ public final class Instantiator {
         return withProviders(lookup(), providers);
     }
 
+    /**
+     * Creates a new instance with a lookup and a given list of providers.
+     *
+     * @param lookup Used to find the constructor
+     * @param providers See the type description about possible provider types.
+     * @return The instantiator
+     */
     public static Instantiator withProviders(MethodHandles.Lookup lookup, Object... providers) {
         return new Instantiator(lookup, new ArrayList<>(providers.length)).registerAllTypes(providers);
     }
 
+    /**
+     * Creates a new instance with a lookup.
+     *
+     * @param lookup Used to find the constructor
+     * @return The instantiator
+     */
     public static Instantiator forLookup(MethodHandles.Lookup lookup) {
         return getDefault().withLookup(lookup);
     }
@@ -108,6 +129,7 @@ public final class Instantiator {
             return MethodHandles.insertArguments(handle, argumentIndex, requestedClass);
         }
     }
+
     private final MethodHandles.Lookup lookup;
     private final List<HandleContainer> providers;
 

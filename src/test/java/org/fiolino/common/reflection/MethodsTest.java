@@ -374,6 +374,33 @@ public class MethodsTest {
     }
 
     @Test
+    public void testRethrowExceptionWithSuppliers() throws Throwable {
+        MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class, int.class, String.class));
+        AtomicInteger readCount = new AtomicInteger();
+        booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
+                ExceptionHandler.rethrowException(UnsupportedOperationException::new, "Injection 1: {0}, injection 2: {1}, param 1: {2}, param 2: {3}"),
+                () -> "One", readCount::incrementAndGet);
+        
+        assertEquals(0, readCount.get());
+        try {
+            booom.invokeExact(5, "Hello");
+        } catch (UnsupportedOperationException ex) {
+            assertEquals("Injection 1: One, injection 2: 1, param 1: 5, param 2: Hello", ex.getMessage());
+            assertEquals(1, readCount.get());
+            assertTrue(ex.getCause() instanceof FileNotFoundException);
+            assertEquals("Hello", ex.getCause().getMessage());
+        }
+        try {
+            booom.invokeExact(10, "Hello two");
+        } catch (UnsupportedOperationException ex) {
+            assertEquals("Injection 1: One, injection 2: 2, param 1: 10, param 2: Hello two", ex.getMessage());
+            assertEquals(2, readCount.get());
+            return;
+        }
+        fail("Should not be here");
+    }
+
+    @Test
     public void testWrapExceptionNoArguments() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
         AtomicInteger ref = new AtomicInteger();
@@ -452,16 +479,16 @@ public class MethodsTest {
 
     @Test
     public void testWrapExceptionHandleAlternative() throws Throwable {
-        MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
-        ExceptionHandler<RuntimeException> exceptionHandler = (ex, v) -> 33;
-        parseInt = Methods.wrapWithExceptionHandler(parseInt, RuntimeException.class, exceptionHandler.orIf(NullPointerException.class, (ex, v) -> 77));
-        int value = (int) parseInt.invokeExact("10");
-        assertEquals(10, value);
+        MethodHandle charAt = publicLookup().findVirtual(String.class, "charAt", methodType(char.class, int.class));
+        ExceptionHandler<RuntimeException> exceptionHandler = (ex, v) -> '0';
+        charAt = Methods.wrapWithExceptionHandler(charAt, RuntimeException.class, exceptionHandler.orIf(IndexOutOfBoundsException.class, (ex, v) -> '?'));
+        char value = (char) charAt.invokeExact("abc", 1);
+        assertEquals('b', value);
 
-        value = (int) parseInt.invokeExact("Not a number");
-        assertEquals(33, value);
-        value = (int) parseInt.invokeExact((String) null);
-        assertEquals(77, value);
+        value = (char) charAt.invokeExact((String) null, 5);
+        assertEquals('0', value);
+        value = (char) charAt.invokeExact("abc", 5);
+        assertEquals('?', value);
     }
 
     @Test
@@ -736,7 +763,7 @@ public class MethodsTest {
     public void testAssertNotNullOwnException() throws Throwable {
         @SuppressWarnings({"unchecked", "rawTypes"})
         MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
-        addToList = Methods.assertNotNull(addToList, new FileNotFoundException());
+        addToList = Methods.assertNotNull(addToList, FileNotFoundException.class, "This was a test");
         List<Object> list = new ArrayList<>();
 
         assertTrue((boolean) addToList.invokeExact(list, (Object) null));

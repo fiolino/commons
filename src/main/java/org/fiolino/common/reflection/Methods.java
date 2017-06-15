@@ -4,8 +4,6 @@ import org.fiolino.common.analyzing.AmbiguousTypesException;
 import org.fiolino.common.util.Instantiator;
 import org.fiolino.common.util.Strings;
 import org.fiolino.common.util.Types;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.lang.invoke.*;
@@ -15,6 +13,8 @@ import java.security.PrivilegedAction;
 import java.util.*;
 import java.util.concurrent.Semaphore;
 import java.util.function.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import static java.lang.invoke.MethodHandles.*;
 import static java.lang.invoke.MethodType.methodType;
@@ -26,7 +26,7 @@ import static java.lang.invoke.MethodType.methodType;
  */
 public class Methods {
 
-    private static final Logger logger = LoggerFactory.getLogger(Methods.class);
+    private static final Logger logger = Logger.getLogger(Methods.class.getName());
 
     /**
      * Finds the getter method for a given field.
@@ -272,15 +272,12 @@ public class Methods {
             return findSetter0(lookup, owner, fieldName, params);
         }, types, () -> {
             // Try to find the direct field setter
-            if (types.length == 1) {
-                try {
-                    return lookup.findSetter(owner, fieldName, types[0]);
-                } catch (NoSuchFieldException | IllegalAccessException ex) {
-                    // Then the field's just not accessible, or there is no such field
-                    return null;
-                }
+            try {
+                return lookup.findSetter(owner, fieldName, types[0]);
+            } catch (NoSuchFieldException | IllegalAccessException ex) {
+                // Then the field's just not accessible, or there is no such field
+                return null;
             }
-            return null;
         });
     }
 
@@ -949,7 +946,7 @@ public class Methods {
 
     private static void put(Map<String, Object> map, String key, Object value) {
         if (map.containsKey(key)) {
-            logger.warn("Key " + key + " was already defined for " + map.get(key));
+            logger.log(Level.WARNING, () -> "Key " + key + " was already defined for " + map.get(key));
             return;
         }
         map.put(key, value);
@@ -1004,7 +1001,7 @@ public class Methods {
             try {
                 getFromMap = publicLookup().bind(map, "get", methodType(Object.class, Object.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
-                throw new InternalError("Map.get()", ex);
+                throw new InternalError("Map::get", ex);
             }
             return getFromMap.asType(methodType(String.class, type));
         } else {
@@ -1012,14 +1009,13 @@ public class Methods {
             try {
                 return publicLookup().findVirtual(type, "name", methodType(String.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
-                throw new InternalError("Map.get()", ex);
+                throw new InternalError(type.getName() + "::name", ex);
             }
         }
     }
 
     @SuppressWarnings("unchecked")
-    private static final MethodHandle exceptionHandlerCaller = findUsing(lookup(), ExceptionHandler.class,
-            h -> h.handle(null, null));
+    private static final MethodHandle exceptionHandlerCaller = findUsing(ExceptionHandler.class, h -> h.handle(null, null));
 
     /**
      * Wraps the given method handle by an exception handler that is called in case.
@@ -1034,7 +1030,34 @@ public class Methods {
      * @param target           The method handle to wrap.
      * @param catchedExceptionType Which type shall be catched.
      * @param exceptionHandler The handler.
-     * @param injections       These will be the first static values of the given parameter array in the exception handler
+     * @param injections       These will be the first static values of the given parameter array in the exception handler.
+     *                         Each one can will be called lazily
+     * @param <E>              The exception type
+     * @return A method handle of the same type as the target, which won't throw E but call the handler instead.
+     */
+    public static <E extends Throwable> MethodHandle wrapWithExceptionHandler(MethodHandle target, Class<E> catchedExceptionType,
+                                                                              ExceptionHandler<? super E> exceptionHandler,
+                                                                              Supplier<?>... injections) {
+
+        return wrapWithExceptionHandler(target, catchedExceptionType, exceptionHandlerCaller.bindTo(exceptionHandler),
+                (Object[]) injections);
+    }
+
+    /**
+     * Wraps the given method handle by an exception handler that is called in case.
+     *
+     * The given exception handler gets an array of objects, including all static injection parameters plus all parameters
+     * of the failed target handle call.
+     *
+     * So if 0..k are the indexes of the injection parameters, and 0..n are the indexes of the target's parameters of the
+     * failed call, then you can refer to these values in the exception handler via parameters [0]..[k[ for the injection values,
+     * and [k+1]..[k+n+1] for the target call's parameters.
+     *
+     * @param target           The method handle to wrap.
+     * @param catchedExceptionType Which type shall be catched.
+     * @param exceptionHandler The handler.
+     * @param injections       These will be the first static values of the given parameter array in the exception handler.
+     *                         Each one can be any object, which is inserted directly, or a {@link Supplier}, which will be called lazily
      * @param <E>              The exception type
      * @return A method handle of the same type as the target, which won't throw E but call the handler instead.
      */
@@ -1052,18 +1075,44 @@ public class Methods {
      * @param target           The method handle to wrap.
      * @param catchedExceptionType Which type shall be catched.
      * @param exceptionHandler The handler: (&lt;? super catchedExceptionType&gt;,Object[])&lt;? super target return type&gt;
-     * @param injections       These will be the first static values of the given parameter array in the exception handler
+     * @param injections       These will be the first static values of the given parameter array in the exception handler.
+     *                         Each one can be any object, which is inserted directly, or a {@link Supplier}, which will be called lazily
      * @return A method handle of the same type as the target, which won't throw the exception but call the handler instead.
      */
     public static MethodHandle wrapWithExceptionHandler(MethodHandle target, Class<? extends Throwable> catchedExceptionType,
                                                         MethodHandle exceptionHandler, Object... injections) {
         MethodType targetType = target.type();
         MethodHandle handlerHandle = exceptionHandler.asCollector(Object[].class, injections.length + targetType.parameterCount());
-        handlerHandle = MethodHandles.insertArguments(handlerHandle, 1, injections);
+        handlerHandle = insertArgumentsOrSuppliers(handlerHandle, 1, injections);
         handlerHandle = changeNullSafeReturnType(handlerHandle, targetType.returnType());
         handlerHandle = handlerHandle.asType(targetType.insertParameterTypes(0, catchedExceptionType));
 
         return MethodHandles.catchException(target, catchedExceptionType, handlerHandle);
+    }
+
+    private static MethodHandle insertArgumentsOrSuppliers(MethodHandle handle, int pos, Object[] injections) {
+        for (Object i : injections) {
+            if (i instanceof Supplier) {
+                return insertSuppliers(handle, pos, injections);
+            }
+        }
+        return MethodHandles.insertArguments(handle, pos, injections);
+    }
+
+    private static final MethodHandle SUPPLIER_GET = findUsing(Supplier.class, Supplier::get);
+
+    private static MethodHandle insertSuppliers(MethodHandle handle, int pos, Object[] injections) {
+        MethodHandle h = handle;
+        for (Object i : injections) {
+            if (i instanceof Supplier) {
+                MethodHandle get = SUPPLIER_GET.bindTo(i);
+                h = MethodHandles.collectArguments(h, pos, get);
+            } else {
+                h = MethodHandles.insertArguments(h, pos, i);
+            }
+        }
+
+        return h;
     }
 
     static void checkArgumentLength(MethodType targetType, int argumentNumber) {
@@ -1274,13 +1323,24 @@ public class Methods {
      * The handle will throw the given exception if some of these values is null.
      *
      * @param target The target to execute; all specified arguments are guaranteed to be non-null
-     * @param exceptionToThrow This exception will be thrown
+     * @param exceptionTypeToThrow This exception will be thrown. It's public constructor must accept the message as the single argument
+     * @param message This is the message in the new exception
      * @param argumentIndexes The arguments to check. If none is given, then all arguments are being checked
      * @return The null-safe handle
      */
-    public static MethodHandle assertNotNull(MethodHandle target, Throwable exceptionToThrow, int... argumentIndexes) {
+    public static MethodHandle assertNotNull(MethodHandle target, Class<? extends Throwable> exceptionTypeToThrow,
+                                             String message, int... argumentIndexes) {
         MethodType type = target.type();
-        MethodHandle throwException = MethodHandles.throwException(type.returnType(), exceptionToThrow.getClass()).bindTo(exceptionToThrow);
+        Lookup l = publicLookup().in(exceptionTypeToThrow);
+        MethodHandle exceptionConstructor;
+        try {
+            exceptionConstructor = l.findConstructor(exceptionTypeToThrow, methodType(void.class, String.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new IllegalArgumentException(exceptionTypeToThrow.getName() + " should have a public constructor accepting a String", ex);
+        }
+        exceptionConstructor = exceptionConstructor.bindTo(message);
+        MethodHandle throwException = MethodHandles.throwException(type.returnType(), exceptionTypeToThrow);
+        throwException = MethodHandles.collectArguments(throwException, 0, exceptionConstructor);
         MethodHandle nullCase  = MethodHandles.dropArguments(throwException, 0, type.parameterArray());
         return checkForNullValues(target, argumentTester(type, argumentIndexes), (t, g) -> MethodHandles.guardWithTest(g, nullCase, t));
     }
@@ -1291,7 +1351,7 @@ public class Methods {
      *
      * @param target The target to execute; all specified arguments are guaranteed to be non-null
      * @param argument The argument to check
-     * @param argumentNames This is used as a message in the exception
+     * @param argumentNames This is used as a message in the exception. Use null values for parameters that shall not be checked.
      * @return The null-safe handle
      */
     public static MethodHandle assertNotNull(MethodHandle target, int argument, String... argumentNames) {
@@ -1301,7 +1361,11 @@ public class Methods {
         MethodHandle h = target;
         int i = argument;
         for (String n : argumentNames) {
-            h = assertNotNull(h, new NullPointerException(n + " must not be null"), i++);
+            if (n == null) {
+                i++;
+                continue;
+            }
+            h = assertNotNull(h, NullPointerException.class, n + " must not be null", i++);
         }
         return h;
     }

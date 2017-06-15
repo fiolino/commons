@@ -1,14 +1,14 @@
 package org.fiolino.common.processing.sink;
 
 import org.fiolino.common.container.Container;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * A sink that splits the targets into parallel threads.
@@ -16,7 +16,7 @@ import java.util.function.Consumer;
  * Created by kuli on 31.03.16.
  */
 public final class ParallelizingSink<T> extends ChainedSink<T, T> {
-    private static final Logger logger = LoggerFactory.getLogger(ParallelizingSink.class);
+    private static final Logger logger = Logger.getLogger(ParallelizingSink.class.getName());
 
     private final Consumer<Runnable> executor;
     private final String name;
@@ -111,7 +111,7 @@ public final class ParallelizingSink<T> extends ChainedSink<T, T> {
         try {
             next = next.offer(value);
         } catch (InterruptedException ex) {
-            logger.warn("Adding " + value + " to full queue was interrupted!");
+            logger.log(Level.WARNING, () -> "Adding " + value + " to full queue was interrupted!");
             Thread.currentThread().interrupt();
         }
     }
@@ -124,7 +124,7 @@ public final class ParallelizingSink<T> extends ChainedSink<T, T> {
             p.startAndWait(name + " <MAIN THREAD>");
             commitCount++;
         } catch (InterruptedException ex) {
-            logger.warn("Interrupted while finishing!");
+            logger.log(Level.WARNING, () -> "Interrupted while finishing!");
             Thread.currentThread().interrupt();
         }
         next.throwError();
@@ -168,7 +168,7 @@ public final class ParallelizingSink<T> extends ChainedSink<T, T> {
          */
         void startAndWait(String name) throws InterruptedException {
             latch = new CountDownLatch(waiters);
-            logger.info("Will wait for {} threads", waiters);
+            logger.info(() -> "Will wait for " + waiters + " threads");
             waiters = -1;
             initializer.countDown();
             await(name);
@@ -191,7 +191,7 @@ public final class ParallelizingSink<T> extends ChainedSink<T, T> {
             if (latch.await(timeout, TimeUnit.SECONDS)) {
                 return;
             }
-            logger.warn("Timeout after {} seconds on {}", timeout, name);
+            logger.log(Level.WARNING, () -> "Timeout after " + timeout + " seconds on " + name);
         }
     }
 
@@ -285,7 +285,7 @@ public final class ParallelizingSink<T> extends ChainedSink<T, T> {
         }
 
         private void throwMultiException(Throwable t) {
-            logger.error("Multiple exceptions in parallel tasks!", t);
+            logger.log(Level.SEVERE, "Multiple exceptions in parallel tasks!", t);
         }
 
         void throwError() throws Exception {
@@ -328,7 +328,7 @@ public final class ParallelizingSink<T> extends ChainedSink<T, T> {
                 } while (evaluate(next));
             } catch (Throwable t) {
                 // This could only be catched if there's an exception within this parallelizer or a generic error elsewhere
-                logger.error("Failed " + Thread.currentThread().getName(), t);
+                logger.log(Level.SEVERE, "Failed " + Thread.currentThread().getName(), t);
                 run();
             }
             setThreadName("Finished.");

@@ -4,14 +4,8 @@ import org.fiolino.common.processing.Processor;
 import org.fiolino.common.reflection.Converters;
 import org.fiolino.common.util.Types;
 import org.reflections.Reflections;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.io.BufferedInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -21,6 +15,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Created by kuli on 24.03.15.
@@ -31,7 +27,7 @@ public class Beans {
         VALUE
     }
 
-    private static final Logger logger = LoggerFactory.getLogger(Beans.class);
+    private static final Logger logger = Logger.getLogger(Beans.class.getName());
 
     private static final String[] PACKAGES_TO_SCAN = {"me.repay", "org.fiolino"};
 
@@ -175,9 +171,7 @@ public class Beans {
                         continue outer;
                     }
                     String name = b.value();
-                    if ("".equals(name)) {
-                        name = null;
-                    }
+                    if ("".equals(name)) name = null;
                     Object bean = Beans.get(name, types[i]);
                     thisValues[i] = bean;
                     continue;
@@ -317,11 +311,11 @@ public class Beans {
 
     public static <T> T get(String name, Class<T> type) {
         synchronized (type) {
-            Map<Class<?>, Object> objectMap = beanCache.computeIfAbsent(name, n -> new HashMap());
+            Map<Class<?>, Object> objectMap = beanCache.computeIfAbsent(name, n -> new HashMap<>());
             Object current = objectMap.get(type);
             if (current != null) {
                 if (current == InitializationPlaceholder.VALUE) {
-                    logger.warn("Recursion detected in " + type + " with name " + name);
+                    logger.log(Level.WARNING, () -> "Recursion detected in " + type + " with name " + name);
                     return null;
                 }
                 return type.cast(current);

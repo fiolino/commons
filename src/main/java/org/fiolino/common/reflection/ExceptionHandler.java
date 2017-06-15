@@ -55,4 +55,11 @@ public interface ExceptionHandler<E extends Throwable> {
             throw thrownExceptionFactory.apply(thrownMessage, ex);
         };
     }
+
+    /**
+     * An {@link ExceptionHandler} that just throws the incoming exception again.
+     */
+    ExceptionHandler<Throwable> RETHROW = (ex, v) -> {
+        throw ex;
+    };
 }

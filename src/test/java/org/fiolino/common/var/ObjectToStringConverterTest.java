@@ -1,6 +1,5 @@
 package org.fiolino.common.var;
 
-import org.fiolino.data.annotation.Debugged;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;

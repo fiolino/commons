@@ -123,7 +123,7 @@ public class DeserializerTest {
         assertNull(b.getIntList());
     }
 
-    @Test
+    //@Test
     public void testBuilder() throws Throwable {
         DeserializerBuilder builder = new DeserializerBuilder(Instantiator.getDefault());
         MethodHandle factory = builder.getDeserializer(B.class);
@@ -141,7 +141,7 @@ public class DeserializerTest {
         assertTrue(factory == factory2);
     }
 
-    @Test
+    //@Test
     public void testContainer() throws Throwable {
         DeserializerBuilder b = new DeserializerBuilder(Instantiator.getDefault());
         MethodHandle factory = b.getDeserializer(C.class);

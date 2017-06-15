@@ -1,8 +1,6 @@
 package org.fiolino.common.processing.sink;
 
 import org.fiolino.common.container.Container;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,13 +9,15 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Created by kuli on 27.03.16.
  */
 public final class ThreadsafeAggregatingSink<T> extends ThreadsafeChainedSink<T, List<T>> {
 
-    private static final Logger logger = LoggerFactory.getLogger(ThreadsafeAggregatingSink.class);
+    private static final Logger logger = Logger.getLogger(ThreadsafeAggregatingSink.class.getName());
 
     private final BlockingQueue<T> queue;
     private final Lock lock = new ReentrantLock();
@@ -40,7 +40,7 @@ public final class ThreadsafeAggregatingSink<T> extends ThreadsafeChainedSink<T,
                 try {
                     TimeUnit.MILLISECONDS.sleep(20);
                 } catch (InterruptedException ex) {
-                    logger.warn("Interrupted while waiting for queue. Discarding " + value);
+                    logger.log(Level.WARNING, () -> "Interrupted while waiting for queue. Discarding " + value);
                     Thread.currentThread().interrupt();
                     return;
                 }

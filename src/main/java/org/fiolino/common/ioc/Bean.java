@@ -6,6 +6,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
+ * Marks parameters that will have a bean injected.
+ *
  * Created by kuli on 26.03.15.
  */
 @Retention(RetentionPolicy.RUNTIME)

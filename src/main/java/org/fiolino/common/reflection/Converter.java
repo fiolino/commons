@@ -3,9 +3,10 @@ package org.fiolino.common.reflection;
 import javax.annotation.Nullable;
 import java.lang.invoke.MethodHandle;
 import java.util.Objects;
+import java.util.function.UnaryOperator;
 
 /**
- * This is the result from a Converterlocator request.
+ * This is the result from a ConverterLocator request.
  *
  * Created by kuli on 20.03.17.
  */
@@ -75,5 +76,10 @@ public final class Converter {
         h += targetType.hashCode();
         h *= 31;
         return h + rank.hashCode();
+    }
+
+    public Converter convertWith(UnaryOperator<MethodHandle> handleChanger) {
+        if (converter == null) return this;
+        return new Converter(handleChanger.apply(converter), rank, targetType);
     }
 }

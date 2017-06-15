@@ -1,7 +1,6 @@
 package org.fiolino.common.var;
 
 import org.fiolino.common.util.Strings;
-import org.fiolino.data.annotation.Debugged;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

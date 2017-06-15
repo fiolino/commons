@@ -28,14 +28,12 @@ public final class Serializer {
 
     private final MethodHandle appender, printer;
 
-    Serializer(SerializerBuilder s) {
-        MethodHandle h = s.buildSerializingHandle();
+    Serializer(Class<?> type, MethodHandle serializingHandle) {
+        MethodHandle closingParenthesis = MethodHandles.dropArguments(APPEND_CLOSING_PARENTHESIS, 1, type);
+        MethodHandle a = MethodHandles.foldArguments(closingParenthesis, serializingHandle);
+        appender = MethodHandles.foldArguments(a, APPEND_OPENING_PARENTHESIS);
 
-        MethodHandle closingParenthesis = MethodHandles.dropArguments(APPEND_CLOSING_PARENTHESIS, 1, s.getType());
-        MethodHandle a = MethodHandles.foldArguments(closingParenthesis, h);
-        appender = MethodHandles.foldArguments(h, APPEND_OPENING_PARENTHESIS);
-
-        printer = MethodHandles.foldArguments(h, NEW_STRINGBUILDER);
+        printer = MethodHandles.foldArguments(serializingHandle, NEW_STRINGBUILDER);
     }
 
     public MethodHandle getAppender() {

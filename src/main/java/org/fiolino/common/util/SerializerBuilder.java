@@ -220,8 +220,8 @@ public class SerializerBuilder {
         return all;
     }
 
-    public Serializer getSerializer() {
-        return new Serializer(this);
+    public Serializer getSerializerFor(Class<?> type) {
+        return new Serializer(buildSerializingHandle(type));
     }
 
     private MethodHandle findHandleFor(Class<?> type) {

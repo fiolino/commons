@@ -163,20 +163,6 @@ public final class Strings {
         return sb.toString();
     }
 
-    private static final long[] DIGI; // 0, 10, 100, 1000, ...
-    // The first number is 0 by intention
-
-    static {
-        int n = String.valueOf(Long.MAX_VALUE).length();
-        DIGI = new long[n];
-        long exp = 1L;
-
-        for (int i = 1; i < n; i++) {
-            exp *= 10L;
-            DIGI[i] = exp;
-        }
-    }
-
     /**
      * Gets a String representation of a time delay in nanoseconds.
      * <p/>
@@ -224,6 +210,20 @@ public final class Strings {
         return sb.toString();
     }
 
+    private static final long[] DIGI; // 0, 10, 100, 1000, ...
+    // The first number is 0 by intention
+
+    static {
+        int n = String.valueOf(Long.MAX_VALUE).length();
+        DIGI = new long[n];
+        long exp = 1L;
+
+        for (int i = 1; i < n; i++) {
+            exp *= 10L;
+            DIGI[i] = exp;
+        }
+    }
+
     /**
      * Prints a fixed number with a given length of digits into a StringBuilder, filled with leading zeros.
      */
@@ -246,18 +246,6 @@ public final class Strings {
             sb.append('0');
         }
         return sb.append(num);
-    }
-
-    public static String join(CharSequence delimiter,
-                              Iterable<? extends CharSequence> elements) {
-        StringBuilder sb = new StringBuilder();
-        for (CharSequence seq : elements) {
-            if (sb.length() > 0) {
-                sb.append(delimiter);
-            }
-            sb.append(seq);
-        }
-        return sb.toString();
     }
 
     /**
@@ -342,5 +330,121 @@ public final class Strings {
         m.appendTail(sb);
 
         return sb.toString();
+    }
+
+    /**
+     * Result of method extractUtil().
+     *
+     * Contains the extracted text, the position of the following character, and the following character itself.
+     */
+    public static final class Extract {
+        /**
+         * The extracted text. Will never be null.
+         */
+        public final String extraction;
+        /**
+         * The position of the next following character, or -1 if the end of line was reached.
+         */
+        public final int end;
+        /**
+         * The character at the next position, or UNASSIGNED if the end of line was reached.
+         */
+        public final char stopSign;
+        /**
+         * Whether the extracted text was in quotated form.
+         */
+        public final boolean wasQuoted;
+
+        Extract(String extraction, boolean wasQuoted) {
+            this(extraction, -1, (char) Character.UNASSIGNED, wasQuoted);
+        }
+
+        Extract(String extraction, int end, char stopSign, boolean wasQuoted) {
+            this.extraction = extraction;
+            this.end = end;
+            this.stopSign = stopSign;
+            this.wasQuoted = wasQuoted;
+        }
+
+        Extract(String extraction, String input, int start) {
+            this.extraction = extraction;
+            this.end = nextIndexFrom(input, start);
+            this.stopSign = end == -1 ? (char) Character.UNASSIGNED : input.charAt(end);
+            this.wasQuoted = true;
+        }
+
+        public boolean wasEOL() {
+            return stopSign == Character.UNASSIGNED;
+        }
+    }
+
+    /**
+     * Extracts some text from an input string.
+     *
+     * It reads the text until one of these requirements is met:<p/>
+     * <ol>
+     *     <li>One of the given characters from the stopper is reached</li>
+     *     <li>The end of the line was reached</li>
+     *     <li>The text was quoted (first character is a quote) and the quotation was closed; the stoppers are completely ignored then</li>
+     *     <li>The text was not quoted, but a quotation was found</li>
+     * </ol>
+     *
+     * The result is trimmed, except when it was quoted.
+     *
+     * @param input The input text
+     * @param start From which position to start
+     * @param stopper Set of characters that should act like delimiters
+     * @return The extracted status
+     */
+    public static Extract extractUntil(String input, int start, CharSet stopper) {
+        int i = nextIndexFrom(input, start-1);
+        if (i == -1) return new Extract("", false);
+        int l = input.length();
+
+        StringBuilder sb = new StringBuilder(l - start);
+        char ch = input.charAt(i);
+        if (ch == '"') {
+            // quoted
+            boolean escaped = false;
+            while (++i < l) {
+                ch = input.charAt(i);
+                if (escaped) {
+                    escaped = false;
+                    sb.append(ch);
+                } else if (ch == '"') {
+                    return new Extract(sb.toString(), input, i);
+                } else if (ch == '\\') {
+                    escaped = true;
+                } else {
+                    sb.append(ch);
+                }
+            }
+            // EOL
+            return new Extract(sb.toString(), true);
+        }
+
+        // Not quoted
+        do {
+            ch = input.charAt(i);
+            if (stopper.contains(ch) || ch == '"') {
+                return new Extract(sb.toString().trim(), i, ch, false);
+            }
+            sb.append(ch);
+        } while (++i < l);
+
+        // EOL
+        return new Extract(sb.toString().trim(), false);
+    }
+
+    private static int nextIndexFrom(String input, int start) {
+        int l = input.length();
+        int i = start;
+        do {
+            if (l <= ++i) {
+                return -1;
+            }
+        } while (Character.isWhitespace(input.charAt(i)));
+
+        return i;
     }
 }

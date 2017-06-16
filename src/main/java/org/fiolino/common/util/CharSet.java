@@ -22,6 +22,12 @@ public abstract class CharSet implements Serializable {
     private CharSet() {
     }
 
+    /**
+     * Returns true if the charset contains the given char.
+     *
+     * @param ch The character to test
+     * @return true if it is included in this set
+     */
     public abstract boolean contains(char ch);
 
     /**

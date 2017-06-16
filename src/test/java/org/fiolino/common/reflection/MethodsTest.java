@@ -380,7 +380,7 @@ public class MethodsTest {
         booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
                 ExceptionHandler.rethrowException(UnsupportedOperationException::new, "Injection 1: {0}, injection 2: {1}, param 1: {2}, param 2: {3}"),
                 () -> "One", readCount::incrementAndGet);
-        
+
         assertEquals(0, readCount.get());
         try {
             booom.invokeExact(5, "Hello");

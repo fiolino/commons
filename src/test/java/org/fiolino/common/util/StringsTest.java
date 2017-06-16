@@ -6,6 +6,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Created by kuli on 25.11.15.
@@ -148,7 +150,55 @@ public class StringsTest {
 
     @Test(expected = IllegalArgumentException.class)
     public void testFailedInsertValues() {
-        Strings.insertValues("$bbb", new HashMap<String, String>());
+        Strings.insertValues("$bbb", new HashMap<>());
     }
 
+    @Test
+    public void testExtractUntil() {
+        String text = " Some text # comment";
+        int sign = text.indexOf('#');
+        Strings.Extract x = Strings.extractUntil(text, 0, CharSet.of("#%!"));
+        assertEquals("Some text", x.extraction);
+        assertEquals(sign, x.end);
+        assertEquals('#', x.stopSign);
+        assertFalse(x.wasEOL());
+        assertFalse(x.wasQuoted);
+
+        x = Strings.extractUntil(text, sign, CharSet.of('#'));
+        assertEquals("", x.extraction);
+        assertEquals(sign, x.end);
+        assertEquals('#', x.stopSign);
+        assertFalse(x.wasEOL());
+        assertFalse(x.wasQuoted);
+
+        x = Strings.extractUntil(text, text.length(), CharSet.of('#'));
+        assertEquals("", x.extraction);
+        assertEquals(-1, x.end);
+        assertEquals(Character.UNASSIGNED, x.stopSign);
+        assertTrue(x.wasEOL());
+        assertFalse(x.wasQuoted);
+
+        text = " Begin with something \" Then quoted\\\\\\\"\" Then not again";
+        sign = " Begin with something ".length();
+        x = Strings.extractUntil(text, 0, CharSet.of('#'));
+        assertEquals("Begin with something", x.extraction);
+        assertEquals(sign, x.end);
+        assertEquals('"', x.stopSign);
+        assertFalse(x.wasEOL());
+        assertFalse(x.wasQuoted);
+
+        x = Strings.extractUntil(text, sign, CharSet.of('#'));
+        sign = " Begin with something \" Then quoted\\\\\\\"\" ".length();
+        assertEquals(" Then quoted\\\"", x.extraction);
+        assertEquals(sign, x.end);
+        assertEquals('T', x.stopSign);
+        assertFalse(x.wasEOL());
+        assertTrue(x.wasQuoted);
+
+        x = Strings.extractUntil("  \" Quoted ###  ", 0, CharSet.of('#'));
+        assertEquals(" Quoted ###  ", x.extraction);
+        assertEquals(-1, x.end);
+        assertTrue(x.wasEOL());
+        assertTrue(x.wasQuoted);
+    }
 }

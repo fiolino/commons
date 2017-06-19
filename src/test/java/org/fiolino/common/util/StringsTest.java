@@ -162,21 +162,21 @@ public class StringsTest {
         assertEquals(sign, x.end);
         assertEquals('#', x.stopSign);
         assertFalse(x.wasEOL());
-        assertFalse(x.wasQuoted);
+        assertEquals(Strings.Extract.QuotationStatus.UNQUOTED, x.quotationStatus);
 
         x = Strings.extractUntil(text, sign, CharSet.of('#'));
         assertEquals("", x.extraction);
         assertEquals(sign, x.end);
         assertEquals('#', x.stopSign);
         assertFalse(x.wasEOL());
-        assertFalse(x.wasQuoted);
+        assertEquals(Strings.Extract.QuotationStatus.UNQUOTED, x.quotationStatus);
 
         x = Strings.extractUntil(text, text.length(), CharSet.of('#'));
         assertEquals("", x.extraction);
         assertEquals(-1, x.end);
         assertEquals(Character.UNASSIGNED, x.stopSign);
         assertTrue(x.wasEOL());
-        assertFalse(x.wasQuoted);
+        assertEquals(Strings.Extract.QuotationStatus.UNQUOTED, x.quotationStatus);
 
         text = " Begin with something \" Then quoted\\\\\\\"\" Then not again";
         sign = " Begin with something ".length();
@@ -185,7 +185,7 @@ public class StringsTest {
         assertEquals(sign, x.end);
         assertEquals('"', x.stopSign);
         assertFalse(x.wasEOL());
-        assertFalse(x.wasQuoted);
+        assertEquals(Strings.Extract.QuotationStatus.UNQUOTED, x.quotationStatus);
 
         x = Strings.extractUntil(text, sign, CharSet.of('#'));
         sign = " Begin with something \" Then quoted\\\\\\\"\" ".length();
@@ -193,12 +193,18 @@ public class StringsTest {
         assertEquals(sign, x.end);
         assertEquals('T', x.stopSign);
         assertFalse(x.wasEOL());
-        assertTrue(x.wasQuoted);
+        assertEquals(Strings.Extract.QuotationStatus.QUOTED, x.quotationStatus);
 
-        x = Strings.extractUntil("  \" Quoted ###  ", 0, CharSet.of('#'));
+        x = Strings.extractUntil("  \" Quoted ###  \"", 0, CharSet.of('#'));
         assertEquals(" Quoted ###  ", x.extraction);
         assertEquals(-1, x.end);
         assertTrue(x.wasEOL());
-        assertTrue(x.wasQuoted);
+        assertEquals(Strings.Extract.QuotationStatus.QUOTED, x.quotationStatus);
+
+        x = Strings.extractUntil("\" Quotation left open  ", 0, CharSet.of('#'));
+        assertEquals(" Quotation left open  \n", x.extraction);
+        assertEquals(-1, x.end);
+        assertTrue(x.wasEOL());
+        assertEquals(Strings.Extract.QuotationStatus.QUOTED_OPEN, x.quotationStatus);
     }
 }

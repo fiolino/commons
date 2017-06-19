@@ -29,13 +29,11 @@ public class Beans {
 
     private static final Logger logger = Logger.getLogger(Beans.class.getName());
 
-    private static final String[] PACKAGES_TO_SCAN = {"me.repay", "org.fiolino"};
+    private static final String[] PACKAGES_TO_SCAN = Properties.getMultipleEntries("org.fiolino.annotationscan.prefix");
 
     private static final Map<String, Map<Class<?>, Object>> beanCache = new HashMap<>();
 
     private static final Reflections REF = new Reflections((Object[]) PACKAGES_TO_SCAN);
-
-    private static PropertySource propertySource = new FilePropertySource();
 
     private Beans() {
     }
@@ -46,71 +44,10 @@ public class Beans {
      */
     public static void reset() {
         beanCache.clear();
-        propertySource = new FilePropertySource();
     }
 
     public static Reflections getReflections() {
         return REF;
-    }
-
-    public static void loadProperties(String name) {
-        if (propertySource instanceof FilePropertySource) {
-            FilePropertySource fsp = (FilePropertySource) propertySource;
-
-            InputStream in = null;
-            try {
-                in = Beans.class.getResourceAsStream(name);
-                if (in == null) {
-                    File testFile = new File(name);
-                    if (testFile.exists() && testFile.isFile()) {
-                        in = new BufferedInputStream(new FileInputStream(testFile));
-                    } else {
-                        throw new AssertionError("No such resource: " + name);
-                    }
-                }
-                fsp.load(in);
-            } catch (IOException ex) {
-                throw new AssertionError("Cannot load from stream: " + name, ex);
-            } finally {
-                if (in != null) {
-                    try {
-                        in.close();
-                    } catch (IOException e) {
-                        // ignore
-                    }
-                }
-            }
-        }
-    }
-
-    public static void setPropertySource(PropertySource source) {
-        propertySource = source;
-    }
-
-    public static PropertySource getPropertySource() {
-        return propertySource;
-    }
-
-    public static String getProperty(String key) {
-        String ret = getProperty(key, null);
-        if (ret == null) {
-            throw new IllegalArgumentException("Property <" + key + "> not set!");
-        }
-        return ret;
-    }
-
-    public static String getProperty(String key, String defaultValue) {
-        String ret = null;
-
-        if (propertySource != null) {
-            ret = propertySource.getProperty(key);
-        }
-
-        if (ret == null) {
-            return defaultValue;
-        }
-
-        return ret;
     }
 
     private static boolean checkParameters(Class<?>[] types, Object[] values) {
@@ -135,7 +72,7 @@ public class Beans {
 
     /**
      * Creates a new instance with the given parameter values as the first constructor arguments,
-     * and then some additional optional parameters behind which must be annotated with @Property.
+     * and then some additional optional parameters behind which must be annotated with @Property or @Bean.
      */
     public static <T> T instantiate(Class<T> type, Object... parameters) {
         Constructor<?> found = null;
@@ -178,10 +115,16 @@ public class Beans {
                 }
                 String key = p.value();
                 String defaultValue = p.defaultValue();
+                if (String[].class.equals(types[i])) {
+                    thisValues[i] = "".equals(defaultValue) ? Properties.getMultipleEntries(key) : Properties.getMultipleEntries(key, new String[] {
+                            defaultValue
+                    });
+                    continue;
+                }
                 if ("".equals(defaultValue)) {
                     defaultValue = null;
                 }
-                String propertyValue = Beans.getProperty(key, defaultValue);
+                String propertyValue = Properties.getSingleEntry(key, defaultValue);
                 thisValues[i] = propertyValue;
             }
 

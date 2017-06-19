@@ -2,6 +2,7 @@ package org.fiolino.common.util;
 
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -338,6 +339,13 @@ public final class Strings {
      * Contains the extracted text, the position of the following character, and the following character itself.
      */
     public static final class Extract {
+        public enum QuotationStatus {
+            UNQUOTED,
+            UNQUOTED_OPEN,
+            QUOTED,
+            QUOTED_OPEN
+        }
+
         /**
          * The extracted text. Will never be null.
          */
@@ -353,28 +361,38 @@ public final class Strings {
         /**
          * Whether the extracted text was in quotated form.
          */
-        public final boolean wasQuoted;
+        public final QuotationStatus quotationStatus;
 
-        Extract(String extraction, boolean wasQuoted) {
-            this(extraction, -1, (char) Character.UNASSIGNED, wasQuoted);
+        Extract(String extraction, QuotationStatus quotationStatus) {
+            this(extraction, -1, (char) Character.UNASSIGNED, quotationStatus);
         }
 
-        Extract(String extraction, int end, char stopSign, boolean wasQuoted) {
+        Extract(String extraction, int end, char stopSign, QuotationStatus quotationStatus) {
             this.extraction = extraction;
             this.end = end;
             this.stopSign = stopSign;
-            this.wasQuoted = wasQuoted;
+            this.quotationStatus = quotationStatus;
         }
 
         Extract(String extraction, String input, int start) {
             this.extraction = extraction;
             this.end = nextIndexFrom(input, start);
             this.stopSign = end == -1 ? (char) Character.UNASSIGNED : input.charAt(end);
-            this.wasQuoted = true;
+            this.quotationStatus = QuotationStatus.QUOTED;
         }
 
+        /**
+         * Returns true if this was the remainder of the given input.
+         */
         public boolean wasEOL() {
             return stopSign == Character.UNASSIGNED;
+        }
+
+        /**
+         * Returns true if the result was quoted, either open or closed.
+         */
+        public boolean wasQuoted() {
+                return quotationStatus != QuotationStatus.UNQUOTED;
         }
     }
 
@@ -397,8 +415,31 @@ public final class Strings {
      * @return The extracted status
      */
     public static Extract extractUntil(String input, int start, CharSet stopper) {
+        return extractUntil(input, start, stopper, () -> null);
+    }
+
+    /**
+     * Extracts some text from an input string.
+     *
+     * It reads the text until one of these requirements is met:<p/>
+     * <ol>
+     *     <li>One of the given characters from the stopper is reached</li>
+     *     <li>The end of the line was reached</li>
+     *     <li>The text was quoted (first character is a quote) and the quotation was closed; the stoppers are completely ignored then</li>
+     *     <li>The text was not quoted, but a quotation was found</li>
+     * </ol>
+     *
+     * The result is trimmed, except when it was quoted.
+     *
+     * @param input The input text
+     * @param start From which position to start
+     * @param stopper Set of characters that should act like delimiters
+     * @param moreLines Used to retrieve more lines if the line ended openly
+     * @return The extracted status
+     */
+    public static <E extends Throwable> Extract extractUntil(String input, int start, CharSet stopper, SupplierWithException<String, E> moreLines) throws E {
         int i = nextIndexFrom(input, start-1);
-        if (i == -1) return new Extract("", false);
+        if (i == -1) return new Extract("", Extract.QuotationStatus.UNQUOTED);
         int l = input.length();
 
         StringBuilder sb = new StringBuilder(l - start);
@@ -406,34 +447,53 @@ public final class Strings {
         if (ch == '"') {
             // quoted
             boolean escaped = false;
-            while (++i < l) {
-                ch = input.charAt(i);
-                if (escaped) {
-                    escaped = false;
-                    sb.append(ch);
-                } else if (ch == '"') {
-                    return new Extract(sb.toString(), input, i);
-                } else if (ch == '\\') {
-                    escaped = true;
-                } else {
-                    sb.append(ch);
+            do {
+                while (++i < l) {
+                    ch = input.charAt(i);
+                    if (escaped) {
+                        escaped = false;
+                        sb.append(ch);
+                    } else if (ch == '"') {
+                        return new Extract(sb.toString(), input, i);
+                    } else if (ch == '\\') {
+                        escaped = true;
+                    } else {
+                        sb.append(ch);
+                    }
                 }
-            }
-            // EOL
-            return new Extract(sb.toString(), true);
+
+                // EOL but quote still open
+                if (!escaped) {
+                    sb.append('\n');
+                }
+                escaped = false;
+                input = moreLines.get();
+                i = 0;
+            } while (input != null);
+
+            // No more lines
+            return new Extract(sb.toString(), Extract.QuotationStatus.QUOTED_OPEN);
         }
 
         // Not quoted
         do {
-            ch = input.charAt(i);
-            if (stopper.contains(ch) || ch == '"') {
-                return new Extract(sb.toString().trim(), i, ch, false);
+            while (++i < l) {
+                if (stopper.contains(ch) || ch == '"') {
+                    return new Extract(sb.toString().trim(), i - 1, ch, Extract.QuotationStatus.UNQUOTED);
+                }
+                sb.append(ch);
+                ch = input.charAt(i);
             }
-            sb.append(ch);
-        } while (++i < l);
+            // EOL
+            if (ch != '\\') {
+                sb.append(ch);
+                return new Extract(sb.toString().trim(), Extract.QuotationStatus.UNQUOTED);
+            }
+            input = moreLines.get();
+            i = 0;
+        } while (input != null);
 
-        // EOL
-        return new Extract(sb.toString().trim(), false);
+        return new Extract(sb.toString().trim(), Extract.QuotationStatus.UNQUOTED_OPEN);
     }
 
     private static int nextIndexFrom(String input, int start) {

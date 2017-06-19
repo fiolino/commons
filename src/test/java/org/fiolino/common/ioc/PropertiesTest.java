@@ -25,40 +25,28 @@ public class PropertiesTest {
     @Test
     public void testSinglePropertiesAsMulti() {
         String[] v = Properties.getMultipleEntries("key1");
-        assertEquals(1, v.length);
-        assertEquals("value1", v[0]);
+        assertArrayEquals(new String[] {"value1"}, v);
         v = Properties.getMultipleEntries("key2");
-        assertEquals(1, v.length);
-        assertEquals("value2", v[0]);
+        assertArrayEquals(new String[] {"value2"}, v);
         v = Properties.getMultipleEntries("key3");
-        assertEquals(1, v.length);
-        assertEquals("value3", v[0]);
+        assertArrayEquals(new String[] {"value3"}, v);
         v = Properties.getMultipleEntries("key4");
-        assertNull(v);
+        assertArrayEquals(new String[] {}, v);
     }
 
     @Test
     public void testMultiProperties() {
         String[] v = Properties.getMultipleEntries("multi1");
-        assertEquals(2, v.length);
-        assertEquals("v1", v[0]);
-        assertEquals("v2", v[1]);
+        assertArrayEquals(new String[] {"v1", "v2"}, v);
 
         v = Properties.getMultipleEntries("multi2");
-        assertEquals(2, v.length);
-        assertEquals(" With, comma \\", v[0]);
-        assertEquals("More from this", v[1]);
+        assertArrayEquals(new String[] {" With, comma \\", "More from this"}, v);
 
         v = Properties.getMultipleEntries("multi3");
-        assertEquals(2, v.length);
-        assertEquals("", v[0]);
-        assertEquals("", v[1]);
+        assertArrayEquals(new String[] {"", ""}, v);
 
         v = Properties.getMultipleEntries("multi4");
-        assertEquals(3, v.length);
-        assertEquals("First entry", v[0]);
-        assertEquals("Second entry", v[1]);
-        assertEquals("Third entry", v[2]);
+        assertArrayEquals(new String[] {"First entry", "Second entry", "Third entry"}, v);
     }
 
     @Test

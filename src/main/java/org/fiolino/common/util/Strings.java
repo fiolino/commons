@@ -444,9 +444,9 @@ public final class Strings {
 
         StringBuilder sb = new StringBuilder(l - start);
         char ch = input.charAt(i);
+        boolean escaped = false;
         if (ch == '"') {
             // quoted
-            boolean escaped = false;
             do {
                 while (++i < l) {
                     ch = input.charAt(i);
@@ -477,18 +477,24 @@ public final class Strings {
 
         // Not quoted
         do {
-            while (++i < l) {
-                if (stopper.contains(ch) || ch == '"') {
+            while (i < l) {
+                ch = input.charAt(i++);
+                if (escaped) {
+                    escaped = false;
+                    sb.append(ch);
+                } else if (stopper.contains(ch) || ch == '"') {
                     return new Extract(sb.toString().trim(), i - 1, ch, Extract.QuotationStatus.UNQUOTED);
+                } else if (ch == '\\') {
+                    escaped = true;
+                } else {
+                    sb.append(ch);
                 }
-                sb.append(ch);
-                ch = input.charAt(i);
             }
             // EOL
-            if (ch != '\\') {
-                sb.append(ch);
+            if (!escaped) {
                 return new Extract(sb.toString().trim(), Extract.QuotationStatus.UNQUOTED);
             }
+            escaped = false;
             input = moreLines.get();
             i = 0;
         } while (input != null);

@@ -195,6 +195,10 @@ public final class Properties {
         return parseInput(defaultValue, 0, () -> null);
     }
 
+    /**
+     * Checks whether the given term was mentioned somewhere in one of the property files as a single line,
+     * without any equality sign.
+     */
     public static boolean isIndividualTerm(String term) {
         return INDIVIDUAL_TERMS.contains(term);
     }

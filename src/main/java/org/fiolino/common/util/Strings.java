@@ -340,10 +340,32 @@ public final class Strings {
      */
     public static final class Extract {
         public enum QuotationStatus {
-            UNQUOTED,
-            UNQUOTED_OPEN,
-            QUOTED,
-            QUOTED_OPEN
+            UNQUOTED {
+                @Override
+                String toString(Extract x) {
+                    return x.wasEOL() ? x.extraction + " EOL" : x.extraction + " --> '" + x.stopSign + "' at " + x.end;
+                }
+            },
+            UNQUOTED_OPEN {
+                @Override
+                String toString(Extract x) {
+                    return x.extraction + " \\";
+                }
+            },
+            QUOTED {
+                @Override
+                String toString(Extract x) {
+                    return x.wasEOL() ? quote(x.extraction) + " EOL" : quote(x.extraction) + " --> '" + x.stopSign + "' at " + x.end;
+                }
+            },
+            QUOTED_OPEN {
+                @Override
+                String toString(Extract x) {
+                    return "\"" + x.extraction + " ...";
+                }
+            };
+
+            abstract String toString(Extract x);
         }
 
         /**
@@ -394,6 +416,28 @@ public final class Strings {
         public boolean wasQuoted() {
                 return quotationStatus != QuotationStatus.UNQUOTED;
         }
+
+        @Override
+        public boolean equals(Object obj) {
+            return obj == this ||
+                    obj instanceof Extract && ((Extract) obj).quotationStatus == quotationStatus
+                    && ((Extract) obj).end == end
+                    && ((Extract) obj).stopSign == stopSign
+                    && ((Extract) obj).extraction.equals(extraction);
+        }
+
+        @Override
+        public int hashCode() {
+            return ((quotationStatus.hashCode() * 31
+                    + end) * 31
+                    + Character.hashCode(stopSign)) * 31
+                    + extraction.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return quotationStatus.toString(this);
+        }
     }
 
     /**
@@ -440,14 +484,14 @@ public final class Strings {
     public static <E extends Throwable> Extract extractUntil(String input, int start, CharSet stopper, SupplierWithException<String, E> moreLines) throws E {
         int i = nextIndexFrom(input, start-1);
         if (i == -1) return new Extract("", Extract.QuotationStatus.UNQUOTED);
-        int l = input.length();
 
-        StringBuilder sb = new StringBuilder(l - start);
+        StringBuilder sb = new StringBuilder(input.length() - start);
         char ch = input.charAt(i);
         boolean escaped = false;
         if (ch == '"') {
             // quoted
             do {
+                int l = input.length();
                 while (++i < l) {
                     ch = input.charAt(i);
                     if (escaped) {
@@ -468,7 +512,7 @@ public final class Strings {
                 }
                 escaped = false;
                 input = moreLines.get();
-                i = 0;
+                i = -1;
             } while (input != null);
 
             // No more lines
@@ -477,6 +521,7 @@ public final class Strings {
 
         // Not quoted
         do {
+            int l = input.length();
             while (i < l) {
                 ch = input.charAt(i++);
                 if (escaped) {

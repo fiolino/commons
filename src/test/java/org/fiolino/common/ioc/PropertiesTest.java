@@ -65,6 +65,18 @@ public class PropertiesTest {
     }
 
     @Test
+    public void testEscapedComma() {
+        String v = Properties.getSingleEntry("withComma");
+        assertEquals("one,  two", v);
+    }
+
+    @Test
+    public void testMultiline() {
+        String v = Properties.getSingleEntry("multiLine");
+        assertEquals("This\nis\non\nfive\nlines. ", v);
+    }
+
+    @Test
     public void testIndividualLines() {
         assertTrue(Properties.isIndividualTerm("Individual line"));
         assertFalse(Properties.isIndividualTerm("No such line"));

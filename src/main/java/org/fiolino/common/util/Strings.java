@@ -1,5 +1,6 @@
 package org.fiolino.common.util;
 
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -9,12 +10,38 @@ import java.util.regex.Pattern;
 import static java.util.concurrent.TimeUnit.*;
 
 /**
+ * Various utility methods to handle Strings.
+ *
  * Created by kuli on 26.03.15.
  */
 public final class Strings {
 
     private Strings() {
         throw new AssertionError("Static class");
+    }
+
+    private static final char[] escapedToSpecial, specialToEscaped;
+    private static final CharSet specialChars;
+
+    static {
+        escapedToSpecial = new char[256];
+        specialToEscaped = new char[256];
+        for (int i=0; i < 256; i++) {
+            escapedToSpecial[i] = (char) i;
+        }
+        CharSet cs = CharSet.empty();
+
+        String translations = "\tt\bb\nn\rr\ff\'\'\"\"\\\\";
+        for (int i=0; i < translations.length();) {
+            char special = translations.charAt(i++);
+            char esc = translations.charAt(i++);
+
+            escapedToSpecial[(int) esc] = special;
+            specialToEscaped[(int) special] = esc;
+            cs = cs.add(special);
+        }
+
+        specialChars = cs;
     }
 
     /**
@@ -25,14 +52,12 @@ public final class Strings {
         sb.append('"');
         int lastStop = 0;
         do {
-            int quoteIndex = string.indexOf('"', lastStop);
-            int backslashIndex = string.indexOf('\\', lastStop);
-            int nextStop = quoteIndex < 0 ? backslashIndex :
-                    (backslashIndex < 0 ? quoteIndex : Math.min(quoteIndex, backslashIndex));
+            int nextStop = specialChars.nextIndexIn(string, lastStop);
 
             if (nextStop >= 0) {
+                int ch = string.charAt(nextStop);
                 sb.append(string, lastStop, nextStop);
-                sb.append('\\').append(string.charAt(nextStop));
+                sb.append('\\').append(specialToEscaped[ch]);
                 lastStop = nextStop + 1;
             } else {
                 sb.append(string, lastStop, string.length());
@@ -52,6 +77,23 @@ public final class Strings {
     }
 
     /**
+     * Gets the text from some quoted input string.
+     * If the string starts with quotation marks, then the quoted content is returned - any following text is ignored.
+     * If it's not quoted in the beginning, then the original input is returned.
+     *
+     * @param value The input string
+     * @return The result
+     */
+    public static String unquote(String value) {
+        Extract x = extractUntil(value, 0, CharSet.empty());
+        if (x.wasQuoted()) {
+            return x.extraction;
+        }
+        // Was not quoted - there must be some unquoted text somewhere
+        return value;
+    }
+
+    /**
      * Removes the leading prefix of the given input.
      * Returns the unchanged input if it doesn't start with the prefix.
      * Lowers the beginning of the remainder otherwise.
@@ -65,7 +107,7 @@ public final class Strings {
     }
 
     /**
-     * Adds a prefix to the given input String, making the latter uppercase in the first letter.
+     * Adds a prefix to the given input String, whose first letter will be in uppercase then.
      */
     public static String addLeading(String input, String prefix) {
         if (input.length() == 0) {
@@ -90,20 +132,17 @@ public final class Strings {
             return s;
         }
         StringBuilder sb = new StringBuilder(remainingLength);
-        boolean lower = true;
-        for (int i = start; i < fullLength; i++) {
+        int i = start;
+        while (i < fullLength) {
             char c = s.charAt(i);
-            if (!lower) {
-                sb.append(c);
-                continue;
-            }
-            if (Character.isUpperCase(c) && (i == start || i == fullLength - 1 || Character.isUpperCase(s.charAt(i + 1)))) {
+            if ((i++ == start || i == fullLength || Character.isUpperCase(s.charAt(i))) && Character.isUpperCase(c)) {
                 sb.append(Character.toLowerCase(c));
                 continue;
             }
-            lower = false;
             sb.append(c);
+            break;
         }
+        sb.append(s, i, s.length());
 
         return sb.toString();
     }
@@ -138,7 +177,7 @@ public final class Strings {
     }
 
     /**
-     * Normalizes an uppercased name by lowercasing everything, except letter that
+     * Normalizes an uppercased name by lowercasing everything, except letters that
      * follow an underscore, which become camel case then.
      * On top, all $ signs are replaced by dots.
      * <p>
@@ -211,15 +250,15 @@ public final class Strings {
         return sb.toString();
     }
 
-    private static final long[] DIGI; // 0, 10, 100, 1000, ...
-    // The first number is 0 by intention
+    private static final long[] DIGI; // 0, 0, 10, 100, 1000, ...
+    // The first two numbers are 0 by intention
 
     static {
-        int n = String.valueOf(Long.MAX_VALUE).length();
+        int n = String.valueOf(Long.MAX_VALUE).length()+1;
         DIGI = new long[n];
         long exp = 1L;
 
-        for (int i = 1; i < n; i++) {
+        for (int i = 2; i < n; i++) {
             exp *= 10L;
             DIGI[i] = exp;
         }
@@ -228,25 +267,26 @@ public final class Strings {
     /**
      * Prints a fixed number with a given length of digits into a StringBuilder, filled with leading zeros.
      */
-    public static StringBuilder appendNumber(StringBuilder sb, long number, int digitCount) {
-        long num = number;
-        int digits = digitCount;
-        if (num < 0) {
+    public static StringBuilder appendNumber(StringBuilder sb, long number, int minimumDigits) {
+        if (minimumDigits < 0) {
+            throw new IllegalArgumentException("" + minimumDigits);
+        }
+        int digits = minimumDigits;
+        if (number < 0) {
             // Minus sign does not count into digits param
             sb.append('-');
-            num *= -1;
+            number *= -1;
         }
-        while (digits > DIGI.length) {
+        while (digits >= DIGI.length) {
+            // If more digits are requested than the maximum possible long value has
             digits--;
             sb.append('0');
         }
-        while (--digits > 0) {
-            if (num >= DIGI[digits]) {
-                break;
-            }
+        while (number < DIGI[digits--]) { // Will stop at last digit latest
+            // Attach zeros as long as first real digit isn't reached
             sb.append('0');
         }
-        return sb.append(num);
+        return sb.append(number);
     }
 
     /**
@@ -496,7 +536,8 @@ public final class Strings {
                     ch = input.charAt(i);
                     if (escaped) {
                         escaped = false;
-                        sb.append(ch);
+                        int c = (int) ch;
+                        sb.append(c < 256 ? escapedToSpecial[c] : ch);
                     } else if (ch == '"') {
                         return new Extract(sb.toString(), input, i);
                     } else if (ch == '\\') {

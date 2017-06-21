@@ -84,6 +84,39 @@ public abstract class CharSet implements Serializable {
     }
 
     /**
+     * Gets the position of the next occurrence of any of my contained characters in the given string.
+     *
+     * @see String.indexOf()
+     *
+     * @param string Where to look in
+     * @return The position, or -1 if none of my characters are inside this string
+     */
+    public final int nextIndexIn(String string) {
+        return nextIndexIn(string, 0);
+    }
+
+    /**
+     * Gets the position of the next occurrence of any of my contained characters in the given string, starting from the second parameter.
+     *
+     * @see String.indexOf()
+     *
+     * @param string Where to look in
+     * @param start Start looking from here
+     * @return The position, or -1 if none of my characters are inside this string after or including start
+     */
+    public int nextIndexIn(String string, int start) {
+        int i = start-1, l = string.length();
+        while (++i < l) {
+            char ch = string.charAt(i);
+            if (contains(ch)) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /**
      * Returns the number of distinct characters in my set.
      */
     public abstract int size();
@@ -223,6 +256,11 @@ public abstract class CharSet implements Serializable {
         }
 
         @Override
+        public int nextIndexIn(String string, int start) {
+            return -1;
+        }
+
+        @Override
         CharSet removeExisting(char ch) {
             throw new AssertionError(ch + " in an empty set?");
         }
@@ -293,6 +331,11 @@ public abstract class CharSet implements Serializable {
         @Override
         public boolean contains(char ch) {
             return this.ch == ch;
+        }
+
+        @Override
+        public int nextIndexIn(String string, int start) {
+            return string.indexOf(ch, start);
         }
 
         @Override

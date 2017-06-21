@@ -14,7 +14,7 @@ import static org.junit.Assert.assertTrue;
  */
 public class CharSetTest {
     @Test
-    public void contains() throws Exception {
+    public void contains() {
         CharSet cs = CharSet.empty();
         for (int i = 0; i < 1024; i++) {
             assertFalse(cs.contains((char) i));
@@ -28,7 +28,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void asPredicate() throws Exception {
+    public void asPredicate() {
         IntPredicate pred = CharSet.of("abc").asPredicate();
         assertTrue(pred.test((int) 'a'));
         assertTrue(pred.test((int) 'b'));
@@ -37,7 +37,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void remove() throws Exception {
+    public void remove() {
         CharSet cs = CharSet.of("abc");
         assertTrue(cs.contains('b'));
         assertEquals(3, cs.size());
@@ -54,7 +54,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void add() throws Exception {
+    public void add() {
         CharSet cs = CharSet.of("abc");
         assertFalse(cs.contains('z'));
         assertEquals(3, cs.size());
@@ -69,21 +69,21 @@ public class CharSetTest {
     }
 
     @Test
-    public void isContainedIn() throws Exception {
+    public void isContainedIn() {
         CharSet cs = CharSet.of("abc");
         assertFalse(cs.isContainedIn("Your mother"));
         assertTrue(cs.isContainedIn("The quick brown fox jumps over the lazy dog."));
     }
 
     @Test
-    public void size() throws Exception {
+    public void size() {
         assertEquals(0, CharSet.empty().size());
         CharSet cs = CharSet.of("Your life!");
         assertEquals(10, cs.size());
     }
 
     @Test
-    public void isEmpty() throws Exception {
+    public void isEmpty() {
         assertTrue(CharSet.empty().isEmpty());
         assertTrue(CharSet.of("").isEmpty());
         assertFalse(CharSet.of("abc").isEmpty());
@@ -92,7 +92,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void iterator() throws Exception {
+    public void iterator() {
         CharSet cs = CharSet.empty();
         CharacterIterator it = cs.iterator();
         assertEquals(CharacterIterator.DONE, it.current());
@@ -162,7 +162,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void union() throws Exception {
+    public void union() {
         CharSet first = CharSet.of("abcdef");
         CharSet second = CharSet.of("acegij");
         CharSet combined = first.union(second);
@@ -177,7 +177,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void intersection() throws Exception {
+    public void intersection() {
         CharSet first = CharSet.of("abcdef");
         CharSet second = CharSet.of("acegij");
         CharSet reduced = first.intersection(second);
@@ -200,7 +200,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void allCharactersAsString() throws Exception {
+    public void allCharactersAsString() {
         CharSet cs = CharSet.empty();
         String s = cs.allCharactersAsString();
         assertEquals("\"\"", s);
@@ -211,6 +211,21 @@ public class CharSetTest {
 
         cs = CharSet.of("freakshow \"'");
         s = cs.allCharactersAsString();
-        assertEquals("\" \\\"'aefhkorsw\"", s);
+        assertEquals("\" \\\"\\'aefhkorsw\"", s);
+    }
+
+    public void nextIndexOf() {
+        CharSet cs = CharSet.empty();
+        int index = cs.nextIndexIn("Any text.");
+        assertEquals(-1, index);
+
+        cs = CharSet.of("0123456789");
+        String text = "Pi is a number between 3 and 4, I'd say.";
+        index = cs.nextIndexIn(text);
+        assertEquals("Pi is a number between ".length(), index);
+        index = cs.nextIndexIn(text, index+1);
+        assertEquals("Pi is a number between 3 and ".length(), index);
+        index = cs.nextIndexIn(text, index+1);
+        assertEquals(-1, index);
     }
 }

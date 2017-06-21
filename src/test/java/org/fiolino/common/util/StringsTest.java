@@ -30,6 +30,39 @@ public class StringsTest {
 
         quoted = Strings.quote("Now a string with \"parenthesises\", \\slashes\\, and \\\"quoted parenthesises\\\".");
         assertEquals("\"Now a string with \\\"parenthesises\\\", \\\\slashes\\\\, and \\\\\\\"quoted parenthesises\\\\\\\".\"", quoted);
+
+        quoted = Strings.quote("Text with \n, \t, and \r and \b; also \f plus \\ and '. ");
+        assertEquals("\"Text with \\n, \\t, and \\r and \\b; also \\f plus \\\\ and \\'. \"", quoted);
+    }
+
+    @Test
+    public void testUnquote() {
+        String unquoted = Strings.unquote("\"Hello World!\"");
+        assertEquals("Hello World!", unquoted);
+
+        unquoted = Strings.unquote("\"Here \\\"this\\\" is already quoted.\"");
+        assertEquals("Here \"this\" is already quoted.", unquoted);
+
+        unquoted = Strings.unquote("\"\\\"Here the whole string is already quoted.\\\"\"");
+        assertEquals("\"Here the whole string is already quoted.\"", unquoted);
+
+        unquoted = Strings.unquote("\"\\\"Here the whole string is already quoted.\\\"\"");
+        assertEquals("\"Here the whole string is already quoted.\"", unquoted);
+
+        unquoted = Strings.unquote("\"Now a string with \\\"parenthesises\\\", \\\\slashes\\\\, and \\\\\\\"quoted parenthesises\\\\\\\".\"");
+        assertEquals("Now a string with \"parenthesises\", \\slashes\\, and \\\"quoted parenthesises\\\".", unquoted);
+
+        unquoted = Strings.unquote("Some unquoted \"and quoted\".");
+        assertEquals("Some unquoted \"and quoted\".", unquoted);
+
+        unquoted = Strings.unquote("\"Some quoted \" and unquoted.");
+        assertEquals("Some quoted ", unquoted);
+
+        unquoted = Strings.unquote("\"Text with \\n, \\t, and \\r and \\b; also \\f plus \\\\ and \\'. \"");
+        assertEquals("Text with \n, \t, and \r and \b; also \f plus \\ and '. ", unquoted);
+
+        unquoted = Strings.unquote("\"Text with strange \\x or \\0.\"");
+        assertEquals("Text with strange x or 0.", unquoted);
     }
 
     @Test
@@ -64,6 +97,9 @@ public class StringsTest {
 
         String allUpper = Strings.lowerCaseFirst("UPPER");
         assertEquals("upper", allUpper);
+
+        String almostAllUpper = Strings.lowerCaseFirst("UPPEr");
+        assertEquals("uppEr", almostAllUpper);
     }
 
     @Test
@@ -107,8 +143,8 @@ public class StringsTest {
         num = Strings.appendNumber(new StringBuilder(), 1313, 2).toString();
         assertEquals("1313", num);
 
-        num = Strings.appendNumber(new StringBuilder(), 0, 15).toString();
-        assertEquals("000000000000000", num);
+        num = Strings.appendNumber(new StringBuilder(), 0, 20).toString();
+        assertEquals("00000000000000000000", num);
 
         num = Strings.appendNumber(new StringBuilder(), 0, 0).toString();
         assertEquals("0", num);

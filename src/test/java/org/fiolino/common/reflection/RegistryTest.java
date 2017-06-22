@@ -7,6 +7,7 @@ import java.lang.invoke.MethodHandles;
 import java.util.Arrays;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.*;
@@ -574,5 +575,94 @@ public class RegistryTest {
         previous = ex.getAccessor().invokeExact((Object) "Whatever the...");
         assertEquals("Initial", previous);
         assertEquals("First", ref.get());
+    }
+
+    // Enum and boolean types are handles explicitly in Registry of they're the singular parameters
+    @Test
+    public void testEnumParameter() throws Throwable {
+        MethodHandle arrayOfTwoValues = MethodHandles.identity(Object[].class).asCollector(Object[].class, 2);
+        arrayOfTwoValues = arrayOfTwoValues.asType(methodType(Object[].class, TimeUnit.class, long.class));
+        MethodHandle getNanos = publicLookup().findStatic(System.class, "nanoTime", methodType(long.class));
+        arrayOfTwoValues = MethodHandles.collectArguments(arrayOfTwoValues, 1, getNanos);
+
+        // First test general functionality
+        Object[] array1 = (Object[])arrayOfTwoValues.invokeExact(TimeUnit.SECONDS);
+        TimeUnit.MICROSECONDS.sleep(10);
+        Object[] array2 = (Object[])arrayOfTwoValues.invokeExact(TimeUnit.SECONDS);
+        assertEquals(TimeUnit.SECONDS, array1[0]);
+        assertEquals(TimeUnit.SECONDS, array2[0]);
+        assertTrue((long)array1[1] < (long)array2[1]);
+
+        // Now test cached version
+        Registry registry = Registry.buildFor(arrayOfTwoValues);
+        MethodHandle accessor = registry.getAccessor();
+        array1 = (Object[]) accessor.invokeExact(TimeUnit.SECONDS);
+        TimeUnit.MICROSECONDS.sleep(10);
+        array2 = (Object[])accessor.invokeExact(TimeUnit.SECONDS);
+        assertEquals(TimeUnit.SECONDS, array1[0]);
+        assertEquals(TimeUnit.SECONDS, array2[0]);
+        assertTrue("Both must be the same", (long)array1[1] == (long)array2[1]);
+        assertTrue("Even the array should be the same", array1 == array2);
+
+        // Now test that different value returns different result
+        array2 = (Object[])accessor.invokeExact(TimeUnit.HOURS);
+        assertEquals(TimeUnit.HOURS, array2[0]);
+        assertTrue("Second call comes later", (long)array1[1] < (long)array2[1]);
+        array2 = (Object[])accessor.invokeExact(TimeUnit.SECONDS);
+        assertEquals(TimeUnit.SECONDS, array2[0]);
+        assertTrue("Both must be the same", (long)array1[1] == (long)array2[1]);
+        assertTrue("Even the array should be the same, again", array1 == array2);
+
+        // Now test reset
+        registry.reset();
+        array2 = (Object[])accessor.invokeExact(TimeUnit.SECONDS);
+        assertEquals(TimeUnit.SECONDS, array2[0]);
+        assertTrue((long)array1[1] < (long)array2[1]);
+
+        // Now test getUpdate
+        TimeUnit.MICROSECONDS.sleep(10);
+        array1 = (Object[]) registry.getUpdater().invokeExact(TimeUnit.SECONDS);
+        assertEquals(TimeUnit.SECONDS, array1[0]);
+        assertTrue((long)array1[1] > (long)array2[1]);
+
+        array2 = (Object[])accessor.invokeExact(TimeUnit.SECONDS);
+        assertEquals(TimeUnit.SECONDS, array1[0]);
+        assertTrue("Both must be the same", (long)array1[1] == (long)array2[1]);
+        assertTrue("Even the array should be the same", array1 == array2);
+    }
+
+    @Test
+    public void testBooleanParameter() throws Throwable {
+        AtomicBoolean ref = new AtomicBoolean();
+        MethodHandle setBool = publicLookup().bind(ref, "getAndSet", methodType(boolean.class, boolean.class));
+        Registry registry = Registry.buildFor(setBool);
+        MethodHandle accessor = registry.getAccessor();
+        assertFalse((boolean) accessor.invokeExact(true));
+        assertTrue(ref.get());
+        assertFalse((boolean) accessor.invokeExact(true));
+        assertTrue(ref.get());
+        ref.set(false);
+        assertFalse((boolean) accessor.invokeExact(true));
+        assertFalse(ref.get());
+
+        MethodHandle updater = registry.getUpdater();
+        assertFalse((boolean) updater.invokeExact(true));
+        assertTrue(ref.get());
+        assertFalse((boolean) accessor.invokeExact(true));
+        assertTrue(ref.get());
+        ref.set(false);
+        assertFalse((boolean) accessor.invokeExact(true));
+        assertFalse(ref.get());
+
+        ref.set(true);
+        assertTrue((boolean) updater.invokeExact(true));
+        assertTrue(ref.get());
+        assertTrue((boolean) accessor.invokeExact(false));
+        assertFalse(ref.get());
+        assertTrue((boolean) accessor.invokeExact(false));
+        assertFalse(ref.get());
+
+        registry.reset();
+        assertFalse((boolean) accessor.invokeExact(false));
     }
 }

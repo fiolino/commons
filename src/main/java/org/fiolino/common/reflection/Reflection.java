@@ -1,113 +1,130 @@
 package org.fiolino.common.reflection;
 
-import java.lang.annotation.Annotation;
-import java.lang.reflect.AnnotatedElement;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.util.function.Consumer;
-import java.util.regex.Pattern;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.util.function.UnaryOperator;
+
+import static java.lang.invoke.MethodHandles.publicLookup;
+import static java.lang.invoke.MethodType.methodType;
 
 /**
  * Created by Kuli on 6/17/2016.
  */
-public final class Reflection {
-    private Reflection() {
-        throw new AssertionError();
-    }
-
-    static class AnnotationProviderAdapter implements AnnotationProvider {
-        private final AnnotatedElement element;
-
-        AnnotationProviderAdapter(AnnotatedElement element) {
-            this.element = element;
+final class Reflection {
+    /**
+     * Builds a Registry for a given target handle.
+     *
+     * Implementation note:
+     * This works for all kinds of MethodHandles if the resulting handle has no parameters,
+     * but it will only work for direct method handles if there are some parameter types.
+     *
+     * @param target This handle will be called only once per parameter value.
+     * @param leadingParameters Some values that are being added to the target at first
+     * @return A Registry holding handles with exactly the same type as the target type minus the leading parameters
+     */
+    static Registry buildFor(MethodHandle target, Object... leadingParameters) {
+        int pCount = target.type().parameterCount() - leadingParameters.length;
+        if (pCount < 0) {
+            throw new IllegalArgumentException("Too many leading parameters for " + target);
         }
-
-        @Override
-        public <A extends Annotation> A get(Class<A> annotationType) {
-            return element.getAnnotation(annotationType);
-        }
-
-        @Override
-        public String toString() {
-            return "Provides annotations from " + element;
-        }
-    }
-
-    static class CombinedAnnotationProvider implements AnnotationProvider {
-        private final AnnotationProvider first;
-        private final AnnotationProvider second;
-
-        CombinedAnnotationProvider(AnnotationProvider first, AnnotationProvider second) {
-            this.first = first;
-            this.second = second;
-        }
-
-        @Override
-        public <A extends Annotation> A get(Class<A> annotationType) {
-            A annotation = first.get(annotationType);
-            return annotation == null ? second.get(annotationType) : annotation;
-        }
-
-        @Override
-        public String toString() {
-            return "Combines annotation from " + first + " and " + second;
-        }
-    }
-
-    public static void visitFields(Class<?> type,
-                                   AttributeChooser chooser, Consumer<Field> consumer) {
-        Class<?> c = type;
-        do {
-            for (Field f : c.getDeclaredFields()) {
-                if (Modifier.isStatic(f.getModifiers())) {
-                    continue;
+        switch (pCount) {
+            case 0:
+                // No args, so just one simple instance
+                target = insertLeadingArguments(target, leadingParameters);
+                return new OneTimeRegistryBuilder(target, false);
+            case 1:
+                // Maybe just some type with few possible values?
+                Class<?> singleArgumentType = target.type().parameterType(leadingParameters.length);
+                if (singleArgumentType.isEnum() && singleArgumentType.getEnumConstants().length <= 64) {
+                    // Then it can be mapped directly
+                    target = insertLeadingArguments(target, leadingParameters);
+                    return buildForEnumParameter(target, singleArgumentType.asSubclass(Enum.class));
                 }
-                AnnotationProvider provider = new AnnotationProviderAdapter(f);
-                if (chooser.accepts(f.getName(), f.getType(), provider)) {
-                    consumer.accept(f);
+                if (singleArgumentType == boolean.class) {
+                    target = insertLeadingArguments(target, leadingParameters);
+                    return buildForBooleanParameter(target);
                 }
-            }
-        } while ((c = c.getSuperclass()) != null);
-    }
-
-    private static final AttributeChooser CHOOSE_ALL = new AbstractAttributeChooser() {
-        @Override
-        public boolean accepts(String name, Class<?> type, AnnotationProvider annotationProvider) {
-            return true;
+            default:
+                return MultiArgumentExecutionBuilder.createFor(target, leadingParameters);
         }
-    };
-
-    public static AttributeChooser chooseAll() {
-        return CHOOSE_ALL;
     }
 
-    public static AttributeChooser withPattern(String pattern) {
-        final Pattern p = Pattern.compile(pattern);
-        return new AbstractAttributeChooser() {
-            @Override
-            public boolean accepts(String name, Class<?> type, AnnotationProvider annotationProvider) {
-                return p.matcher(name).matches();
+    private static MethodHandle insertLeadingArguments(MethodHandle target, Object[] leadingParameters) {
+        if (leadingParameters.length > 0) {
+            target = MethodHandles.insertArguments(target, 0, leadingParameters);
+        }
+        return target;
+    }
+
+    private static <E extends Enum<E>> Registry buildForEnumParameter(MethodHandle target, Class<E> enumType) {
+        MethodHandle ordinal;
+        try {
+            ordinal = publicLookup().findVirtual(enumType, "ordinal", methodType(int.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new InternalError("ordinal", ex);
+        }
+        return new ParameterToIntMappingRegistry(target,
+                h -> MethodHandles.filterArguments(h, 0, ordinal), enumType.getEnumConstants().length);
+    }
+
+    private static Registry buildForBooleanParameter(MethodHandle target) {
+        return new ParameterToIntMappingRegistry(target,
+                h -> MethodHandles.explicitCastArguments(h, methodType(MethodHandle.class, boolean.class)), 2);
+    }
+
+    /**
+     * A Registry implementation that fetches accessor and updater from arrays of MethodHandles.
+     */
+    private static final class ParameterToIntMappingRegistry implements Registry {
+        private final Resettable[] resettables;
+        private final MethodHandle accessor, updater;
+
+        /**
+         * Creates the special registry.
+         *
+         * @param target Use this as the called handle.
+         * @param alignHandleGetter Transforms the handle that fetches another handle from an array by its int position
+         *                          to something fetching by the target's parameter value; more detailed, it transforms
+         *                          (int)MethodHandle into (0..n-1)MethodHandle where 0..n-1 are target's first n parameters.
+         * @param maximumValue The maximum size of the used arrays
+         */
+        ParameterToIntMappingRegistry(MethodHandle target, UnaryOperator<MethodHandle> alignHandleGetter, int maximumValue) {
+            Registry[] registries = new Registry[maximumValue];
+            MethodHandle[] accessors = new MethodHandle[maximumValue];
+            MethodHandle[] updaters = new MethodHandle[maximumValue];
+            for (int i=0; i < maximumValue; i++) {
+                Registry r = OneTimeExecution.createFor(target);
+                registries[i] = r;
+                accessors[i] = r.getAccessor();
+                updaters[i] = r.getUpdater();
             }
-        };
-    }
+            resettables = registries;
 
-    public static AttributeChooser ofType(final Class<?> matchingType) {
-        return new AbstractAttributeChooser() {
-            @Override
-            public boolean accepts(String name, Class<?> type, AnnotationProvider annotationProvider) {
-                return matchingType.isAssignableFrom(type);
+            MethodHandle getFromArray = MethodHandles.arrayElementGetter(MethodHandle[].class);
+            MethodHandle getAccessor = getFromArray.bindTo(accessors);
+            getAccessor = alignHandleGetter.apply(getAccessor);
+            accessor = MethodHandles.foldArguments(MethodHandles.exactInvoker(target.type()), getAccessor);
+
+            MethodHandle getUpdater = getFromArray.bindTo(updaters);
+            getUpdater = alignHandleGetter.apply(getUpdater);
+            updater = MethodHandles.foldArguments(MethodHandles.exactInvoker(target.type()), getUpdater);
+        }
+
+        @Override
+        public void reset() {
+            for (Resettable r : resettables) {
+                r.reset();
             }
-        };
+        }
+
+        @Override
+        public MethodHandle getAccessor() {
+            return accessor;
+        }
+
+        @Override
+        public MethodHandle getUpdater() {
+            return updater;
+        }
     }
-
-    public static AttributeChooser annotatedWith(final Class<? extends Annotation> annoType) {
-        return new AbstractAttributeChooser() {
-            @Override
-            public boolean accepts(String name, Class<?> type, AnnotationProvider annotationProvider) {
-                return annotationProvider.get(annoType) != null;
-            }
-        };
-    }
-
-
 }

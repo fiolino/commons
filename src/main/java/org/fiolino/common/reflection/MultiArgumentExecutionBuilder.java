@@ -95,8 +95,6 @@ final class MultiArgumentExecutionBuilder implements Registry {
             setIfAbsent = MethodHandles.insertArguments(setIfAbsent, 1, targetFunction);
         }
 
-        Class<?>[] allParametersAreObjects = new Class<?>[parameterCount];
-        Arrays.fill(allParametersAreObjects, Object.class);
         int updateOffset;
         MethodType updateType;
         if (returnType == void.class) {

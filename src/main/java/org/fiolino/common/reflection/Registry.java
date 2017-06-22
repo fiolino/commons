@@ -1,7 +1,6 @@
 package org.fiolino.common.reflection;
 
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
 import java.util.function.Function;
 
@@ -42,17 +41,7 @@ public interface Registry extends Resettable {
      * @return A Registry holding handles with exactly the same type as the target type minus the leading parameters
      */
     static Registry buildFor(MethodHandle target, Object... leadingParameters) {
-        int pCount = target.type().parameterCount() - leadingParameters.length;
-        if (pCount < 0) {
-            throw new IllegalArgumentException("Too many leading parameters for " + target);
-        }
-        if (pCount > 0) {
-            return MultiArgumentExecutionBuilder.createFor(target, leadingParameters);
-        }
-        if (leadingParameters.length > 0) {
-            target = MethodHandles.insertArguments(target, 0, leadingParameters);
-        }
-        return new OneTimeRegistryBuilder(target, false);
+        return Reflection.buildFor(target, leadingParameters);
     }
 
     /**

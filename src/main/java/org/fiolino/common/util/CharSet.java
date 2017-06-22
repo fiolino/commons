@@ -7,7 +7,7 @@ import java.util.BitSet;
 import java.util.function.IntPredicate;
 
 /**
- * A CharSet is like a {@link java.util.Set} of char values.
+ * A CharSet is like an immutable {@link java.util.Set} of char values.
  * <p>
  * It can be constructed from a String or a char array, and you can use it to quickly check
  * whether a given char value is one of these.
@@ -38,10 +38,10 @@ public abstract class CharSet implements Serializable {
     }
 
     /**
-     * Returns a CharSet where the given character is not contained.
+     * Returns a CharSet where the given character is not part of.
      *
      * @param ch Some character to remove
-     * @return This or a clone of myself where ch is not contained
+     * @return This or a clone of myself where ch is not part of
      */
     public final CharSet remove(char ch) {
         if (!contains(ch)) {
@@ -56,7 +56,7 @@ public abstract class CharSet implements Serializable {
      * Returns a CharSet where the given character is added.
      *
      * @param ch Some character to add
-     * @return This or a clone of myself where ch is contained
+     * @return This or a clone of myself where ch is part of
      */
     public final CharSet add(char ch) {
         if (contains(ch)) {
@@ -86,7 +86,7 @@ public abstract class CharSet implements Serializable {
     /**
      * Gets the position of the next occurrence of any of my contained characters in the given string.
      *
-     * @see String.indexOf()
+     * @see String::indexOf
      *
      * @param string Where to look in
      * @return The position, or -1 if none of my characters are inside this string
@@ -98,15 +98,14 @@ public abstract class CharSet implements Serializable {
     /**
      * Gets the position of the next occurrence of any of my contained characters in the given string, starting from the second parameter.
      *
-     * @see String.indexOf()
+     * @see String::indexOf
      *
      * @param string Where to look in
      * @param start Start looking from here
      * @return The position, or -1 if none of my characters are inside this string after or including start
      */
     public int nextIndexIn(String string, int start) {
-        int i = start-1, l = string.length();
-        while (++i < l) {
+        for (int i = start, l = string.length(); i < l; i++) {
             char ch = string.charAt(i);
             if (contains(ch)) {
                 return i;
@@ -480,6 +479,7 @@ public abstract class CharSet implements Serializable {
         private final int size;
 
         private BitSetBasedCharSet(int... sortedChars) {
+            assert sortedChars.length > 1;
             bitSet = new BitSet(sortedChars[sortedChars.length - 1] + 1);
             for (int ch : sortedChars) {
                 if (bitSet.get(ch)) {
@@ -490,9 +490,9 @@ public abstract class CharSet implements Serializable {
             size = sortedChars.length;
         }
 
-        private BitSetBasedCharSet(BitSet bitSet) {
+        private BitSetBasedCharSet(BitSet bitSet, int size) {
             this.bitSet = bitSet;
-            size = bitSet.cardinality();
+            this.size = size;
         }
 
         @Override
@@ -517,14 +517,14 @@ public abstract class CharSet implements Serializable {
 
             BitSet remaining = (BitSet) bitSet.clone();
             remaining.clear(ch);
-            return new BitSetBasedCharSet(remaining);
+            return new BitSetBasedCharSet(remaining, size() - 1);
         }
 
         @Override
         CharSet addNonExisting(char ch) {
             BitSet remaining = (BitSet) bitSet.clone();
             remaining.set(ch);
-            return new BitSetBasedCharSet(remaining);
+            return new BitSetBasedCharSet(remaining, size() + 1);
         }
 
         @Override
@@ -652,7 +652,11 @@ public abstract class CharSet implements Serializable {
         CharSet unionFromBitSet(BitSetBasedCharSet other) {
             BitSet copy = (BitSet) bitSet.clone();
             copy.or(other.bitSet);
-            return new BitSetBasedCharSet(copy);
+            int c = copy.cardinality();
+            if (c == size()) {
+                return this;
+            }
+            return new BitSetBasedCharSet(copy, c);
         }
 
         @Override
@@ -665,18 +669,20 @@ public abstract class CharSet implements Serializable {
             BitSet copy = (BitSet) bitSet.clone();
             copy.and(other.bitSet);
             int c = copy.cardinality();
-            if (c == 0) {
-                return EMPTY_SET;
+            switch (c) {
+                case 0:
+                    return EMPTY_SET;
+                case 1:
+                    return new SingleCharSet((char) copy.nextSetBit(0));
+                default:
+                    return c == size() ? this : new BitSetBasedCharSet(copy, c);
             }
-            if (c == 1) {
-                return new SingleCharSet((char) copy.nextSetBit(0));
-            }
-            return new BitSetBasedCharSet(copy);
         }
 
         @Override
         public boolean equals(Object obj) {
-            return obj != null && obj.getClass().equals(BitSetBasedCharSet.class)
+            return obj == this ||
+                    obj != null && obj.getClass().equals(BitSetBasedCharSet.class)
                     && ((BitSetBasedCharSet) obj).bitSet.equals(bitSet);
         }
 
@@ -684,7 +690,6 @@ public abstract class CharSet implements Serializable {
         public int hashCode() {
             return bitSet.hashCode() + 171717;
         }
-
     }
 
     /**

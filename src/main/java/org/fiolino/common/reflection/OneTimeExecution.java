@@ -3,6 +3,10 @@ package org.fiolino.common.reflection;
 import java.lang.invoke.MethodHandle;
 
 /**
+ * A registry for methods that should be called only once and then cached, independent of their parameter types.
+ *
+ * Usually this will be for methods without parameters, or where the parameter is already checked in advance.
+ *
  * Created by kuli on 14.03.17.
  */
 public interface OneTimeExecution extends Registry {

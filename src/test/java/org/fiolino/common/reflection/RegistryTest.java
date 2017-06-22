@@ -665,4 +665,29 @@ public class RegistryTest {
         registry.reset();
         assertFalse((boolean) accessor.invokeExact(false));
     }
+
+    @Test
+    public void testMapToInteger() throws Throwable {
+        MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
+        MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
+        Registry r = Registry.buildForLimitedRange(concat, toInt, 10);
+        MethodHandle accessor = r.getAccessor();
+
+        String s1 = (String) accessor.invokeExact("12345", "First");
+        assertEquals("12345First", s1);
+        String s2 = (String) accessor.invokeExact("54321", "Second");
+        assertEquals("12345First", s2);
+        s2 = (String) accessor.invokeExact("5432", "Second");
+        assertEquals("5432Second", s2);
+
+        MethodHandle updater = r.getUpdater();
+        s2 = (String) updater.invokeExact("54321", "Second");
+        assertEquals("54321Second", s2);
+        s1 = (String) accessor.invokeExact("12345", "First");
+        assertEquals("54321Second", s1);
+
+        r.reset();
+        s1 = (String) accessor.invokeExact("12345", "First");
+        assertEquals("12345First", s1);
+    }
 }

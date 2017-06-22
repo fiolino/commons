@@ -1,6 +1,8 @@
 package org.fiolino.common.reflection;
 
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
 import java.util.function.Function;
 
@@ -32,16 +34,33 @@ public interface Registry extends Resettable {
     /**
      * Builds a Registry for a given target handle.
      *
-     * Implementation note:
-     * This works for all kinds of MethodHandles if the resulting handle has no parameters,
-     * but it will only work for direct method handles if there are some parameter types.
-     *
      * @param target This handle will be called only once per parameter value.
      * @param leadingParameters Some values that are being added to the target at first
      * @return A Registry holding handles with exactly the same type as the target type minus the leading parameters
      */
     static Registry buildFor(MethodHandle target, Object... leadingParameters) {
         return Reflection.buildFor(target, leadingParameters);
+    }
+
+    /**
+     * Builds a Registry for a given target handle where the input parameters can be mapped to an int of limited range.
+     *
+     * @param target This handle will be called only once per parameter value.
+     * @param toIntMapper This will map the first n arguments to some int value...
+     * @param maximumRange ... which is lower than this.
+     * @return A Registry holding handles with exactly the same type as the target type
+     */
+    static Registry buildForLimitedRange(MethodHandle target, MethodHandle toIntMapper, int maximumRange) {
+        MethodType intMapperType = toIntMapper.type();
+        MethodType targetType = target.type();
+
+        assert intMapperType.returnType() == int.class : "Must return an int";
+        assert intMapperType.parameterCount() <= targetType.parameterCount() : "Must have at most that many arguments as the target";
+        for (int i=intMapperType.parameterCount() - 1; i >= 0; i--) {
+            assert intMapperType.parameterType(i).equals(target.type().parameterType(i)) : "Parameter #" + i + " must be the same";
+        }
+
+        return new Reflection.ParameterToIntMappingRegistry(target, h -> MethodHandles.collectArguments(h, 0, toIntMapper), maximumRange);
     }
 
     /**

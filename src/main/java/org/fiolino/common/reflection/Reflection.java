@@ -75,7 +75,7 @@ final class Reflection {
     /**
      * A Registry implementation that fetches accessor and updater from arrays of MethodHandles.
      */
-    private static final class ParameterToIntMappingRegistry implements Registry {
+    static final class ParameterToIntMappingRegistry implements Registry {
         private final Resettable[] resettables;
         private final MethodHandle accessor, updater;
 

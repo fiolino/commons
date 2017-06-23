@@ -70,7 +70,7 @@ public interface Registry extends Resettable {
         }
 
         return new Reflection.ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.collectArguments(h, h.type().parameterCount() - 1, toIntMapper), maximumRange);
+                h -> MethodHandles.collectArguments(h, h.type().parameterCount() - 1, toIntMapper), maximumRange, true);
     }
 
     /**
@@ -137,7 +137,7 @@ public interface Registry extends Resettable {
         MethodHandle toInt = search.bindTo(sortedValues).asType(methodType(int.class, target.type().parameterType(0)));
 
         return new Reflection.ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.filterArguments(h, h.type().parameterCount() - 1, toInt), sortedValues.length);
+                h -> MethodHandles.filterArguments(h, h.type().parameterCount() - 1, toInt), sortedValues.length, true);
     }
 
     /**

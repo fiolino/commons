@@ -68,12 +68,14 @@ final class Reflection {
             throw new InternalError("ordinal", ex);
         }
         return new ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.filterArguments(h, h.type().parameterCount() - 1, ordinal), enumType.getEnumConstants().length);
+                h -> MethodHandles.filterArguments(h, h.type().parameterCount() - 1, ordinal),
+                enumType.getEnumConstants().length, false);
     }
 
     private static Registry buildForBooleanParameter(MethodHandle target) {
         return new ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.explicitCastArguments(h, h.type().changeParameterType(h.type().parameterCount() - 1, boolean.class)), 2);
+                h -> MethodHandles.explicitCastArguments(h, h.type().changeParameterType(h.type().parameterCount() - 1, boolean.class)),
+                2, false);
     }
 
     /**
@@ -92,7 +94,8 @@ final class Reflection {
          *                          (int)MethodHandle into (0..n-1)MethodHandle where 0..n-1 are target's first n parameters.
          * @param maximumValue The maximum size of the used arrays
          */
-        ParameterToIntMappingRegistry(MethodHandle target, UnaryOperator<MethodHandle> alignHandleGetter, int maximumValue) {
+        ParameterToIntMappingRegistry(MethodHandle target, UnaryOperator<MethodHandle> alignHandleGetter, int maximumValue,
+                                      boolean shouldCheckRange) {
             Registry[] registries = new Registry[maximumValue];
             MethodHandle[] accessors = new MethodHandle[maximumValue];
             MethodHandle[] updaters = new MethodHandle[maximumValue];
@@ -107,12 +110,16 @@ final class Reflection {
             MethodHandle getFromArray = MethodHandles.arrayElementGetter(MethodHandle[].class);
             MethodHandle getAccessor = getFromArray.bindTo(accessors);
             getAccessor = alignHandleGetter.apply(getAccessor);
-            getAccessor = catchOutOfBounds(getAccessor, alignHandleGetter, maximumValue);
+            if (shouldCheckRange) {
+                getAccessor = catchOutOfBounds(getAccessor, alignHandleGetter, maximumValue);
+            }
             accessor = MethodHandles.foldArguments(MethodHandles.exactInvoker(target.type()), getAccessor);
 
             MethodHandle getUpdater = getFromArray.bindTo(updaters);
             getUpdater = alignHandleGetter.apply(getUpdater);
-            getUpdater = catchOutOfBounds(getUpdater, alignHandleGetter, maximumValue);
+            if (shouldCheckRange) {
+                getUpdater = catchOutOfBounds(getUpdater, alignHandleGetter, maximumValue);
+            }
             updater = MethodHandles.foldArguments(MethodHandles.exactInvoker(target.type()), getUpdater);
         }
 

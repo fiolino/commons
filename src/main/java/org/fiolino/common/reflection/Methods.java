@@ -1875,24 +1875,55 @@ public class Methods {
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError(ex);
         }
-        MethodHandle finallyBlock = MethodHandles.foldArguments(MethodHandles.throwException(returnType, Throwable.class),
-                release);
-        MethodHandle targetWithFinally = MethodHandles.catchException(target, Throwable.class, finallyBlock);
-        MethodHandle acquireAndExecute = MethodHandles.foldArguments(targetWithFinally, acquire);
-        if (returnType == void.class) {
-            return MethodHandles.foldArguments(acceptThese(release, type.parameterArray()), acquireAndExecute);
-        }
-        MethodHandle returnValue = MethodHandles.identity(returnType);
-        if (type.parameterCount() > 0) {
-            returnValue = MethodHandles.dropArguments(returnValue, 1, type.parameterArray());
-        }
-        MethodHandle releaseAndReturn = MethodHandles.foldArguments(returnValue, release);
-        MethodHandle synced = MethodHandles.foldArguments(releaseAndReturn, acquireAndExecute);
+        MethodHandle executeAndRelease = doFinally(target, release);
+        MethodHandle synced = MethodHandles.foldArguments(executeAndRelease, acquire);
 
         if (target.isVarargsCollector()) {
             synced = synced.asVarargsCollector(type.parameterType(type.parameterCount() - 1));
         }
         return synced;
+    }
+
+    /**
+     * Creates a handle that
+     * <ol>
+     *    <li>executes the target</li>
+     *    <li>executes the finallyBlock even if target threw some exception</li>
+     *    <li>and then return target's value or finally throws target's exception</li>
+     * </ol>
+     *
+     * @param target The main block which is guarded by a catch clause
+     * @param finallyBlock The block to execute after target; must not return a value, and may accept the same or less parameters than the target
+     * @return A handle of the exact same type as target
+     */
+    public static MethodHandle doFinally(MethodHandle target, MethodHandle finallyBlock) {
+        if (finallyBlock.type().returnType() != void.class) {
+            throw new IllegalArgumentException(finallyBlock + " should not return some value");
+        }
+        MethodType type = target.type();
+        Class<?> returnType = type.returnType();
+        Class<?>[] finallyBlockAccepts = Arrays.copyOf(type.parameterArray(), finallyBlock.type().parameterCount());
+        MethodHandle transformedFinallyBlock = finallyBlock.asType(methodType(void.class, finallyBlockAccepts));
+        MethodHandle throwException = MethodHandles.throwException(returnType, Throwable.class);
+        if (finallyBlockAccepts.length > 0) {
+            transformedFinallyBlock = MethodHandles.dropArguments(transformedFinallyBlock, 0, Throwable.class);
+            throwException = MethodHandles.dropArguments(throwException, 1, finallyBlockAccepts);
+        }
+        MethodHandle catchedBlock = MethodHandles.foldArguments(throwException, transformedFinallyBlock);
+        MethodHandle catchedTarget = MethodHandles.catchException(target, Throwable.class, catchedBlock);
+        if (returnType == void.class) {
+            return MethodHandles.foldArguments(acceptThese(finallyBlock, type.parameterArray()), catchedTarget);
+        }
+
+        if (finallyBlock.type().parameterCount() == 0) {
+            MethodHandle returnValue = MethodHandles.identity(returnType);
+            MethodHandle doFinallyAndReturn = MethodHandles.foldArguments(returnValue, finallyBlock);
+            return MethodHandles.filterReturnValue(catchedTarget, doFinallyAndReturn);
+        } else {
+            MethodHandle doFinallyAndReturn = MethodHandles.dropArguments(acceptThese(finallyBlock, type.parameterArray()), 0, returnType);
+            doFinallyAndReturn = returnArgument(doFinallyAndReturn, 0);
+            return MethodHandles.foldArguments(doFinallyAndReturn, catchedTarget);
+        }
     }
 
     private static Method findSingleMethodIn(Lookup lookup, Class<?> type, MethodType reference) {

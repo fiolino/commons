@@ -17,6 +17,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntBinaryOperator;
@@ -1063,6 +1064,43 @@ public class MethodsTest {
         String currentValue = (String) guarded.invokeExact(100L, ref, "Set by main method");
         thread.join();
         assertEquals("Set by thread", currentValue);
+    }
+
+    @Test
+    public void testFinallyNormalExecution() throws Throwable {
+        MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        AtomicReference<String> ref = new AtomicReference<>();
+        MethodHandle set = publicLookup().bind(ref, "set", methodType(void.class, Object.class));
+
+        MethodHandle parseAndSet = Methods.doFinally(parseInt, set);
+        int result = (int) parseAndSet.invokeExact("123");
+        assertEquals(123, result);
+        assertEquals("123", ref.get());
+
+        result = (int) parseAndSet.invokeExact("99669933");
+        assertEquals(99669933, result);
+        assertEquals("99669933", ref.get());
+    }
+
+    @Test
+    public void testFinallyWithException() throws Throwable {
+        MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        AtomicReference<String> ref = new AtomicReference<>();
+        MethodHandle set = publicLookup().bind(ref, "set", methodType(void.class, Object.class));
+
+        MethodHandle parseAndSet = Methods.doFinally(parseInt, set);
+        int result = (int) parseAndSet.invokeExact("123");
+        assertEquals(123, result);
+        assertEquals("123", ref.get());
+
+        try {
+            result = (int) parseAndSet.invokeExact("Not a number");
+        } catch (NumberFormatException ex) {
+            assertEquals(123, result);
+            assertEquals("Not a number", ref.get());
+            return;
+        }
+        fail("Should not be here");
     }
 
     @Test

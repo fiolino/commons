@@ -1,7 +1,10 @@
 package org.fiolino.common.reflection;
 
+import javax.swing.plaf.SplitPaneUI;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.util.Arrays;
 import java.util.function.UnaryOperator;
 
 import static java.lang.invoke.MethodHandles.publicLookup;
@@ -11,6 +14,7 @@ import static java.lang.invoke.MethodType.methodType;
  * Created by Kuli on 6/17/2016.
  */
 final class Reflection {
+
     /**
      * Builds a Registry for a given target handle.
      *
@@ -64,12 +68,12 @@ final class Reflection {
             throw new InternalError("ordinal", ex);
         }
         return new ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.filterArguments(h, 0, ordinal), enumType.getEnumConstants().length);
+                h -> MethodHandles.filterArguments(h, h.type().parameterCount() - 1, ordinal), enumType.getEnumConstants().length);
     }
 
     private static Registry buildForBooleanParameter(MethodHandle target) {
         return new ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.explicitCastArguments(h, methodType(MethodHandle.class, boolean.class)), 2);
+                h -> MethodHandles.explicitCastArguments(h, h.type().changeParameterType(h.type().parameterCount() - 1, boolean.class)), 2);
     }
 
     /**
@@ -103,11 +107,47 @@ final class Reflection {
             MethodHandle getFromArray = MethodHandles.arrayElementGetter(MethodHandle[].class);
             MethodHandle getAccessor = getFromArray.bindTo(accessors);
             getAccessor = alignHandleGetter.apply(getAccessor);
+            getAccessor = catchOutOfBounds(getAccessor, alignHandleGetter, maximumValue);
             accessor = MethodHandles.foldArguments(MethodHandles.exactInvoker(target.type()), getAccessor);
 
             MethodHandle getUpdater = getFromArray.bindTo(updaters);
             getUpdater = alignHandleGetter.apply(getUpdater);
+            getUpdater = catchOutOfBounds(getUpdater, alignHandleGetter, maximumValue);
             updater = MethodHandles.foldArguments(MethodHandles.exactInvoker(target.type()), getUpdater);
+        }
+
+        private static MethodHandle catchOutOfBounds(MethodHandle target, UnaryOperator<MethodHandle> alignHandleGetter, int maximumValue) {
+            MethodType targetType = target.type();
+            MethodHandle newException, newStringBuilder, stringBuilderAppend, stringBuilderAppendInt, stringBuilderToString, arraysToString;
+            try {
+                newException = publicLookup().findConstructor(IllegalArgumentException.class, methodType(void.class, String.class, Throwable.class));
+                newStringBuilder = publicLookup().findConstructor(StringBuilder.class, methodType(void.class, String.class));
+                stringBuilderAppend = publicLookup().findVirtual(StringBuilder.class, "append", methodType(StringBuilder.class, String.class));
+                stringBuilderAppendInt = publicLookup().findVirtual(StringBuilder.class, "append", methodType(StringBuilder.class, int.class));
+                stringBuilderToString = publicLookup().findVirtual(StringBuilder.class, "toString", methodType(String.class));
+                arraysToString = publicLookup().findStatic(Arrays.class, "toString", methodType(String.class, Object[].class));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                throw new InternalError(ex);
+            }
+            newStringBuilder = newStringBuilder.bindTo("Argument value ");
+            MethodHandle appendArgument = MethodHandles.collectArguments(stringBuilderAppend, 0, newStringBuilder);
+            appendArgument = MethodHandles.filterArguments(appendArgument, 0, arraysToString);
+            appendArgument = appendArgument.asCollector(Object[].class, targetType.parameterCount()).asType(targetType.changeReturnType(StringBuilder.class));
+            appendArgument = MethodHandles.filterReturnValue(appendArgument, MethodHandles.insertArguments(stringBuilderAppend, 1, " resolves to "));
+            MethodHandle appendIndex = alignHandleGetter.apply(stringBuilderAppendInt);
+            appendArgument = MethodHandles.foldArguments(appendIndex, appendArgument);
+            appendArgument = MethodHandles.filterReturnValue(appendArgument, MethodHandles.insertArguments(stringBuilderAppend, 1, " which is beyond 0.." + (maximumValue - 1)));
+
+            MethodHandle parametersToString = MethodHandles.filterReturnValue(appendArgument, stringBuilderToString);
+            // Switch parameters of exception constructor
+            newException = MethodHandles.permuteArguments(newException, methodType(IllegalArgumentException.class, Throwable.class, String.class), 1, 0);
+            newException = MethodHandles.collectArguments(newException, 1, parametersToString);
+
+            MethodHandle throwException = MethodHandles.throwException(targetType.returnType(), IllegalArgumentException.class);
+            throwException = MethodHandles.collectArguments(throwException, 0, newException);
+
+            return MethodHandles.catchException(target, ArrayIndexOutOfBoundsException.class,
+                    throwException);
         }
 
         @Override

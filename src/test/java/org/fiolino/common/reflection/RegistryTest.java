@@ -5,6 +5,8 @@ import org.junit.Test;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -689,5 +691,126 @@ public class RegistryTest {
         r.reset();
         s1 = (String) accessor.invokeExact("12345", "First");
         assertEquals("12345First", s1);
+    }
+
+    @Test
+    public void testIndexOutOfRange() throws Throwable {
+        MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
+        MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
+        MethodHandle sumBoth = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
+
+        Registry r = Registry.buildForLimitedRange(concat, MethodHandles.filterArguments(sumBoth, 0, toInt, toInt), 10);
+        MethodHandle accessor = r.getAccessor();
+
+        String s1 = (String) accessor.invokeExact("123", "45");
+        assertEquals("12345", s1);
+
+        try {
+            s1 = (String) accessor.invokeExact("123456", "789012");
+        } catch (IllegalArgumentException ex) {
+            assertTrue(ex.getCause() instanceof ArrayIndexOutOfBoundsException);
+            assertEquals("Argument value [123456, 789012] resolves to 12 which is beyond 0..9", ex.getMessage());
+            return;
+        }
+
+        fail("Should not run without exception");
+    }
+
+    @Test
+    public void testForFixedValues() throws Throwable {
+        MethodHandle target = publicLookup().findStatic(System.class, "nanoTime", methodType(long.class));
+        target = MethodHandles.dropArguments(target, 0, String.class);
+        Registry registry = Registry.buildForFixedValues(target, "white", "yellow", "green", "red", "blue", "black");
+        MethodHandle h = registry.getAccessor();
+
+        long white = (long) h.invokeExact("white");
+        TimeUnit.MICROSECONDS.sleep(5);
+        long yellow = (long) h.invokeExact("yellow");
+        TimeUnit.MICROSECONDS.sleep(5);
+        assertTrue(yellow > white);
+        long green = (long) h.invokeExact("green");
+        TimeUnit.MICROSECONDS.sleep(5);
+        assertTrue(green > yellow);
+        long red = (long) h.invokeExact("red");
+        TimeUnit.MICROSECONDS.sleep(5);
+        assertTrue(red > green);
+        long blue = (long) h.invokeExact("blue");
+        TimeUnit.MICROSECONDS.sleep(5);
+        assertTrue(blue > red);
+        long black = (long) h.invokeExact("black");
+        TimeUnit.MICROSECONDS.sleep(5);
+        assertTrue(black > blue);
+
+        long white2 = (long) h.invokeExact("white");
+        assertEquals(white, white2);
+        long yellow2 = (long) h.invokeExact("yellow");
+        assertEquals(yellow, yellow2);
+        long green2 = (long) h.invokeExact("green");
+        assertEquals(green, green2);
+        long red2 = (long) h.invokeExact("red");
+        assertEquals(red, red2);
+        long blue2 = (long) h.invokeExact("blue");
+        assertEquals(blue, blue2);
+        long black2 = (long) h.invokeExact("black");
+        assertEquals(black, black2);
+
+        registry.reset();
+
+        white2 = (long) h.invokeExact("white");
+        assertTrue(white < white2);
+        yellow2 = (long) h.invokeExact("yellow");
+        assertTrue(yellow < yellow2);
+        green2 = (long) h.invokeExact("green");
+        assertTrue(green < green2);
+        red2 = (long) h.invokeExact("red");
+        assertTrue(red < red2);
+        blue2 = (long) h.invokeExact("blue");
+        assertTrue(blue < blue2);
+        black2 = (long) h.invokeExact("black");
+        assertTrue(black < black2);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testForFixedValuesAndTakeWrong() throws Throwable {
+        MethodHandle target = publicLookup().findStatic(System.class, "nanoTime", methodType(long.class));
+        target = MethodHandles.dropArguments(target, 0, String.class);
+        Registry registry = Registry.buildForFixedValues(target, "red", "green", "blue");
+        MethodHandle h = registry.getAccessor();
+
+        h.invoke("white");
+        // Should fail
+    }
+
+    @Test
+    public void testForFixedValuesWithComparator() throws Throwable {
+        MethodHandle target = publicLookup().findStatic(System.class, "nanoTime", methodType(long.class));
+        target = MethodHandles.dropArguments(target, 0, Class.class);
+        Registry registry = Registry.buildForFixedValues(target, Comparator.comparing(Class::getName), String.class, Integer.class, Date.class);
+        MethodHandle h = registry.getAccessor();
+
+        long string = (long) h.invokeExact(String.class);
+        TimeUnit.MICROSECONDS.sleep(5);
+        long integer = (long) h.invokeExact(Integer.class);
+        TimeUnit.MICROSECONDS.sleep(5);
+        assertTrue(integer > string);
+        long date = (long) h.invokeExact(Date.class);
+        TimeUnit.MICROSECONDS.sleep(5);
+        assertTrue(date > integer);
+
+        long string2 = (long) h.invokeExact(String.class);
+        assertEquals(string, string2);
+        long integer2 = (long) h.invokeExact(Integer.class);
+        assertEquals(integer, integer2);
+        long date2 = (long) h.invokeExact(Date.class);
+        assertEquals(date,  date2);
+
+        registry.reset();
+
+        string2 = (long) h.invokeExact(String.class);
+        assertTrue(string < string2);
+        integer2 = (long) h.invokeExact(Integer.class);
+        assertTrue(integer < integer2);
+        date2 = (long) h.invokeExact(Date.class);
+        assertTrue(date < date2);
     }
 }

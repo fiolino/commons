@@ -143,7 +143,8 @@ final class Reflection {
             appendArgument = MethodHandles.filterReturnValue(appendArgument, MethodHandles.insertArguments(stringBuilderAppend, 1, " resolves to "));
             MethodHandle appendIndex = alignHandleGetter.apply(stringBuilderAppendInt);
             appendArgument = MethodHandles.foldArguments(appendIndex, appendArgument);
-            appendArgument = MethodHandles.filterReturnValue(appendArgument, MethodHandles.insertArguments(stringBuilderAppend, 1, " which is beyond 0.." + (maximumValue - 1)));
+            appendArgument = MethodHandles.filterReturnValue(appendArgument, MethodHandles.insertArguments(stringBuilderAppend, 1, " which is beyond 0.."));
+            appendArgument = MethodHandles.filterReturnValue(appendArgument, MethodHandles.insertArguments(stringBuilderAppendInt, 1, maximumValue - 1));
 
             MethodHandle parametersToString = MethodHandles.filterReturnValue(appendArgument, stringBuilderToString);
             // Switch parameters of exception constructor

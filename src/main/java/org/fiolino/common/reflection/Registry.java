@@ -3,6 +3,7 @@ package org.fiolino.common.reflection;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -85,15 +86,30 @@ public interface Registry extends Resettable {
      */
     static Registry buildForFixedValues(MethodHandle target, Object... fixedValues) {
         checkArgumentsForFixedValues(target, fixedValues);
+        Class<?> valueType = target.type().parameterType(0);
+        if (valueType == boolean.class) {
+            return buildFor(target);
+        }
+        int n = fixedValues.length;
+        Object[] sortedValues = Arrays.copyOf(fixedValues, n);
+        Arrays.sort(sortedValues);
+        Object typedArray;
+        if (valueType.isPrimitive()) {
+            typedArray = Array.newInstance(valueType, n);
+            for (int i = 0; i < n; i++) {
+                Array.set(typedArray, i, sortedValues[i]);
+            }
+        } else {
+            valueType = Object.class;
+            typedArray = sortedValues;
+        }
         MethodHandle search;
         try {
-            search = publicLookup().findStatic(Arrays.class, "binarySearch", methodType(int.class, Object[].class, Object.class));
+            search = publicLookup().findStatic(Arrays.class, "binarySearch", methodType(int.class, typedArray.getClass(), valueType));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError(ex);
         }
-        Object[] sortedValues = Arrays.copyOf(fixedValues, fixedValues.length);
-        Arrays.sort(sortedValues);
-        return returnFixedValuesRegistry(target, search, sortedValues);
+        return returnFixedValuesRegistry(target, search, typedArray);
     }
 
     /**
@@ -133,11 +149,12 @@ public interface Registry extends Resettable {
         }
     }
 
-    static <T> Registry returnFixedValuesRegistry(MethodHandle target, MethodHandle search, T[] sortedValues) {
+    static Registry returnFixedValuesRegistry(MethodHandle target, MethodHandle search, Object sortedValues) {
         MethodHandle toInt = search.bindTo(sortedValues).asType(methodType(int.class, target.type().parameterType(0)));
 
+        int length = Array.getLength(sortedValues);
         return new Reflection.ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.filterArguments(h, h.type().parameterCount() - 1, toInt), sortedValues.length, true);
+                h -> MethodHandles.filterArguments(h, h.type().parameterCount() - 1, toInt), length, true);
     }
 
     /**

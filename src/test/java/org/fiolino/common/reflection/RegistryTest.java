@@ -782,6 +782,37 @@ public class RegistryTest {
     }
 
     @Test
+    public void testForFixedPrimitiveValues() throws Throwable {
+        MethodHandle sumBoth = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
+        AtomicInteger ref = new AtomicInteger();
+        MethodHandle getInt = publicLookup().bind(ref, "get", methodType(int.class));
+        MethodHandle target = MethodHandles.collectArguments(sumBoth, 0, getInt);
+
+        Registry registry = Registry.buildForFixedValues(target, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10_000);
+        MethodHandle accessor = registry.getAccessor();
+
+        ref.set(250);
+        int[] results = new int[10];
+        for (int i=0; i < 10; i++) {
+            int result = (int) accessor.invokeExact((i + 1) * 1000);
+            assertEquals(i * 1000 + 1250, result);
+            results[i] = result;
+        }
+        ref.set(-6666);
+        for (int i=0; i < 10; i++) {
+            int result = (int) accessor.invokeExact((i + 1) * 1000);
+            assertEquals(i * 1000 + 1250, result);
+            assertEquals(results[i], result);
+        }
+        accessor = registry.getUpdater();
+        for (int i=0; i < 10; i++) {
+            int result = (int) accessor.invokeExact((i + 1) * 1000);
+            assertEquals(i * 1000 - 5666, result);
+            assertNotEquals(results[i], result);
+        }
+    }
+
+    @Test
     public void testForFixedValuesWithComparator() throws Throwable {
         MethodHandle target = publicLookup().findStatic(System.class, "nanoTime", methodType(long.class));
         target = MethodHandles.dropArguments(target, 0, Class.class);

@@ -20,7 +20,7 @@ import static java.lang.invoke.MethodType.methodType;
  *
  * Created by kuli on 07.03.17.
  */
-final class OneTimeRegistryBuilder implements Registry, OneTimeExecution {
+final class OneTimeRegistryBuilder implements OneTimeExecution, Cache {
 
     private static final MethodHandle SYNC;
     private static final MethodHandle CONSTANT_HANDLE_FACTORY;
@@ -156,6 +156,11 @@ final class OneTimeRegistryBuilder implements Registry, OneTimeExecution {
     @Override
     public MethodHandle getAccessor() {
         return callSite.dynamicInvoker();
+    }
+
+    @Override
+    public CallSite getCallSite() {
+        return callSite;
     }
 
     @Override

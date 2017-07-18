@@ -32,6 +32,25 @@ public final class Cached<T> implements Supplier<T> {
         return new ExpectUnit(value);
     }
 
+    /**
+     * This is the starting factory method which assigns a duration in text form, including the delay and the time unit.
+     *
+     * Examples:
+     * 1 Day
+     * 5 sec
+     * 900 millis
+     *
+     * The time unit must be a unique start of some {@link TimeUnit} name. If none is given, seconds are assumed.
+     */
+    public static ExpectEvaluator updateEvery(String value) {
+        TimeUnit u = findFrom(value);
+        String delay = value.replaceAll("\\D", "");
+        if (delay.equals("")) {
+            throw new IllegalArgumentException(value + " is missing the delay value");
+        }
+        return new ExpectEvaluator(u.toMillis(Long.parseLong(delay)));
+    }
+
     public static final class ExpectUnit {
         private final long value;
 
@@ -101,6 +120,28 @@ public final class Cached<T> implements Supplier<T> {
         public ExpectEvaluator days() {
             return new ExpectEvaluator(TimeUnit.DAYS.toMillis(value));
         }
+    }
+
+    private static TimeUnit findFrom(String desc) {
+        String textOnly = desc.replaceAll("\\W", "").toUpperCase();
+        if (textOnly.equals("")) {
+            // No unit given assume seconds
+            return TimeUnit.SECONDS;
+        }
+        TimeUnit found = null;
+        for (TimeUnit u : TimeUnit.values()) {
+            if (u.name().startsWith(textOnly)) {
+                if (found != null) {
+                    throw new IllegalArgumentException(desc + " has ambiguous time unit");
+                }
+                found = u;
+            }
+        }
+
+        if (found == null) {
+            throw new IllegalArgumentException(desc + " does not describe a time unit");
+        }
+        return found;
     }
 
     public static final class ExpectEvaluator {

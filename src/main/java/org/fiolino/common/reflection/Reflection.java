@@ -1,16 +1,16 @@
 package org.fiolino.common.reflection;
 
-import javax.swing.plaf.SplitPaneUI;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
+import java.lang.invoke.*;
 import java.util.Arrays;
-import java.util.function.UnaryOperator;
+import java.util.function.Function;
 
+import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
 
 /**
+ * Static class for various reflection based methods.
+ *
  * Created by Kuli on 6/17/2016.
  */
 final class Reflection {
@@ -46,7 +46,7 @@ final class Reflection {
                 }
                 if (singleArgumentType == boolean.class) {
                     target = insertLeadingArguments(target, leadingParameters);
-                    return buildForBooleanParameter(target);
+                    return new BooleanMappingCache(target);
                 }
             default:
                 return MultiArgumentExecutionBuilder.createFor(target, leadingParameters);
@@ -60,114 +60,173 @@ final class Reflection {
         return target;
     }
 
-    private static <E extends Enum<E>> Registry buildForEnumParameter(MethodHandle target, Class<E> enumType) {
+    private static <E extends Enum<E>> Cache buildForEnumParameter(MethodHandle target, Class<E> enumType) {
         MethodHandle ordinal;
         try {
             ordinal = publicLookup().findVirtual(enumType, "ordinal", methodType(int.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError("ordinal", ex);
         }
-        return new ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.filterArguments(h, h.type().parameterCount() - 1, ordinal),
-                enumType.getEnumConstants().length, false);
+        int length = enumType.getEnumConstants().length;
+        return createCache(target, ordinal, length);
     }
 
-    private static Registry buildForBooleanParameter(MethodHandle target) {
-        return new ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.explicitCastArguments(h, h.type().changeParameterType(h.type().parameterCount() - 1, boolean.class)),
-                2, false);
+    static ParameterToIntMappingCache createCache(MethodHandle target, MethodHandle filter, int maximum) {
+        return new ParameterToIntMappingCache(target, filter, maximum);
+    }
+
+    private static class BooleanMappingCache implements Cache {
+        private final OneTimeExecution falseExecution, trueExecution;
+        private final CallSite callSite;
+
+        BooleanMappingCache(MethodHandle target) {
+            if (target.type().parameterCount() != 1 || target.type().parameterType(0) != boolean.class) {
+                throw new IllegalArgumentException(target.toString());
+            }
+            falseExecution = OneTimeExecution.createFor(target);
+            trueExecution = OneTimeExecution.createFor(target);
+            MethodHandle decider = createDecider(Registry::getAccessor);
+            callSite = new ConstantCallSite(decider);
+        }
+
+        private MethodHandle createDecider(Function<Registry, MethodHandle> type) {
+            return MethodHandles.guardWithTest(MethodHandles.identity(boolean.class),
+                    type.apply(trueExecution), type.apply(falseExecution));
+        }
+
+        @Override
+        public CallSite getCallSite() {
+            return callSite;
+        }
+
+        @Override
+        public void reset() {
+            falseExecution.reset();
+            trueExecution.reset();
+        }
+
+        @Override
+        public MethodHandle getUpdater() {
+            return createDecider(Registry::getUpdater);
+        }
+    }
+
+    /**
+     * Adds the index of the failed insertion to it.
+     *
+     * @param exceptionHandler (ArrayIndexOutOfBoundsException,int,&lt;valueType[]&gt;)MethodHandle
+     * @return (ArrayIndexOutOfBoundsException,&lt;valueTypes&gt;)MethodHandle
+     */
+    static MethodHandle modifyExceptionHandler(MethodHandle exceptionHandler, MethodHandle filter, MethodType targetType) {
+        Class<?>[] targetParameters = targetType.parameterArray();
+        int targetArgCount = targetParameters.length;
+        int filterArgCount = filter.type().parameterCount();
+        assert filterArgCount <= targetArgCount;
+        Class<?>[] innerParameters = new Class<?>[targetArgCount+1];
+        innerParameters[0] = ArrayIndexOutOfBoundsException.class;
+        System.arraycopy(targetParameters, 0, innerParameters, 1, targetArgCount);
+        int[] argumentIndexes = new int[filterArgCount + targetArgCount + 1];
+        for (int i=1; i<=targetArgCount; i++) {
+            if (i <= filterArgCount) {
+                argumentIndexes[i] = i;
+            }
+            argumentIndexes[filterArgCount + i] = i;
+        }
+
+        MethodHandle h = applyFilter(exceptionHandler, filter, 1);
+        h = h.asCollector(Object[].class, targetArgCount);
+        Class<?>[] allArguments = h.type().parameterArray();
+        System.arraycopy(targetParameters, 0, allArguments, 1, filterArgCount);
+        System.arraycopy(targetParameters, 0, allArguments, filterArgCount+1, targetArgCount);
+        allArguments[0] = ArrayIndexOutOfBoundsException.class;
+        h = h.asType(methodType(MethodHandle.class, allArguments));
+
+        h = MethodHandles.permuteArguments(h, methodType(MethodHandle.class, innerParameters), argumentIndexes);
+        return Methods.synchronize(h);
+    }
+
+    private static MethodHandle applyFilter(MethodHandle target, MethodHandle filter, int pos) {
+        return MethodHandles.collectArguments(target, pos, filter);
     }
 
     /**
      * A Registry implementation that fetches accessor and updater from arrays of MethodHandles.
      */
-    static final class ParameterToIntMappingRegistry implements Registry {
-        private final Resettable[] resettables;
-        private final MethodHandle accessor, updater;
+    private static class ParameterToIntMappingCache implements Cache {
+        private final OneTimeExecution[] executions;
+        private final CallSite callSite;
+        private final MethodHandle updater;
 
         /**
-         * Creates the special registry.
+         * Creates the caching handle factory.
          *
          * @param target Use this as the called handle.
-         * @param alignHandleGetter Transforms the handle that fetches another handle from an array by its int position
-         *                          to something fetching by the target's parameter value; more detailed, it transforms
-         *                          (int)MethodHandle into (0..n-1)MethodHandle where 0..n-1 are target's first n parameters.
-         * @param maximumValue The maximum size of the used arrays
+         * @param maximum The initial size of the array; this should be the expected maximum length of an average key set
          */
-        ParameterToIntMappingRegistry(MethodHandle target, UnaryOperator<MethodHandle> alignHandleGetter, int maximumValue,
-                                      boolean shouldCheckRange) {
-            Registry[] registries = new Registry[maximumValue];
-            MethodHandle[] accessors = new MethodHandle[maximumValue];
-            MethodHandle[] updaters = new MethodHandle[maximumValue];
-            for (int i=0; i < maximumValue; i++) {
-                Registry r = OneTimeExecution.createFor(target);
-                registries[i] = r;
-                accessors[i] = r.getAccessor();
-                updaters[i] = r.getUpdater();
+        ParameterToIntMappingCache(MethodHandle target, MethodHandle filter, int maximum) {
+            MethodType type = target.type();
+            if (type.parameterCount() < filter.type().parameterCount()) {
+                throw new IllegalArgumentException("Filter " + filter + " accepts more arguments than " + target);
             }
-            resettables = registries;
-
-            MethodHandle getFromArray = MethodHandles.arrayElementGetter(MethodHandle[].class);
-            MethodHandle getAccessor = getFromArray.bindTo(accessors);
-            getAccessor = alignHandleGetter.apply(getAccessor);
-            if (shouldCheckRange) {
-                getAccessor = catchOutOfBounds(getAccessor, alignHandleGetter, maximumValue);
-            }
-            accessor = MethodHandles.foldArguments(MethodHandles.exactInvoker(target.type()), getAccessor);
-
-            MethodHandle getUpdater = getFromArray.bindTo(updaters);
-            getUpdater = alignHandleGetter.apply(getUpdater);
-            if (shouldCheckRange) {
-                getUpdater = catchOutOfBounds(getUpdater, alignHandleGetter, maximumValue);
-            }
-            updater = MethodHandles.foldArguments(MethodHandles.exactInvoker(target.type()), getUpdater);
-        }
-
-        private static MethodHandle catchOutOfBounds(MethodHandle target, UnaryOperator<MethodHandle> alignHandleGetter, int maximumValue) {
-            MethodType targetType = target.type();
-            MethodHandle newException, newStringBuilder, stringBuilderAppend, stringBuilderAppendInt, stringBuilderToString, arraysToString;
+            this.executions = new OneTimeExecution[maximum];
+            MethodHandles.Lookup lookup = lookup();
+            MethodHandle exceptionHandler;
             try {
-                newException = publicLookup().findConstructor(IllegalArgumentException.class, methodType(void.class, String.class, Throwable.class));
-                newStringBuilder = publicLookup().findConstructor(StringBuilder.class, methodType(void.class, String.class));
-                stringBuilderAppend = publicLookup().findVirtual(StringBuilder.class, "append", methodType(StringBuilder.class, String.class));
-                stringBuilderAppendInt = publicLookup().findVirtual(StringBuilder.class, "append", methodType(StringBuilder.class, int.class));
-                stringBuilderToString = publicLookup().findVirtual(StringBuilder.class, "toString", methodType(String.class));
-                arraysToString = publicLookup().findStatic(Arrays.class, "toString", methodType(String.class, Object[].class));
+                exceptionHandler = lookup.findStatic(lookup.lookupClass(), "outOfBounds", methodType(MethodHandle.class, Throwable.class, int.class, Object[].class, int.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
                 throw new InternalError(ex);
             }
-            newStringBuilder = newStringBuilder.bindTo("Argument value ");
-            MethodHandle appendArgument = MethodHandles.collectArguments(stringBuilderAppend, 0, newStringBuilder);
-            appendArgument = MethodHandles.filterArguments(appendArgument, 0, arraysToString);
-            appendArgument = appendArgument.asCollector(Object[].class, targetType.parameterCount()).asType(targetType.changeReturnType(StringBuilder.class));
-            appendArgument = MethodHandles.filterReturnValue(appendArgument, MethodHandles.insertArguments(stringBuilderAppend, 1, " resolves to "));
-            MethodHandle appendIndex = alignHandleGetter.apply(stringBuilderAppendInt);
-            appendArgument = MethodHandles.foldArguments(appendIndex, appendArgument);
-            appendArgument = MethodHandles.filterReturnValue(appendArgument, MethodHandles.insertArguments(stringBuilderAppend, 1, " which is beyond 0.."));
-            appendArgument = MethodHandles.filterReturnValue(appendArgument, MethodHandles.insertArguments(stringBuilderAppendInt, 1, maximumValue - 1));
+            exceptionHandler = MethodHandles.insertArguments(exceptionHandler, 3, maximum - 1);
+            exceptionHandler = modifyExceptionHandler(exceptionHandler, filter, type);
+            MethodHandle primary = createFullHandle(target, filter, exceptionHandler, Registry::getAccessor);
+            callSite = new ConstantCallSite(primary);
+            updater = createFullHandle(target, filter, exceptionHandler, Registry::getUpdater);
+        }
 
-            MethodHandle parametersToString = MethodHandles.filterReturnValue(appendArgument, stringBuilderToString);
-            // Switch parameters of exception constructor
-            newException = MethodHandles.permuteArguments(newException, methodType(IllegalArgumentException.class, Throwable.class, String.class), 1, 0);
-            newException = MethodHandles.collectArguments(newException, 1, parametersToString);
+        @Override
+        public CallSite getCallSite() {
+            return callSite;
+        }
 
-            MethodHandle throwException = MethodHandles.throwException(targetType.returnType(), IllegalArgumentException.class);
-            throwException = MethodHandles.collectArguments(throwException, 0, newException);
+        private MethodHandle[] createAccessors(MethodHandle target, Function<Registry, MethodHandle> type) {
+            int length = executions.length;
+            MethodHandle[] accessors = new MethodHandle[length];
+            for (int i=0; i < length; i++) {
+                OneTimeExecution x = executions[i];
+                if (x == null) {
+                    x = OneTimeExecution.createFor(target);
+                    executions[i] = x;
+                }
+                accessors[i] = type.apply(x);
+            }
 
-            return MethodHandles.catchException(target, ArrayIndexOutOfBoundsException.class,
-                    throwException);
+            return accessors;
+        }
+
+        private MethodHandle createAccessingHandle(MethodHandle target, MethodHandle filter, Function<Registry, MethodHandle> type) {
+            MethodHandle[] accessors = createAccessors(target, type);
+            MethodHandle getFromArray = MethodHandles.arrayElementGetter(MethodHandle[].class).bindTo(accessors);
+            MethodHandle filtered = applyFilter(getFromArray, filter, 0);
+            return Methods.acceptThese(filtered, target.type().parameterArray());
+        }
+
+        private MethodHandle createFullHandle(MethodHandle target, MethodHandle filter, MethodHandle exceptionHandler, Function<Registry, MethodHandle> type) {
+            MethodHandle primary = createAccessingHandle(target, filter, type);
+            MethodHandle handleGetter = MethodHandles.catchException(primary, ArrayIndexOutOfBoundsException.class, exceptionHandler);
+            MethodHandle invoker = MethodHandles.exactInvoker(target.type());
+            return MethodHandles.foldArguments(invoker, handleGetter);
+        }
+
+        @SuppressWarnings("unused")
+        private static MethodHandle outOfBounds(Throwable t, int index, Object[] values, int maximum) {
+            throw new LimitExceededException("Argument value " + Arrays.toString(values) + " resolves to " + index + " which is beyond 0.." + maximum, t);
         }
 
         @Override
         public void reset() {
-            for (Resettable r : resettables) {
+            for (Resettable r : executions) {
                 r.reset();
             }
-        }
-
-        @Override
-        public MethodHandle getAccessor() {
-            return accessor;
         }
 
         @Override
@@ -175,4 +234,51 @@ final class Reflection {
             return updater;
         }
     }
+
+/*
+    private static class ExpandableParameterToIntMappingCache implements Cache {
+        private final CallSite callSite;
+        private final int maximumLength;
+        private final MethodHandle exceptionHandler;
+
+        */
+/**
+         * Creates the caching handle factory.
+         *
+         * @param target Use this as the called handle.
+         * @param initialMaximum The initial size of the array; this should be the expected maximum length of an average key set
+         * @param finalMaximum This is the absolute maximum size; if this exceeds, an exception is thrown. Use this to limit
+         *                     the amount of stored keys to avoid memory and performance issues
+         *//*
+
+        ExpandableParameterToIntMappingCache(MethodHandle target, MethodHandle filter, int initialMaximum, int finalMaximum) {
+            super(target, filter, initialMaximum, MutableCallSite::new);
+            this.maximumLength = finalMaximum;
+
+
+        }
+
+        private MethodHandle handleOutOfRange(Throwable t, Object value, int index) {
+
+        }
+
+        private void expandExecutions(int length) {
+            expandExecutions(executions.length, length);
+        }
+
+        private void expandExecutions(int start, int length) {
+            if (start == 0) {
+                executions = new OneTimeExecution[length];
+                accessors = new MethodHandle[length];
+            } else if (start < length) {
+                executions = Arrays.copyOf(executions, length);
+                accessors = Arrays.copyOf(accessors, length);
+            } else {
+                return;
+            }
+            createAccessors(start, length);
+        }
+
+    }
+*/
 }

@@ -4,9 +4,7 @@ import org.junit.Test;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.Date;
+import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -669,7 +667,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testMapToInteger() throws Throwable {
+    public void testMapOnlyFirstArgumentToInteger() throws Throwable {
         MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
         MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
         Registry r = Registry.buildForLimitedRange(concat, toInt, 10);
@@ -704,16 +702,43 @@ public class RegistryTest {
 
         String s1 = (String) accessor.invokeExact("123", "45");
         assertEquals("12345", s1);
+        s1 = (String) accessor.invokeExact("A", "BCDE");
+        assertEquals("12345", s1);
 
         try {
             s1 = (String) accessor.invokeExact("123456", "789012");
-        } catch (IllegalArgumentException ex) {
+        } catch (LimitExceededException ex) {
             assertTrue(ex.getCause() instanceof ArrayIndexOutOfBoundsException);
             assertEquals("Argument value [123456, 789012] resolves to 12 which is beyond 0..9", ex.getMessage());
             return;
         }
 
         fail("Should not run without exception");
+    }
+
+    @Test
+    public void testFilterWithSimilarType() throws Throwable {
+        MethodHandle sumBoth = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
+        Set<Object> set = new HashSet<>();
+        MethodHandle addAll = publicLookup().findStatic(Collections.class, "addAll", methodType(boolean.class, Collection.class, Object[].class)).bindTo(set);
+        addAll = addAll.asCollector(Object[].class, 3);
+
+        Registry r = Registry.buildForLimitedRange(addAll, sumBoth, 10);
+        MethodHandle accessor = r.getAccessor();
+
+        boolean wasChanged = (boolean) accessor.invokeExact((Object) 4, (Object) 5, (Object) "This doesn't count");
+        assertTrue(wasChanged);
+        assertEquals(3, set.size());
+        assertTrue(set.contains("This doesn't count"));
+
+        wasChanged = (boolean) accessor.invokeExact((Object) 3, (Object) 6, (Object) "Other value");
+        assertTrue(wasChanged); // Because it was cached -- list.addAll wasn't called
+        assertEquals(3, set.size());
+        assertFalse(set.contains("Other value"));
+
+        wasChanged = (boolean) r.getUpdater().invokeExact((Object) 4, (Object) 5, (Object) "This doesn't count");
+        assertFalse(wasChanged); // Now it's called again
+        assertEquals(3, set.size());
     }
 
     @Test
@@ -770,7 +795,7 @@ public class RegistryTest {
         assertTrue(black < black2);
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test(expected = LimitExceededException.class)
     public void testForFixedValuesAndTakeWrong() throws Throwable {
         MethodHandle target = publicLookup().findStatic(System.class, "nanoTime", methodType(long.class));
         target = MethodHandles.dropArguments(target, 0, String.class);
@@ -788,7 +813,7 @@ public class RegistryTest {
         MethodHandle getInt = publicLookup().bind(ref, "get", methodType(int.class));
         MethodHandle target = MethodHandles.collectArguments(sumBoth, 0, getInt);
 
-        Registry registry = Registry.buildForFixedValues(target, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10_000);
+        Registry registry = Registry.buildForFixedValues(target, 5000, 9000, 3000, 4000, 1000, 10_000, 7000, 2000, 8000, 6000);
         MethodHandle accessor = registry.getAccessor();
 
         ref.set(250);

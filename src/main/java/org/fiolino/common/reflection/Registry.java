@@ -64,14 +64,8 @@ public interface Registry extends Resettable {
         if (intMapperType.parameterCount() > targetType.parameterCount()) {
             throw new IllegalArgumentException("Must have at most that many arguments as the target");
         }
-        for (int i=intMapperType.parameterCount() - 1; i >= 0; i--) {
-            if (!intMapperType.parameterType(i).equals(target.type().parameterType(i))) {
-                throw new IllegalArgumentException("Parameter #" + i + " must be the same");
-            }
-        }
 
-        return new Reflection.ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.collectArguments(h, h.type().parameterCount() - 1, toIntMapper), maximumRange, true);
+        return Reflection.createCache(target, toIntMapper, maximumRange);
     }
 
     /**
@@ -153,8 +147,7 @@ public interface Registry extends Resettable {
         MethodHandle toInt = search.bindTo(sortedValues).asType(methodType(int.class, target.type().parameterType(0)));
 
         int length = Array.getLength(sortedValues);
-        return new Reflection.ParameterToIntMappingRegistry(target,
-                h -> MethodHandles.filterArguments(h, h.type().parameterCount() - 1, toInt), length, true);
+        return Reflection.createCache(target, toInt, length);
     }
 
     /**

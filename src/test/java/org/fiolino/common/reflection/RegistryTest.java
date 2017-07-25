@@ -670,7 +670,7 @@ public class RegistryTest {
     public void testMapOnlyFirstArgumentToInteger() throws Throwable {
         MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
         MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
-        Registry r = Registry.buildForLimitedRange(concat, toInt, 10);
+        Registry r = Registry.buildForLimitedRange(concat, toInt, 10, 10);
         MethodHandle accessor = r.getAccessor();
 
         String s1 = (String) accessor.invokeExact("12345", "First");
@@ -697,7 +697,7 @@ public class RegistryTest {
         MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
         MethodHandle sumBoth = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
 
-        Registry r = Registry.buildForLimitedRange(concat, MethodHandles.filterArguments(sumBoth, 0, toInt, toInt), 10);
+        Registry r = Registry.buildForLimitedRange(concat, MethodHandles.filterArguments(sumBoth, 0, toInt, toInt), 10, 10);
         MethodHandle accessor = r.getAccessor();
 
         String s1 = (String) accessor.invokeExact("123", "45");
@@ -717,13 +717,41 @@ public class RegistryTest {
     }
 
     @Test
+    public void testExpandingRange() throws Throwable {
+        MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
+        AtomicReference<String> ref = new AtomicReference<>("Initial");
+        MethodHandle getAndSet = publicLookup().bind(ref, "getAndSet", methodType(Object.class, Object.class));
+
+        Registry r = Registry.buildForLimitedRange(getAndSet, toInt, 3, 100);
+        MethodHandle accessor = r.getAccessor();
+
+        Object old = accessor.invokeExact((Object) "123");
+        assertEquals("Initial", old);
+        assertEquals("123", ref.get());
+
+        old = accessor.invokeExact((Object) "123456789012345");
+        assertEquals("123", old);
+        assertEquals("123456789012345", ref.get());
+
+        MethodHandle updater = r.getUpdater();
+        old = updater.invokeExact((Object) "123456789012345678901234567890");
+        assertEquals("123456789012345", old);
+        assertEquals("123456789012345678901234567890", ref.get());
+
+        ref.set("none");
+        old = accessor.invokeExact((Object) "123456789012345678901234567890");
+        assertEquals("123456789012345", old);
+        assertEquals("none", ref.get());
+    }
+
+    @Test
     public void testFilterWithSimilarType() throws Throwable {
         MethodHandle sumBoth = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
         Set<Object> set = new HashSet<>();
         MethodHandle addAll = publicLookup().findStatic(Collections.class, "addAll", methodType(boolean.class, Collection.class, Object[].class)).bindTo(set);
         addAll = addAll.asCollector(Object[].class, 3);
 
-        Registry r = Registry.buildForLimitedRange(addAll, sumBoth, 10);
+        Registry r = Registry.buildForLimitedRange(addAll, sumBoth, 10, 10);
         MethodHandle accessor = r.getAccessor();
 
         boolean wasChanged = (boolean) accessor.invokeExact((Object) 4, (Object) 5, (Object) "This doesn't count");

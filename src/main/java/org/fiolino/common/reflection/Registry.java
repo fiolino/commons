@@ -54,18 +54,20 @@ public interface Registry extends Resettable {
      * @param maximumRange ... which is lower than this.
      * @return A Registry holding handles with exactly the same type as the target type
      */
-    static Registry buildForLimitedRange(MethodHandle target, MethodHandle toIntMapper, int maximumRange) {
-        MethodType intMapperType = toIntMapper.type();
-        MethodType targetType = target.type();
+    static Registry buildForLimitedRange(MethodHandle target, MethodHandle toIntMapper, int initialSize, int maximumRange) {
+        if (toIntMapper != null) {
+            MethodType intMapperType = toIntMapper.type();
+            MethodType targetType = target.type();
 
-        if (intMapperType.returnType() != int.class) {
-            throw new IllegalArgumentException("Must return an int");
-        }
-        if (intMapperType.parameterCount() > targetType.parameterCount()) {
-            throw new IllegalArgumentException("Must have at most that many arguments as the target");
+            if (intMapperType.returnType() != int.class) {
+                throw new IllegalArgumentException("Must return an int");
+            }
+            if (intMapperType.parameterCount() > targetType.parameterCount()) {
+                throw new IllegalArgumentException("Must have at most that many arguments as the target");
+            }
         }
 
-        return Reflection.createCache(target, toIntMapper, maximumRange);
+        return Reflection.createCache(target, toIntMapper, initialSize, maximumRange);
     }
 
     /**
@@ -147,7 +149,7 @@ public interface Registry extends Resettable {
         MethodHandle toInt = search.bindTo(sortedValues).asType(methodType(int.class, target.type().parameterType(0)));
 
         int length = Array.getLength(sortedValues);
-        return Reflection.createCache(target, toInt, length);
+        return Reflection.createCache(target, toInt, length, length);
     }
 
     /**

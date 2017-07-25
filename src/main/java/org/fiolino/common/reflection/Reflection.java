@@ -2,6 +2,7 @@ package org.fiolino.common.reflection;
 
 import java.lang.invoke.*;
 import java.util.Arrays;
+import java.util.concurrent.Semaphore;
 import java.util.function.Function;
 
 import static java.lang.invoke.MethodHandles.lookup;
@@ -68,11 +69,22 @@ final class Reflection {
             throw new InternalError("ordinal", ex);
         }
         int length = enumType.getEnumConstants().length;
-        return createCache(target, ordinal, length);
+        return createCache(target, ordinal, length, length);
     }
 
-    static ParameterToIntMappingCache createCache(MethodHandle target, MethodHandle filter, int maximum) {
-        return new ParameterToIntMappingCache(target, filter, maximum);
+    static Cache createCache(MethodHandle target, MethodHandle filter, int initialSize, int maximum) {
+        if (initialSize < 0) {
+            throw new IllegalArgumentException("" + initialSize);
+        }
+        if (maximum >= 0) {
+            if (initialSize > maximum) {
+                throw new IllegalArgumentException(initialSize + " > " + maximum);
+            }
+            if (initialSize == maximum) {
+                return new ParameterToIntMappingCache(target, filter, maximum);
+            }
+        }
+        return new ExpandableParameterToIntMappingCache(target, filter, initialSize, maximum);
     }
 
     private static class BooleanMappingCache implements Cache {
@@ -118,9 +130,19 @@ final class Reflection {
      * @return (ArrayIndexOutOfBoundsException,&lt;valueTypes&gt;)MethodHandle
      */
     static MethodHandle modifyExceptionHandler(MethodHandle exceptionHandler, MethodHandle filter, MethodType targetType) {
+        return modifyExceptionHandler(exceptionHandler, filter, targetType, new Semaphore(1));
+    }
+
+    /**
+     * Adds the index of the failed insertion to it.
+     *
+     * @param exceptionHandler (ArrayIndexOutOfBoundsException,int,&lt;valueType[]&gt;)MethodHandle
+     * @return (ArrayIndexOutOfBoundsException,&lt;valueTypes&gt;)MethodHandle
+     */
+    static MethodHandle modifyExceptionHandler(MethodHandle exceptionHandler, MethodHandle filter, MethodType targetType, Semaphore semaphore) {
         Class<?>[] targetParameters = targetType.parameterArray();
         int targetArgCount = targetParameters.length;
-        int filterArgCount = filter.type().parameterCount();
+        int filterArgCount = filter == null ? 0 : filter.type().parameterCount();
         assert filterArgCount <= targetArgCount;
         Class<?>[] innerParameters = new Class<?>[targetArgCount+1];
         innerParameters[0] = ArrayIndexOutOfBoundsException.class;
@@ -142,10 +164,11 @@ final class Reflection {
         h = h.asType(methodType(MethodHandle.class, allArguments));
 
         h = MethodHandles.permuteArguments(h, methodType(MethodHandle.class, innerParameters), argumentIndexes);
-        return Methods.synchronize(h);
+        return Methods.synchronizeWith(h, semaphore);
     }
 
     private static MethodHandle applyFilter(MethodHandle target, MethodHandle filter, int pos) {
+        if (filter == null) return target;
         return MethodHandles.collectArguments(target, pos, filter);
     }
 
@@ -164,10 +187,7 @@ final class Reflection {
          * @param maximum The initial size of the array; this should be the expected maximum length of an average key set
          */
         ParameterToIntMappingCache(MethodHandle target, MethodHandle filter, int maximum) {
-            MethodType type = target.type();
-            if (type.parameterCount() < filter.type().parameterCount()) {
-                throw new IllegalArgumentException("Filter " + filter + " accepts more arguments than " + target);
-            }
+            checkTargetAndFilter(target, filter);
             this.executions = new OneTimeExecution[maximum];
             MethodHandles.Lookup lookup = lookup();
             MethodHandle exceptionHandler;
@@ -177,44 +197,15 @@ final class Reflection {
                 throw new InternalError(ex);
             }
             exceptionHandler = MethodHandles.insertArguments(exceptionHandler, 3, maximum - 1);
-            exceptionHandler = modifyExceptionHandler(exceptionHandler, filter, type);
-            MethodHandle primary = createFullHandle(target, filter, exceptionHandler, Registry::getAccessor);
+            exceptionHandler = modifyExceptionHandler(exceptionHandler, filter, target.type());
+            MethodHandle primary = createFullHandle(target, executions, filter, exceptionHandler, Registry::getAccessor);
             callSite = new ConstantCallSite(primary);
-            updater = createFullHandle(target, filter, exceptionHandler, Registry::getUpdater);
+            updater = createFullHandle(target, executions, filter, exceptionHandler, Registry::getUpdater);
         }
 
         @Override
         public CallSite getCallSite() {
             return callSite;
-        }
-
-        private MethodHandle[] createAccessors(MethodHandle target, Function<Registry, MethodHandle> type) {
-            int length = executions.length;
-            MethodHandle[] accessors = new MethodHandle[length];
-            for (int i=0; i < length; i++) {
-                OneTimeExecution x = executions[i];
-                if (x == null) {
-                    x = OneTimeExecution.createFor(target);
-                    executions[i] = x;
-                }
-                accessors[i] = type.apply(x);
-            }
-
-            return accessors;
-        }
-
-        private MethodHandle createAccessingHandle(MethodHandle target, MethodHandle filter, Function<Registry, MethodHandle> type) {
-            MethodHandle[] accessors = createAccessors(target, type);
-            MethodHandle getFromArray = MethodHandles.arrayElementGetter(MethodHandle[].class).bindTo(accessors);
-            MethodHandle filtered = applyFilter(getFromArray, filter, 0);
-            return Methods.acceptThese(filtered, target.type().parameterArray());
-        }
-
-        private MethodHandle createFullHandle(MethodHandle target, MethodHandle filter, MethodHandle exceptionHandler, Function<Registry, MethodHandle> type) {
-            MethodHandle primary = createAccessingHandle(target, filter, type);
-            MethodHandle handleGetter = MethodHandles.catchException(primary, ArrayIndexOutOfBoundsException.class, exceptionHandler);
-            MethodHandle invoker = MethodHandles.exactInvoker(target.type());
-            return MethodHandles.foldArguments(invoker, handleGetter);
         }
 
         @SuppressWarnings("unused")
@@ -235,50 +226,141 @@ final class Reflection {
         }
     }
 
-/*
-    private static class ExpandableParameterToIntMappingCache implements Cache {
-        private final CallSite callSite;
-        private final int maximumLength;
-        private final MethodHandle exceptionHandler;
+    private static MethodHandle[] createAccessors(MethodHandle target, OneTimeExecution[] executions, Function<Registry, MethodHandle> type) {
+        int length = executions.length;
+        MethodHandle[] accessors = new MethodHandle[length];
+        for (int i=0; i < length; i++) {
+            OneTimeExecution x = executions[i];
+            if (x == null) {
+                x = OneTimeExecution.createFor(target);
+                executions[i] = x;
+            }
+            accessors[i] = type.apply(x);
+        }
 
-        */
-/**
+        return accessors;
+    }
+
+    private static MethodHandle createAccessingHandle(MethodHandle target, OneTimeExecution[] executions, MethodHandle filter, Function<Registry, MethodHandle> type) {
+        MethodHandle[] accessors = createAccessors(target, executions, type);
+        MethodHandle getFromArray = MethodHandles.arrayElementGetter(MethodHandle[].class).bindTo(accessors);
+        MethodHandle filtered = applyFilter(getFromArray, filter, 0);
+        return Methods.acceptThese(filtered, target.type().parameterArray());
+    }
+
+    private static MethodHandle createFullHandle(MethodHandle target, OneTimeExecution[] executions, MethodHandle filter, MethodHandle exceptionHandler, Function<Registry, MethodHandle> type) {
+        MethodHandle primary = createAccessingHandle(target, executions, filter, type);
+        MethodHandle handleGetter = MethodHandles.catchException(primary, ArrayIndexOutOfBoundsException.class, exceptionHandler);
+        MethodHandle invoker = MethodHandles.exactInvoker(target.type());
+        return MethodHandles.foldArguments(invoker, handleGetter);
+    }
+
+    private static void checkTargetAndFilter(MethodHandle target, MethodHandle filter) {
+        if (target.type().parameterCount() < filter.type().parameterCount()) {
+            throw new IllegalArgumentException("Filter " + filter + " accepts more arguments than " + target);
+        }
+    }
+
+    private static class ExpandableParameterToIntMappingCache implements Cache {
+        private final MethodHandle target, filter;
+        private final CallSite accessorCallSite, updaterCallSite;
+        private final int maximumLength;
+        private final MethodHandle accessorExceptionHandler, updaterExceptionHandler;
+        private final Semaphore semaphore;
+        private OneTimeExecution[] executions;
+
+        /**
          * Creates the caching handle factory.
          *
          * @param target Use this as the called handle.
          * @param initialMaximum The initial size of the array; this should be the expected maximum length of an average key set
          * @param finalMaximum This is the absolute maximum size; if this exceeds, an exception is thrown. Use this to limit
          *                     the amount of stored keys to avoid memory and performance issues
-         *//*
-
+         */
         ExpandableParameterToIntMappingCache(MethodHandle target, MethodHandle filter, int initialMaximum, int finalMaximum) {
-            super(target, filter, initialMaximum, MutableCallSite::new);
+            if (finalMaximum >= 0 && finalMaximum < initialMaximum) {
+                throw new IllegalArgumentException(finalMaximum + " < " + initialMaximum);
+            }
+            checkTargetAndFilter(target, filter);
+            this.target = target;
+            this.filter = filter;
             this.maximumLength = finalMaximum;
+            this.semaphore = new Semaphore(1);
+            expandExecutions(0, initialMaximum);
 
+            MethodHandle exceptionHandler;
+            try {
+                exceptionHandler = lookup().bind(this, "outOfBounds", methodType(MethodHandle.class, ArrayIndexOutOfBoundsException.class, int.class, Object[].class, Function.class));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                throw new InternalError(ex);
+            }
+            MethodHandle specificExceptionHandler = MethodHandles.insertArguments(exceptionHandler, 3, (Function<Registry, MethodHandle>) Registry::getAccessor);
+            this.accessorExceptionHandler = modifyExceptionHandler(specificExceptionHandler, filter, target.type(), semaphore);
+            specificExceptionHandler = MethodHandles.insertArguments(exceptionHandler, 3, (Function<Registry, MethodHandle>) Registry::getUpdater);
+            this.updaterExceptionHandler = modifyExceptionHandler(specificExceptionHandler, filter, target.type(), semaphore);
 
+            MethodHandle accessor = createFullHandle(target, executions, filter, accessorExceptionHandler, Registry::getAccessor);
+            MethodHandle updater = createFullHandle(target, executions, filter, updaterExceptionHandler, Registry::getUpdater);
+            accessorCallSite = new MutableCallSite(accessor);
+            updaterCallSite = new MutableCallSite(updater);
         }
 
-        private MethodHandle handleOutOfRange(Throwable t, Object value, int index) {
-
-        }
-
-        private void expandExecutions(int length) {
-            expandExecutions(executions.length, length);
+        private int expandExecutions(int length) {
+            int l = executions.length;
+            expandExecutions(l, length);
+            return l;
         }
 
         private void expandExecutions(int start, int length) {
             if (start == 0) {
                 executions = new OneTimeExecution[length];
-                accessors = new MethodHandle[length];
             } else if (start < length) {
                 executions = Arrays.copyOf(executions, length);
-                accessors = Arrays.copyOf(accessors, length);
             } else {
                 return;
             }
-            createAccessors(start, length);
+            for (int i=start; i < length; i++) {
+                executions[i] = OneTimeExecution.createFor(target);
+            }
         }
 
+        @Override
+        public CallSite getCallSite() {
+            return accessorCallSite;
+        }
+
+        @Override
+        public void reset() {
+            semaphore.acquireUninterruptibly();
+            try {
+                for (Resettable r : executions) {
+                    r.reset();
+                }
+            } finally {
+                semaphore.release();
+            }
+        }
+
+        @Override
+        public MethodHandle getUpdater() {
+            return updaterCallSite.dynamicInvoker();
+        }
+
+        @SuppressWarnings("unused")
+        private MethodHandle outOfBounds(ArrayIndexOutOfBoundsException ex, int index, Object[] arguments, Function<Registry, MethodHandle> accessType) {
+            if (index < executions.length) {
+                // If a concurrent call already expanded
+                return accessType.apply(executions[index]);
+            }
+            if (maximumLength >= 0 && index > maximumLength) {
+                throw new LimitExceededException(index + " > " + maximumLength);
+            }
+            int old = expandExecutions(index+1);
+            MethodHandle accessor = createFullHandle(target, executions, filter, accessorExceptionHandler, Registry::getAccessor);
+            MethodHandle updater = createFullHandle(target, executions, filter, updaterExceptionHandler, Registry::getUpdater);
+            accessorCallSite.setTarget(accessor);
+            updaterCallSite.setTarget(updater);
+            return accessType.apply(executions[index]);
+        }
     }
-*/
 }

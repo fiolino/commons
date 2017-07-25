@@ -745,6 +745,33 @@ public class RegistryTest {
     }
 
     @Test
+    public void testNoFilter() throws Throwable {
+        AtomicInteger ref = new AtomicInteger();
+        MethodHandle getAndSet = publicLookup().bind(ref, "getAndSet", methodType(int.class, int.class));
+
+        Registry r = Registry.buildForLimitedRange(getAndSet, null, 3, 100);
+        MethodHandle accessor = r.getAccessor();
+
+        int old = (int) accessor.invokeExact(2);
+        assertEquals(0, old);
+        assertEquals(2, ref.get());
+
+        old = (int) accessor.invokeExact(15);
+        assertEquals(2, old);
+        assertEquals(15, ref.get());
+
+        MethodHandle updater = r.getUpdater();
+        old = (int) updater.invokeExact(30);
+        assertEquals(15, old);
+        assertEquals(30, ref.get());
+
+        ref.set(-1);
+        old = (int) accessor.invokeExact(30);
+        assertEquals(15, old);
+        assertEquals(-1, ref.get());
+    }
+
+    @Test
     public void testFilterWithSimilarType() throws Throwable {
         MethodHandle sumBoth = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
         Set<Object> set = new HashSet<>();

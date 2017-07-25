@@ -142,7 +142,7 @@ final class Reflection {
     static MethodHandle modifyExceptionHandler(MethodHandle exceptionHandler, MethodHandle filter, MethodType targetType, Semaphore semaphore) {
         Class<?>[] targetParameters = targetType.parameterArray();
         int targetArgCount = targetParameters.length;
-        int filterArgCount = filter == null ? 0 : filter.type().parameterCount();
+        int filterArgCount = filter == null ? 1 : filter.type().parameterCount();
         assert filterArgCount <= targetArgCount;
         Class<?>[] innerParameters = new Class<?>[targetArgCount+1];
         innerParameters[0] = ArrayIndexOutOfBoundsException.class;
@@ -256,7 +256,7 @@ final class Reflection {
     }
 
     private static void checkTargetAndFilter(MethodHandle target, MethodHandle filter) {
-        if (target.type().parameterCount() < filter.type().parameterCount()) {
+        if (filter != null && target.type().parameterCount() < filter.type().parameterCount()) {
             throw new IllegalArgumentException("Filter " + filter + " accepts more arguments than " + target);
         }
     }

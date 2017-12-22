@@ -16,6 +16,22 @@ import static java.lang.invoke.MethodType.methodType;
  */
 final class Reflection {
 
+    private static final MethodHandle SYNC, CONSTANT_HANDLE_FACTORY, DROP_ARGUMENTS, SET_TARGET;
+
+    static {
+        try {
+            SYNC = publicLookup().findStatic(MutableCallSite.class, "syncAll", methodType(void.class, MutableCallSite[].class));
+            CONSTANT_HANDLE_FACTORY = publicLookup().findStatic(MethodHandles.class, "constant",
+                    methodType(MethodHandle.class, Class.class, Object.class));
+            DROP_ARGUMENTS = publicLookup().findStatic(MethodHandles.class, "dropArguments",
+                    methodType(MethodHandle.class, MethodHandle.class, int.class, Class[].class));
+            SET_TARGET = publicLookup().findVirtual(CallSite.class, "setTarget",
+                    methodType(void.class, MethodHandle.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new InternalError(ex);
+        }
+    }
+
     /**
      * Builds a Registry for a given target handle.
      *
@@ -69,10 +85,10 @@ final class Reflection {
             throw new InternalError("ordinal", ex);
         }
         int length = enumType.getEnumConstants().length;
-        return createCache(target, ordinal, length, length);
+        return createCache(target, ordinal, length, length, 1);
     }
 
-    static Cache createCache(MethodHandle target, MethodHandle filter, int initialSize, int maximum) {
+    static Cache createCache(MethodHandle target, MethodHandle filter, int initialSize, int maximum, int stepSize) {
         if (initialSize < 0) {
             throw new IllegalArgumentException("" + initialSize);
         }
@@ -84,7 +100,7 @@ final class Reflection {
                 return new ParameterToIntMappingCache(target, filter, maximum);
             }
         }
-        return new ExpandableParameterToIntMappingCache(target, filter, initialSize, maximum);
+        return new ExpandableParameterToIntMappingCache(target, filter, initialSize, maximum, stepSize);
     }
 
     private static class BooleanMappingCache implements Cache {
@@ -264,7 +280,7 @@ final class Reflection {
     private static class ExpandableParameterToIntMappingCache implements Cache {
         private final MethodHandle target, filter;
         private final CallSite accessorCallSite, updaterCallSite;
-        private final int maximumLength;
+        private final int maximumLength, stepSize;
         private final MethodHandle accessorExceptionHandler, updaterExceptionHandler;
         private final Semaphore semaphore;
         private OneTimeExecution[] executions;
@@ -277,14 +293,19 @@ final class Reflection {
          * @param finalMaximum This is the absolute maximum size; if this exceeds, an exception is thrown. Use this to limit
          *                     the amount of stored keys to avoid memory and performance issues
          */
-        ExpandableParameterToIntMappingCache(MethodHandle target, MethodHandle filter, int initialMaximum, int finalMaximum) {
+        ExpandableParameterToIntMappingCache(MethodHandle target, MethodHandle filter,
+                                             CallSite accessorCallSite, CallSite updaterCallSite,
+                                             int initialMaximum, int finalMaximum, int stepSize) {
             if (finalMaximum >= 0 && finalMaximum < initialMaximum) {
                 throw new IllegalArgumentException(finalMaximum + " < " + initialMaximum);
             }
             checkTargetAndFilter(target, filter);
+            this.accessorCallSite = accessorCallSite;
+            this.updaterCallSite = updaterCallSite;
             this.target = target;
             this.filter = filter;
             this.maximumLength = finalMaximum;
+            this.stepSize = stepSize;
             this.semaphore = new Semaphore(1);
             expandExecutions(0, initialMaximum);
 
@@ -299,10 +320,19 @@ final class Reflection {
             specificExceptionHandler = MethodHandles.insertArguments(exceptionHandler, 3, (Function<Registry, MethodHandle>) Registry::getUpdater);
             this.updaterExceptionHandler = modifyExceptionHandler(specificExceptionHandler, filter, target.type(), semaphore);
 
-            MethodHandle accessor = createFullHandle(target, executions, filter, accessorExceptionHandler, Registry::getAccessor);
-            MethodHandle updater = createFullHandle(target, executions, filter, updaterExceptionHandler, Registry::getUpdater);
-            accessorCallSite = new MutableCallSite(accessor);
-            updaterCallSite = new MutableCallSite(updater);
+            updateCallSites();
+        }
+
+        /**
+         * Creates the caching handle factory.
+         *
+         * @param target Use this as the called handle.
+         * @param initialMaximum The initial size of the array; this should be the expected maximum length of an average key set
+         * @param finalMaximum This is the absolute maximum size; if this exceeds, an exception is thrown. Use this to limit
+         *                     the amount of stored keys to avoid memory and performance issues
+         */
+        ExpandableParameterToIntMappingCache(MethodHandle target, MethodHandle filter, int initialMaximum, int finalMaximum, int stepSize) {
+            this(target, filter, new MutableCallSite(target.type()), new MutableCallSite(target.type()), initialMaximum, finalMaximum, stepSize);
         }
 
         private int expandExecutions(int length) {
@@ -348,6 +378,9 @@ final class Reflection {
 
         @SuppressWarnings("unused")
         private MethodHandle outOfBounds(ArrayIndexOutOfBoundsException ex, int index, Object[] arguments, Function<Registry, MethodHandle> accessType) {
+            if (index < 0) {
+                throw new LimitExceededException("" + index);
+            }
             if (index < executions.length) {
                 // If a concurrent call already expanded
                 return accessType.apply(executions[index]);
@@ -355,12 +388,45 @@ final class Reflection {
             if (maximumLength >= 0 && index > maximumLength) {
                 throw new LimitExceededException(index + " > " + maximumLength);
             }
-            int old = expandExecutions(index+1);
+            int old = expandExecutions(index + stepSize);
+            updateCallSites();
+            return accessType.apply(executions[index]);
+        }
+
+        private void updateCallSites() {
             MethodHandle accessor = createFullHandle(target, executions, filter, accessorExceptionHandler, Registry::getAccessor);
             MethodHandle updater = createFullHandle(target, executions, filter, updaterExceptionHandler, Registry::getUpdater);
             accessorCallSite.setTarget(accessor);
             updaterCallSite.setTarget(updater);
-            return accessType.apply(executions[index]);
         }
+    }
+
+    static MethodHandle addMutableCallSiteSynchronization(MethodHandle doBefore, MutableCallSite... callSites) {
+        if (callSites.length == 0) {
+            return doBefore;
+        }
+        MethodHandle syncOuterCallSite = SYNC.bindTo(callSites);
+        syncOuterCallSite = Methods.acceptThese(syncOuterCallSite, doBefore.type().parameterArray());
+        return MethodHandles.foldArguments(syncOuterCallSite, doBefore);
+    }
+
+    /**
+     * Creates a handle of type (&lt;type.returnType&gt;)MethodHandle that creates a constant handle returning the input value
+     * returning the input of this factory.
+     *
+     * The created constant handle will be of the same type as the goven type parameter.
+     *
+     * @param type The type of the new constant handle
+     * @return the factory handle
+     */
+    static MethodHandle createConstantHandleFactory(MethodType type) {
+        Class<?> returnType = type.returnType();
+        MethodHandle constantHandleFactory = CONSTANT_HANDLE_FACTORY.bindTo(returnType).asType(methodType(MethodHandle.class, returnType));
+        if (type.parameterCount() > 0) {
+            MethodHandle dropArguments = MethodHandles.insertArguments(DROP_ARGUMENTS, 1, 0, type.parameterArray());
+            constantHandleFactory = MethodHandles.filterReturnValue(constantHandleFactory, dropArguments);
+        }
+
+        return constantHandleFactory;
     }
 }

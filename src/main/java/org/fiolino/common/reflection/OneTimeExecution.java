@@ -9,7 +9,7 @@ import java.lang.invoke.MethodHandle;
  *
  * Created by kuli on 14.03.17.
  */
-public interface OneTimeExecution extends Registry {
+public interface OneTimeExecution extends Cache {
     /**
      * Updates to a new return value.
      *

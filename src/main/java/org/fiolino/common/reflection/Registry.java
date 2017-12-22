@@ -38,6 +38,9 @@ public interface Registry extends Resettable {
     /**
      * Builds a Registry for a given target handle.
      *
+     * If the target accepts exactly one argument of a certain enumerable type (currently boolean or Enum), then an optimized
+     * accessor is created.
+     *
      * @param target This handle will be called only once per parameter value.
      * @param leadingParameters Some values that are being added to the target at first
      * @return A Registry holding handles with exactly the same type as the target type minus the leading parameters
@@ -49,12 +52,26 @@ public interface Registry extends Resettable {
     /**
      * Builds a Registry for a given target handle where the input parameters can be mapped to an int of limited range.
      *
+     * Use this if it's possible to fetch an int value from the given input type which is of some limited range.
+     * If the mapped int gets too large, then this method would be very resource consuming. In general, there shouldn't be
+     * too many gaps in between.
+     *
+     * You must specify an initial length of the mapped int range, and a maximum upper limit as a security range check.
+     * If the mapped value is greater than the initial length, the underlying data structure gets expanded and a new MethodHandle
+     * is created, which is a costly operation. Because of that, the initial length should at best cover the whole possible
+     * range, but it shouldn't be too large to minimize resources.
+     *
+     * If the mapped value is greater than this maximum, a {@link LimitExceededException} is thrown.
+     * If the maximum value is the same as the initial length, then this cache can't expand internally.
+     *
+     * If the maximum limit is -1, then there's no maximum check at all.
+     *
      * @param target This handle will be called only once per parameter value.
      * @param toIntMapper This will map the first n arguments to some int value...
      * @param maximumRange ... which is lower than this.
      * @return A Registry holding handles with exactly the same type as the target type
      */
-    static Registry buildForLimitedRange(MethodHandle target, MethodHandle toIntMapper, int initialSize, int maximumRange) {
+    static Registry buildForLimitedRange(MethodHandle target, MethodHandle toIntMapper, int initialSize, int maximumRange, int stepSize) {
         if (toIntMapper != null) {
             MethodType intMapperType = toIntMapper.type();
             MethodType targetType = target.type();
@@ -67,7 +84,7 @@ public interface Registry extends Resettable {
             }
         }
 
-        return Reflection.createCache(target, toIntMapper, initialSize, maximumRange);
+        return Reflection.createCache(target, toIntMapper, initialSize, maximumRange, stepSize);
     }
 
     /**
@@ -149,7 +166,7 @@ public interface Registry extends Resettable {
         MethodHandle toInt = search.bindTo(sortedValues).asType(methodType(int.class, target.type().parameterType(0)));
 
         int length = Array.getLength(sortedValues);
-        return Reflection.createCache(target, toInt, length, length);
+        return Reflection.createCache(target, toInt, length, length, 1);
     }
 
     /**
@@ -166,7 +183,7 @@ public interface Registry extends Resettable {
         }
         Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalType);
         if (lambdaMethod.getParameterCount() == 1) {
-            return new RegistryMapper<T>(MultiArgumentExecutionBuilder.createFor(functionalType, function), functionalType);
+            return new RegistryMapper<>(MultiArgumentExecutionBuilder.createFor(functionalType, function), functionalType);
         }
         MethodHandle lambdaHandle;
         try {

@@ -20,23 +20,7 @@ import static java.lang.invoke.MethodType.methodType;
  *
  * Created by kuli on 07.03.17.
  */
-final class OneTimeRegistryBuilder implements OneTimeExecution, Cache {
-
-    private static final MethodHandle SYNC;
-    private static final MethodHandle CONSTANT_HANDLE_FACTORY;
-    private static final MethodHandle DROP_ARGUMENTS;
-
-    static {
-        try {
-            SYNC = publicLookup().findStatic(MutableCallSite.class, "syncAll", methodType(void.class, MutableCallSite[].class));
-            CONSTANT_HANDLE_FACTORY = publicLookup().findStatic(MethodHandles.class, "constant",
-                    methodType(MethodHandle.class, Class.class, Object.class));
-            DROP_ARGUMENTS = publicLookup().findStatic(MethodHandles.class, "dropArguments",
-                    methodType(MethodHandle.class, MethodHandle.class, int.class, Class[].class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new InternalError(ex);
-        }
-    }
+final class OneTimeRegistryBuilder implements OneTimeExecution {
 
     private final Semaphore semaphore;
     private final CallSite callSite;
@@ -50,10 +34,20 @@ final class OneTimeRegistryBuilder implements OneTimeExecution, Cache {
      *                   are used frequently, the this should be true
      */
     OneTimeRegistryBuilder(MethodHandle target, boolean isVolatile) {
+        this(target, isVolatile ? new VolatileCallSite(target.type()) : new MutableCallSite(target.type()));
+    }
+
+    /**
+     * Creates the builder.
+     *
+     * @param target The target handle, which will be called only once as long as the updater or reset() aren't in play
+     * @param callSite An existing CallSite, whch will be updated with
+     */
+    OneTimeRegistryBuilder(MethodHandle target, CallSite callSite) {
+        this.callSite = callSite;
         MethodType type = target.type();
 
         semaphore = new Semaphore(1);
-        callSite = isVolatile ? new VolatileCallSite(type) : new MutableCallSite(type);
         CallSite innerCallSite = new VolatileCallSite(type);
         MethodHandle setTargetOuter, setTargetInner;
         try {
@@ -63,7 +57,8 @@ final class OneTimeRegistryBuilder implements OneTimeExecution, Cache {
             throw new AssertionError(ex);
         }
 
-        MethodHandle innerCaller = createSyncHandle(target, setTargetOuter, setTargetInner);
+        MethodHandle setBothTargets = MethodHandles.foldArguments(setTargetOuter, setTargetInner);
+        MethodHandle innerCaller = createSyncHandle(target, setBothTargets);
         innerCallSite.setTarget(innerCaller);
         MethodHandle guardedCaller = Methods.synchronizeWith(innerCallSite.dynamicInvoker(), semaphore);
         callSite.setTarget(guardedCaller);
@@ -76,30 +71,21 @@ final class OneTimeRegistryBuilder implements OneTimeExecution, Cache {
     }
 
     // Input creates something, which will be used as the new execution of my callSite after calling
-    private MethodHandle createSyncHandle(MethodHandle execution, MethodHandle setTargetOuter, MethodHandle setTargetInner) {
+    private MethodHandle createSyncHandle(MethodHandle execution, MethodHandle setTarget) {
         MethodType type = execution.type();
 
-        MethodHandle setBothTargets = MethodHandles.foldArguments(setTargetOuter, setTargetInner);
 
-        Class<?> returnType = type.returnType();
-        if (returnType == void.class) {
-            return createVoidSyncHandle(execution, setBothTargets);
+        if (type.returnType() == void.class) {
+            return createVoidSyncHandle(execution, setTarget);
         }
 
-        MethodHandle constantHandleFactory = CONSTANT_HANDLE_FACTORY.bindTo(returnType).asType(methodType(MethodHandle.class, returnType));
-        // The following is only needed if execution accepts parameters, which is only the case when used from other MultiArgumentExecutionBuilder
-        int parameterCount = type.parameterCount();
-        if (parameterCount > 0) {
-            MethodHandle dropArguments = MethodHandles.insertArguments(DROP_ARGUMENTS, 1, 0, type.parameterArray());
-            constantHandleFactory = MethodHandles.filterReturnValue(constantHandleFactory, dropArguments);
-        }
+        MethodHandle constantHandleFactory = Reflection.createConstantHandleFactory(type);
+        setTarget = MethodHandles.filterArguments(setTarget, 0, constantHandleFactory);
+        setTarget = addMutableCallSiteSynchronization(setTarget);
 
-        setBothTargets = MethodHandles.filterArguments(setBothTargets, 0, constantHandleFactory);
-        setBothTargets = addMutableCallSiteSynchronization(setBothTargets);
-
-        MethodHandle setBothAndReturnValue = Methods.returnArgument(setBothTargets, 0);
+        MethodHandle setBothAndReturnValue = Methods.returnArgument(setTarget, 0);
         // The following is only needed if execution accepts parameters, which is only the case when used from other MultiArgumentExecutionBuilder
-        if (parameterCount > 0) {
+        if (type.parameterCount() > 0) {
             setBothAndReturnValue = MethodHandles.dropArguments(setBothAndReturnValue, 1, type.parameterArray());
         }
         MethodHandle result = MethodHandles.foldArguments(setBothAndReturnValue, execution);
@@ -123,11 +109,7 @@ final class OneTimeRegistryBuilder implements OneTimeExecution, Cache {
         if (!(callSite instanceof MutableCallSite)) {
             return doBefore;
         }
-        MethodHandle syncOuterCallSite = SYNC.bindTo(new MutableCallSite[] {
-                (MutableCallSite) callSite
-        });
-        syncOuterCallSite = Methods.acceptThese(syncOuterCallSite, doBefore.type().parameterArray());
-        return MethodHandles.foldArguments(syncOuterCallSite, doBefore);
+        return Reflection.addMutableCallSiteSynchronization(doBefore, (MutableCallSite) callSite);
     }
 
     @Override
@@ -151,11 +133,6 @@ final class OneTimeRegistryBuilder implements OneTimeExecution, Cache {
     private MutableCallSite preResetTo(MethodHandle handle) {
         callSite.setTarget(Methods.acceptThese(handle, updatingHandle.type().parameterArray()));
         return callSite instanceof MutableCallSite ? (MutableCallSite)callSite : null;
-    }
-
-    @Override
-    public MethodHandle getAccessor() {
-        return callSite.dynamicInvoker();
     }
 
     @Override

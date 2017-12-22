@@ -722,7 +722,7 @@ public class RegistryTest {
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandle getAndSet = publicLookup().bind(ref, "getAndSet", methodType(Object.class, Object.class));
 
-        Registry r = Registry.buildForLimitedRange(getAndSet, toInt, 3, 100);
+        Registry r = Registry.buildForLimitedRange(getAndSet, toInt, 3, -1);
         MethodHandle accessor = r.getAccessor();
 
         Object old = accessor.invokeExact((Object) "123");

@@ -875,21 +875,90 @@ public class Methods {
     }
 
     /**
+     * Creates a handle that compares two values for equality if it's an Object, or by identity if it's a primitive or enum.
+     *
+     * @param type The type of the objects to compare
+     * @return (&lt;type&gt;,&lt;type&gt;)boolean
+     */
+    public static MethodHandle equalsComparator(Class<?> type) {
+        if (type.isPrimitive()) {
+            return getIdentityComparator(type);
+        }
+        if (type.isEnum()) {
+            return getIdentityComparator(Enum.class).asType(methodType(boolean.class, type, type));
+        }
+        MethodHandle handle;
+        try {
+            handle = publicLookup().findStatic(Objects.class, "equals", methodType(boolean.class, Object.class, Object.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new AssertionError("Objects.equals(Object,Object)");
+        }
+        return handle.asType(methodType(boolean.class, type, type));
+    }
+
+    private static MethodHandle getIdentityComparator(Class<?> primitiveOrEnum) {
+        MethodHandles.Lookup lookup = lookup();
+        try {
+            return lookup.findStatic(lookup.lookupClass(), "isIdentical", methodType(boolean.class, primitiveOrEnum, primitiveOrEnum));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new AssertionError("boolean isIdentical(" + primitiveOrEnum.getName() + "," + primitiveOrEnum.getName() + ")");
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static boolean isIdentical(int a, int b) {
+        return a == b;
+    }
+
+    @SuppressWarnings("unused")
+    private static boolean isIdentical(byte a, byte b) {
+        return a == b;
+    }
+
+    @SuppressWarnings("unused")
+    private static boolean isIdentical(short a, short b) {
+        return a == b;
+    }
+
+    @SuppressWarnings("unused")
+    private static boolean isIdentical(long a, long b) {
+        return a == b;
+    }
+
+    @SuppressWarnings("unused")
+    private static boolean isIdentical(double a, double b) {
+        return a == b;
+    }
+
+    @SuppressWarnings("unused")
+    private static boolean isIdentical(float a, float b) {
+        return a == b;
+    }
+
+    @SuppressWarnings("unused")
+    private static boolean isIdentical(char a, char b) {
+        return a == b;
+    }
+
+    @SuppressWarnings("unused")
+    private static boolean isIdentical(Enum<?> a, Enum<?> b) {
+        return a == b;
+    }
+
+    /**
      * Creates a MethodHandle which accepts a String as the only parameter and returns an enum of type enumType.
-     * It already contains a null check: If the input string is null, then the return value is null as well
-     * without any complains.
+     * It already contains a null check: If the input string is null, then the return value will be null as well.
      *
      * @param type The enum type
      * @param specialHandler Can return a special value for some field and its value.
-     *                       If it returns null, name() is used. If it returns an empty String, null will be returned.
+     *                       If it returns null, name() is used.
      * @param <E> The enum
      * @throws IllegalArgumentException If the input string is invalid, i.e. none of the accepted enumeration values
      */
     public static <E extends Enum<E>> MethodHandle convertStringToEnum(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
         assert type.isEnum();
         Map<String, Object> map = new HashMap<>();
-        E[] enumConstants = type.getEnumConstants();
-        if (enumConstants == null) {
+        if (!type.isEnum()) {
             throw new IllegalArgumentException(type.getName() + " should be an enum.");
         }
         Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) type::getFields);
@@ -924,12 +993,22 @@ public class Methods {
         }
         // There are annotations, bind to Map.get() method
         MethodHandle getFromMap;
+        Lookup lookup = lookup();
         try {
-            getFromMap = publicLookup().bind(map, "get", methodType(Object.class, Object.class));
+            getFromMap = lookup.findStatic(lookup.lookupClass(), "getIfNotNull", methodType(Object.class, Map.class, String.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new InternalError("Map.get()", ex);
+            throw new InternalError("getIfNotNull", ex);
         }
+        getFromMap = getFromMap.bindTo(map);
         return getFromMap.asType(methodType(type, String.class));
+    }
+
+    @SuppressWarnings("unused")
+    private static Object getIfNotNull(Map<String, Object> map, String key) {
+        if (key == null) return null;
+        Object result = map.get(key);
+        if (result == null) throw new IllegalArgumentException(key);
+        return result;
     }
 
     private static MethodHandle convertStringToNormalEnum(Class<?> enumType) {
@@ -967,8 +1046,7 @@ public class Methods {
      */
     public static <E extends Enum<E>> MethodHandle convertEnumToString(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
         Map<E, String> map = new EnumMap<>(type);
-        E[] enumConstants = type.getEnumConstants();
-        if (enumConstants == null) {
+        if (!type.isEnum()) {
             throw new IllegalArgumentException(type.getName() + " should be an enum.");
         }
         boolean isSpecial = false;
@@ -1323,7 +1401,7 @@ public class Methods {
      * The handle will throw the given exception if some of these values is null.
      *
      * @param target The target to execute; all specified arguments are guaranteed to be non-null
-     * @param exceptionTypeToThrow This exception will be thrown. It's public constructor must accept the message as the single argument
+     * @param exceptionTypeToThrow This exception will be thrown. Its public constructor must accept the message as the single argument
      * @param message This is the message in the new exception
      * @param argumentIndexes The arguments to check. If none is given, then all arguments are being checked
      * @return The null-safe handle
@@ -1381,8 +1459,8 @@ public class Methods {
             if (!toCheck.test(i++) || p.isPrimitive()) {
                 continue;
             }
-            MethodHandle castedNullCheck = nullCheck(p);
-            MethodHandle checkArgI = MethodHandles.permuteArguments(castedNullCheck, nullCheckType, i - 1);
+            MethodHandle nullCheck = nullCheck(p);
+            MethodHandle checkArgI = MethodHandles.permuteArguments(nullCheck, nullCheckType, i - 1);
             checks[checkCount++] = checkArgI;
         }
         if (checkCount == 0) {
@@ -1897,12 +1975,13 @@ public class Methods {
      * @return A handle of the exact same type as target
      */
     public static MethodHandle doFinally(MethodHandle target, MethodHandle finallyBlock) {
-        if (finallyBlock.type().returnType() != void.class) {
+        MethodType finallyBlockType = finallyBlock.type();
+        if (finallyBlockType.returnType() != void.class) {
             throw new IllegalArgumentException(finallyBlock + " should not return some value");
         }
         MethodType type = target.type();
         Class<?> returnType = type.returnType();
-        Class<?>[] finallyBlockAccepts = Arrays.copyOf(type.parameterArray(), finallyBlock.type().parameterCount());
+        Class<?>[] finallyBlockAccepts = Arrays.copyOf(type.parameterArray(), finallyBlockType.parameterCount());
         MethodHandle transformedFinallyBlock = finallyBlock.asType(methodType(void.class, finallyBlockAccepts));
         MethodHandle throwException = MethodHandles.throwException(returnType, Throwable.class);
         if (finallyBlockAccepts.length > 0) {
@@ -1915,7 +1994,7 @@ public class Methods {
             return MethodHandles.foldArguments(acceptThese(finallyBlock, type.parameterArray()), catchedTarget);
         }
 
-        if (finallyBlock.type().parameterCount() == 0) {
+        if (finallyBlockType.parameterCount() == 0) {
             MethodHandle returnValue = MethodHandles.identity(returnType);
             MethodHandle doFinallyAndReturn = MethodHandles.foldArguments(returnValue, finallyBlock);
             return MethodHandles.filterReturnValue(catchedTarget, doFinallyAndReturn);

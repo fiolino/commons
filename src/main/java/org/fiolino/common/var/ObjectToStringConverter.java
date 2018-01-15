@@ -26,9 +26,8 @@ final class ObjectToStringConverter {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
 
         converterMethods = new HashMap<>();
-        for (Method m : ObjectToStringConverter.class.getDeclaredMethods()) {
-            // if (m.isAnnotationPresent(Appender.class)) { -- Java8
-            if (m.getAnnotation(Appender.class) != null) {
+        for (Method m : lookup.lookupClass().getDeclaredMethods()) {
+            if (m.isAnnotationPresent(Appender.class)) {
                 Class<?>[] argTypes = m.getParameterTypes();
                 if (argTypes.length < 2) {
                     throw new AssertionError("Method " + m + " should have at least a parameter for the string builder and the conversion object");
@@ -52,7 +51,7 @@ final class ObjectToStringConverter {
     private final int depth;
     private final int maxLength;
 
-    public ObjectToStringConverter(int depth, int maxLength) {
+    ObjectToStringConverter(int depth, int maxLength) {
         this.depth = depth;
         this.maxLength = maxLength;
         alreadyVisited = new HashSet<>();
@@ -62,7 +61,7 @@ final class ObjectToStringConverter {
         return append(stringBuilder, toAppend, 0);
     }
 
-    StringBuilder append(StringBuilder stringBuilder, Object toAppend, int indent) {
+    private StringBuilder append(StringBuilder stringBuilder, Object toAppend, int indent) {
         if (toAppend == null) {
             return stringBuilder.append("<null>");
         }
@@ -139,7 +138,7 @@ final class ObjectToStringConverter {
         }
     }
 
-    private StringBuilder appendModifier(StringBuilder stringBuilder, int modifierFlags) {
+    private void appendModifier(StringBuilder stringBuilder, int modifierFlags) {
         if ((modifierFlags & Modifier.TRANSIENT) != 0) {
             stringBuilder.append('~');
         }
@@ -149,7 +148,6 @@ final class ObjectToStringConverter {
         if ((modifierFlags & Modifier.FINAL) != 0) {
             stringBuilder.append('!');
         }
-        return stringBuilder;
     }
 
     private MethodHandle fetchConverterMethodFor(Object object) {

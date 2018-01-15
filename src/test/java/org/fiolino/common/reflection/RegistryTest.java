@@ -43,33 +43,11 @@ public class RegistryTest {
             assertEquals(3, counter.get());
         }
 
-        // Test updater
-        MethodHandle updater = reg.getUpdater();
-        for (int i=0; i < 100; i++) {
-            // Don't do this in production, it's slow
-            updater.invokeExact();
-            assertEquals(i+4, counter.get());
-        }
-        callOnlyOnce.invokeExact();
-        assertEquals(103, counter.get());
-        callOnlyOnce.invokeExact();
-        assertEquals(103, counter.get());
-
         // Now check that the original accessor will never be invoked if the updater is invoked earlier.
         reg = Registry.buildFor(incrementCounter);
 
         callOnlyOnce = reg.getAccessor();
         counter.set(1);
-        callOnlyOnce.invokeExact();
-        assertEquals(2, counter.get());
-
-        reg = Registry.buildFor(incrementCounter);
-
-        updater = reg.getUpdater();
-        callOnlyOnce = reg.getAccessor();
-        counter.set(1);
-        updater.invokeExact();
-        assertEquals(2, counter.get());
         callOnlyOnce.invokeExact();
         assertEquals(2, counter.get());
     }
@@ -96,33 +74,11 @@ public class RegistryTest {
             assertEquals(3, value);
         }
 
-        // Test updater
-        MethodHandle updater = reg.getUpdater();
-        for (int i=0; i < 100; i++) {
-            // Don't do this in production, it's slow
-            value = (int) updater.invokeExact();
-            assertEquals(i+4, value);
-        }
-        value = (int) callOnlyOnce.invokeExact();
-        assertEquals(103, counter.get());
-        value = (int) callOnlyOnce.invokeExact();
-        assertEquals(103, counter.get());
-
         // Now check that the original accessor will never be invoked if the updater is invoked earlier.
         reg = Registry.buildFor(incrementCounter);
 
         callOnlyOnce = reg.getAccessor();
         counter.set(1);
-        value = (int) callOnlyOnce.invokeExact();
-        assertEquals(2, value);
-
-        reg = Registry.buildFor(incrementCounter);
-
-        updater = reg.getUpdater();
-        callOnlyOnce = reg.getAccessor();
-        counter.set(1);
-        value = (int) updater.invokeExact();
-        assertEquals(2, value);
         value = (int) callOnlyOnce.invokeExact();
         assertEquals(2, value);
     }
@@ -244,9 +200,6 @@ public class RegistryTest {
         ex.getAccessor().invokeExact((Object) null);
         // Third call was ignored as well
         assertEquals("Fritz", ref.get());
-
-        ex.getUpdater().invokeExact((Object) "Tonja");
-        assertEquals("Tonja", ref.get());
     }
 
     @Test
@@ -332,22 +285,6 @@ public class RegistryTest {
         assertNotEquals(knut, func.apply("Knut"));
         assertNotEquals(nullName, func.apply(null));
         assertNull(func.apply("John"));
-
-        fritz = func.apply("Fritz");
-        nullName = func.apply(null);
-        UnaryOperator<String> updater = reg.getUpdater();
-        TimeUnit.MILLISECONDS.sleep(50);
-        assertEquals(fritz, func.apply("Fritz"));
-        String newFritz = updater.apply("Fritz");
-        assertNotEquals(fritz, newFritz);
-        assertNotEquals(fritz, func.apply("Fritz"));
-        assertEquals(newFritz, func.apply("Fritz"));
-
-        assertEquals(nullName, func.apply(null));
-        String newNullName = updater.apply(null);
-        assertNotEquals(nullName, newNullName);
-        assertNotEquals(nullName, func.apply(null));
-        assertEquals(newNullName, func.apply(null));
     }
 
     @Test
@@ -365,14 +302,6 @@ public class RegistryTest {
         assertEquals("Goodbye", ref.get());
         consumer.accept("Hello");
         assertEquals("Goodbye", ref.get());
-
-        Consumer<String> updater = reg.getUpdater();
-        updater.accept("Hello");
-        assertEquals("Hello", ref.get());
-        consumer.accept(null);
-        assertEquals("Hello", ref.get());
-        updater.accept(null);
-        assertNull(ref.get());
     }
 
     @SuppressWarnings("unused")
@@ -423,18 +352,14 @@ public class RegistryTest {
         assertEquals("Lisa says: 153 + 52 = 205", result);
         assertEquals(205, ref.get());
 
-        result = (String) reg.getUpdater().invokeExact(52, "Lisa");
-        assertEquals("Lisa says: 205 + 52 = 257", result);
-        assertEquals(257, ref.get());
-
         result = (String) sumX.invokeExact(7, "Frankie");
         assertEquals("Frankie says: 100 + 7 = 107", result);
-        assertEquals(257, ref.get());
+        assertEquals(205, ref.get()); // Unchanged
 
         reg.reset();
         result = (String) sumX.invokeExact(7, "Frankie");
-        assertEquals("Frankie says: 257 + 7 = 264", result);
-        assertEquals(264, ref.get());
+        assertEquals("Frankie says: 205 + 7 = 212", result);
+        assertEquals(212, ref.get());
     }
 
     @Test
@@ -453,8 +378,6 @@ public class RegistryTest {
         assertEquals("Mona", ref.get());
         set.accept(ref, "Heidi");
         assertEquals("Mona", ref.get());
-        reg.getUpdater().accept(ref, "Heidi");
-        assertEquals("Heidi", ref.get());
     }
 
     @SuppressWarnings("unused")
@@ -479,9 +402,6 @@ public class RegistryTest {
 
         ex1.invoke(ref, 1, 2, 3);
         assertEquals(7000, ref.get());
-
-        reg.getUpdater().invoke(ref, 1, 2, 3);
-        assertEquals(6, ref.get());
     }
 
     @Test
@@ -500,9 +420,6 @@ public class RegistryTest {
 
         ex1.invoke(1, 2, 3);
         assertEquals(7000, ref.get());
-
-        reg.getUpdater().invoke(1, 2, 3);
-        assertEquals(6, ref.get());
     }
 
     @Test
@@ -523,17 +440,14 @@ public class RegistryTest {
         assertEquals(0, result);
         assertEquals(119, ref.get());
 
-        result = reg.getUpdater().applyAsInt(5, 6);
-        assertEquals(119, result);
-        assertEquals(130, ref.get());
-
+        reg.reset();
         result = operator.applyAsInt(5, 6);
         assertEquals(119, result);
         assertEquals(130, ref.get());
 
         result = operator.applyAsInt(99, 9);
-        assertEquals(11, result);
-        assertEquals(130, ref.get());
+        assertEquals(130, result);
+        assertEquals(238, ref.get());
     }
 
     @Test
@@ -618,17 +532,6 @@ public class RegistryTest {
         array2 = (Object[])accessor.invokeExact(TimeUnit.SECONDS);
         assertEquals(TimeUnit.SECONDS, array2[0]);
         assertTrue((long)array1[1] < (long)array2[1]);
-
-        // Now test getUpdate
-        TimeUnit.MICROSECONDS.sleep(10);
-        array1 = (Object[]) registry.getUpdater().invokeExact(TimeUnit.SECONDS);
-        assertEquals(TimeUnit.SECONDS, array1[0]);
-        assertTrue((long)array1[1] > (long)array2[1]);
-
-        array2 = (Object[])accessor.invokeExact(TimeUnit.SECONDS);
-        assertEquals(TimeUnit.SECONDS, array1[0]);
-        assertTrue("Both must be the same", (long)array1[1] == (long)array2[1]);
-        assertTrue("Even the array should be the same", array1 == array2);
     }
 
     @Test
@@ -645,23 +548,6 @@ public class RegistryTest {
         assertFalse((boolean) accessor.invokeExact(true));
         assertFalse(ref.get());
 
-        MethodHandle updater = registry.getUpdater();
-        assertFalse((boolean) updater.invokeExact(true));
-        assertTrue(ref.get());
-        assertFalse((boolean) accessor.invokeExact(true));
-        assertTrue(ref.get());
-        ref.set(false);
-        assertFalse((boolean) accessor.invokeExact(true));
-        assertFalse(ref.get());
-
-        ref.set(true);
-        assertTrue((boolean) updater.invokeExact(true));
-        assertTrue(ref.get());
-        assertTrue((boolean) accessor.invokeExact(false));
-        assertFalse(ref.get());
-        assertTrue((boolean) accessor.invokeExact(false));
-        assertFalse(ref.get());
-
         registry.reset();
         assertFalse((boolean) accessor.invokeExact(false));
     }
@@ -670,7 +556,7 @@ public class RegistryTest {
     public void testMapOnlyFirstArgumentToInteger() throws Throwable {
         MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
         MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
-        Registry r = Registry.buildForLimitedRange(concat, toInt, 10, 10);
+        Registry r = Registry.buildForLimitedRange(concat, toInt, 10, 10, 1);
         MethodHandle accessor = r.getAccessor();
 
         String s1 = (String) accessor.invokeExact("12345", "First");
@@ -679,12 +565,6 @@ public class RegistryTest {
         assertEquals("12345First", s2);
         s2 = (String) accessor.invokeExact("5432", "Second");
         assertEquals("5432Second", s2);
-
-        MethodHandle updater = r.getUpdater();
-        s2 = (String) updater.invokeExact("54321", "Second");
-        assertEquals("54321Second", s2);
-        s1 = (String) accessor.invokeExact("12345", "First");
-        assertEquals("54321Second", s1);
 
         r.reset();
         s1 = (String) accessor.invokeExact("12345", "First");
@@ -697,7 +577,7 @@ public class RegistryTest {
         MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
         MethodHandle sumBoth = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
 
-        Registry r = Registry.buildForLimitedRange(concat, MethodHandles.filterArguments(sumBoth, 0, toInt, toInt), 10, 10);
+        Registry r = Registry.buildForLimitedRange(concat, MethodHandles.filterArguments(sumBoth, 0, toInt, toInt), 10, 10, 1);
         MethodHandle accessor = r.getAccessor();
 
         String s1 = (String) accessor.invokeExact("123", "45");
@@ -722,7 +602,7 @@ public class RegistryTest {
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandle getAndSet = publicLookup().bind(ref, "getAndSet", methodType(Object.class, Object.class));
 
-        Registry r = Registry.buildForLimitedRange(getAndSet, toInt, 3, -1);
+        Registry r = Registry.buildForLimitedRange(getAndSet, toInt, 3, -1, 1);
         MethodHandle accessor = r.getAccessor();
 
         Object old = accessor.invokeExact((Object) "123");
@@ -733,15 +613,10 @@ public class RegistryTest {
         assertEquals("123", old);
         assertEquals("123456789012345", ref.get());
 
-        MethodHandle updater = r.getUpdater();
-        old = updater.invokeExact((Object) "123456789012345678901234567890");
-        assertEquals("123456789012345", old);
-        assertEquals("123456789012345678901234567890", ref.get());
-
         ref.set("none");
         old = accessor.invokeExact((Object) "123456789012345678901234567890");
-        assertEquals("123456789012345", old);
-        assertEquals("none", ref.get());
+        assertEquals("none", old);
+        assertEquals("123456789012345678901234567890", ref.get());
     }
 
     @Test
@@ -749,7 +624,7 @@ public class RegistryTest {
         AtomicInteger ref = new AtomicInteger();
         MethodHandle getAndSet = publicLookup().bind(ref, "getAndSet", methodType(int.class, int.class));
 
-        Registry r = Registry.buildForLimitedRange(getAndSet, null, 3, 100);
+        Registry r = Registry.buildForLimitedRange(getAndSet, null, 3, 100, 1);
         MethodHandle accessor = r.getAccessor();
 
         int old = (int) accessor.invokeExact(2);
@@ -759,16 +634,6 @@ public class RegistryTest {
         old = (int) accessor.invokeExact(15);
         assertEquals(2, old);
         assertEquals(15, ref.get());
-
-        MethodHandle updater = r.getUpdater();
-        old = (int) updater.invokeExact(30);
-        assertEquals(15, old);
-        assertEquals(30, ref.get());
-
-        ref.set(-1);
-        old = (int) accessor.invokeExact(30);
-        assertEquals(15, old);
-        assertEquals(-1, ref.get());
     }
 
     @Test
@@ -778,7 +643,7 @@ public class RegistryTest {
         MethodHandle addAll = publicLookup().findStatic(Collections.class, "addAll", methodType(boolean.class, Collection.class, Object[].class)).bindTo(set);
         addAll = addAll.asCollector(Object[].class, 3);
 
-        Registry r = Registry.buildForLimitedRange(addAll, sumBoth, 10, 10);
+        Registry r = Registry.buildForLimitedRange(addAll, sumBoth, 10, 10, 1);
         MethodHandle accessor = r.getAccessor();
 
         boolean wasChanged = (boolean) accessor.invokeExact((Object) 4, (Object) 5, (Object) "This doesn't count");
@@ -790,10 +655,6 @@ public class RegistryTest {
         assertTrue(wasChanged); // Because it was cached -- list.addAll wasn't called
         assertEquals(3, set.size());
         assertFalse(set.contains("Other value"));
-
-        wasChanged = (boolean) r.getUpdater().invokeExact((Object) 4, (Object) 5, (Object) "This doesn't count");
-        assertFalse(wasChanged); // Now it's called again
-        assertEquals(3, set.size());
     }
 
     @Test
@@ -883,12 +744,6 @@ public class RegistryTest {
             int result = (int) accessor.invokeExact((i + 1) * 1000);
             assertEquals(i * 1000 + 1250, result);
             assertEquals(results[i], result);
-        }
-        accessor = registry.getUpdater();
-        for (int i=0; i < 10; i++) {
-            int result = (int) accessor.invokeExact((i + 1) * 1000);
-            assertEquals(i * 1000 - 5666, result);
-            assertNotEquals(results[i], result);
         }
     }
 

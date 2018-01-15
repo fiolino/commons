@@ -1,6 +1,8 @@
-package org.fiolino.common.util;
+package org.fiolino.common.ioc;
 
-import org.fiolino.common.ioc.PostProcessor;
+import org.fiolino.annotations.PostProcessor;
+import org.fiolino.annotations.Provider;
+import org.fiolino.annotations.Requested;
 import org.junit.Test;
 
 import javax.annotation.Nullable;

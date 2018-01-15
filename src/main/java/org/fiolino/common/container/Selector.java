@@ -4,8 +4,6 @@ import java.util.function.Supplier;
 
 /**
  * The selector is the key in a {@link Container}. It gets registered by a corresponding {@link Schema}.
- *
- * @author Michael Kuhlmann <michael@kuhlmann.org>
  */
 public class Selector<T> {
     private final int position;

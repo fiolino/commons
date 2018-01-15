@@ -1,6 +1,6 @@
 package org.fiolino.common.util;
 
-import org.fiolino.data.annotation.SerialFieldIndex;
+import org.fiolino.annotations.SerialFieldIndex;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;

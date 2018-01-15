@@ -1,6 +1,8 @@
-package org.fiolino.common.util;
+package org.fiolino.common.ioc;
 
-import org.fiolino.common.ioc.PostProcessor;
+import org.fiolino.annotations.PostProcessor;
+import org.fiolino.annotations.Provider;
+import org.fiolino.annotations.Requested;
 import org.fiolino.common.reflection.Methods;
 
 import javax.annotation.Nullable;
@@ -26,12 +28,18 @@ import static java.lang.invoke.MethodType.methodType;
  * <ul>
  *     <li>A {@link Method}: Will be used as a factory method to instantiate if the return type matches.</li>
  *     <li>A {@link MethodHandle}: Like the method.</li>
- *     <li>A {@link Class}: Tries to find all methods ,with a @{@link org.fiolino.common.ioc.Factory} annotation which will serve as factory methods then.
+ *     <li>A {@link Class}: Tries to find all methods ,with a @{@link org.fiolino.annotations.Factory} annotation which will serve as factory methods then.
  *     Static methods will be used directly, while for instance methods, a factory instance gets constructed on every call.</li>
  *     <li>Any object: Like the class case, but for instance methods, the given instance will be the only factory instance.</li>
  * </ul>
  * <p>
  * Lookups are used to identify constructors and factory methods.
+ * <p>
+ * If the instantiated instance implements {@link org.fiolino.annotations.PostProcessor}, then its postConstruct method will be called automatically.
+ * <p>
+ * If used provider class, if there is any, has a method annotated with {@link PostConstruct}, then this method will be
+ * called after construction. The method must accept one argument, which is the constructed instance, and may return
+ * another instance which will be used as a replacement.
  * <p>
  * Created by kuli on 10.02.15.
  */
@@ -241,26 +249,19 @@ public final class Instantiator {
         providers.add(0, p);
     }
 
-    private int findRequestedParameter(Method m) {
+    private int findRequestedTypeParameter(Method m) {
         int i=0;
         for (Parameter p : m.getParameters()) {
             if (p.isAnnotationPresent(Requested.class)) {
+                Class<?> t = p.getType();
+                if (!Class.class.equals(t)) {
+                    throw new AssertionError("Parameter #" + i + " of " + m + " is annotated with @Requested but of wrong type " + t);
+                }
                 return i;
             }
             i++;
         }
         return -1;
-    }
-
-    private int findRequestedTypeParameter(Method m) {
-        int arg = findRequestedParameter(m);
-        if (arg >= 0) {
-            Class<?> t = m.getParameterTypes()[arg];
-            if (!Class.class.equals(t)) {
-                throw new AssertionError("Parameter #" + arg + " of " + m + " is annotated with @Requested but of wrong type " + t);
-            }
-        }
-        return arg;
     }
 
     /**
@@ -272,7 +273,7 @@ public final class Instantiator {
      * @return The newly created instance
      */
     public <T> T instantiate(Class<T> type) {
-        MethodHandle handle = findProvider(methodType(type));
+        MethodHandle handle = findProviderHandle(methodType(type));
         return createInstance(type, handle);
     }
 
@@ -312,7 +313,7 @@ public final class Instantiator {
      */
     public <T> T createProviderFor(Class<T> functionalInterface) {
         Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalInterface);
-        MethodHandle provider = findProvider(lambdaMethod.getReturnType(), lambdaMethod.getParameterTypes());
+        MethodHandle provider = findProviderHandle(lambdaMethod.getReturnType(), lambdaMethod.getParameterTypes());
         return Methods.lambdafy(lookup, provider, functionalInterface);
     }
 
@@ -334,12 +335,19 @@ public final class Instantiator {
                     Arrays.toString(lambdaTypes) + ", given " + Arrays.toString(parameterTypes));
         }
         System.arraycopy(parameterTypes, 0, lambdaTypes, 0, parameterTypes.length);
-        MethodHandle provider = findProvider(returnType, lambdaTypes);
+        MethodHandle provider = findProviderHandle(returnType, lambdaTypes);
         return Methods.lambdafy(lookup, provider, functionalInterface);
     }
 
-    public MethodHandle findProvider(Class<?> returnType, Class<?>... parameterTypes) {
-        return findProvider(methodType(returnType, parameterTypes));
+    /**
+     * Creates a handle that instantiates the given type.
+     *
+     * @param type Some class to instantiate
+     * @param parameterTypes Some parameter types
+     * @return A handle accepting the given parameter types, and returning the type
+     */
+    public MethodHandle findProviderHandle(Class<?> type, Class<?>... parameterTypes) {
+        return findProviderHandle(methodType(type, parameterTypes));
     }
 
     private MethodHandle findProviderOrGeneric(MethodType methodType) {
@@ -347,7 +355,13 @@ public final class Instantiator {
                 .orElseGet(() -> findConstructor(methodType));
     }
 
-    public MethodHandle findProvider(MethodType methodType) {
+    /**
+     * Creates a handle that instantiates the given type.
+     *
+     * @param methodType Some type which returns an instantiable class
+     * @return A handle of the requested type, if the constructor or factory method was found
+     */
+    public MethodHandle findProviderHandle(MethodType methodType) {
         return withPostProcessor(findProviderOrGeneric(methodType));
     }
 

@@ -9,8 +9,6 @@ import java.util.function.Predicate;
 
 /**
  * Analyzes classes to find annotated elements (fields or methods).
- *
- * @author Michael Kuhlmann <michael@kuhlmann.org>
  */
 public class ClassWalker<E extends Exception> {
 

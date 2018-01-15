@@ -1,11 +1,14 @@
 package org.fiolino.common.ioc;
 
+import org.fiolino.annotations.Component;
+import org.fiolino.annotations.Factory;
+import org.fiolino.annotations.Inject;
+import org.fiolino.annotations.Property;
 import org.fiolino.common.processing.Processor;
 import org.fiolino.common.reflection.Converters;
 import org.fiolino.common.util.Types;
 import org.reflections.Reflections;
 
-import java.io.*;
 import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -72,7 +75,7 @@ public class Beans {
 
     /**
      * Creates a new instance with the given parameter values as the first constructor arguments,
-     * and then some additional optional parameters behind which must be annotated with @Property or @Bean.
+     * and then some additional optional parameters behind which must be annotated with @Property or @Inject.
      */
     public static <T> T instantiate(Class<T> type, Object... parameters) {
         Constructor<?> found = null;
@@ -99,11 +102,11 @@ public class Beans {
                 Annotation[] paramAnnotations = annotations[i];
                 Property p = getAnnotationOf(Property.class, paramAnnotations);
                 if (p == null) {
-                    Bean b = getAnnotationOf(Bean.class, paramAnnotations);
+                    Inject b = getAnnotationOf(Inject.class, paramAnnotations);
                     if (b == null) {
                         if (i > n) {
                             // There was already an annotated parameter
-                            throw new BeanCreationException(type + " has constructor where not all parameters are annotated with @Property or @Bean.");
+                            throw new BeanCreationException(type + " has constructor where not all parameters are annotated with @Property or @Inject.");
                         }
                         continue outer;
                     }

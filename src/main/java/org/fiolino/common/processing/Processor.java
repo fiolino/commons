@@ -1,6 +1,6 @@
 package org.fiolino.common.processing;
 
-import org.fiolino.common.ioc.PostProcessor;
+import org.fiolino.annotations.PostProcessor;
 
 /**
  * These entities process an existing model bean.

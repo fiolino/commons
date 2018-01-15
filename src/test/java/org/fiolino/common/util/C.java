@@ -1,7 +1,7 @@
 package org.fiolino.common.util;
 
-import org.fiolino.data.annotation.SerialFieldIndex;
-import org.fiolino.data.annotation.SerializeEmbedded;
+import org.fiolino.annotations.SerialFieldIndex;
+import org.fiolino.annotations.SerializeEmbedded;
 
 /**
  * Created by kuli on 25.07.16.

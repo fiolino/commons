@@ -25,13 +25,6 @@ public interface Registry extends Resettable {
      */
     MethodHandle getAccessor();
 
-    /**
-     * Gets the handle that calls the original service, overwriting any cached data.
-     *
-     * The type of this handle is exactly the same as the one that was used for creating this registry.
-     */
-    MethodHandle getUpdater();
-
 
     // Static factory methods
 

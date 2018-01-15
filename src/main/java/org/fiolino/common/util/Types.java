@@ -13,7 +13,7 @@ import java.util.Map;
 /**
  * Static class for checking type access and retrieving information from generic types.
  *
- * @author Michael Kuhlmann <michael@kuhlmann.org>
+ * @author kuli
  */
 public final class Types {
     private Types() {

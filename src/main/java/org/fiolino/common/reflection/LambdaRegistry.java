@@ -10,9 +10,4 @@ public interface LambdaRegistry<T> extends Resettable {
      * Gets the function that calls the cached service.
      */
     T getAccessor();
-
-    /**
-     * Gets the function that calls the original service, overwriting any cached data.
-     */
-    T getUpdater();
 }

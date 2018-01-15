@@ -1,7 +1,7 @@
 package org.fiolino.common.reflection;
 
 import org.fiolino.common.analyzing.AmbiguousTypesException;
-import org.fiolino.common.util.Instantiator;
+import org.fiolino.common.ioc.Instantiator;
 import org.fiolino.common.util.Strings;
 import org.fiolino.common.util.Types;
 
@@ -1304,11 +1304,11 @@ public class Methods {
      * Combines a list of conditions by and.
      * Given is an array of MethodHandle instances that return boolean, and whose parameter types are identical
      * except that leading handles may have fewer types than following handles.
-     * <p/>
+     * <p>
      * The returned handle will accept the maximum number of input parameters, which is the parameters of the last
      * given handle. If no handle was given at all, then a MethodHandle returning a constant TRUE value without any
      * incoming parameters, is returned.
-     * <p/>
+     * <p>
      * Each handle starting from the second one is invoked only if all previous handles returned true.
      */
     public static MethodHandle and(MethodHandle... handles) {
@@ -1330,11 +1330,11 @@ public class Methods {
      * Combines a list of conditions by or.
      * Given is an array of MethodHandle instances that return boolean, and whose parameter types are identical
      * except that leading handles may have fewer types than following handles.
-     * <p/>
+     * <p>
      * The returned handle will accept the maximum number of input parameters, which is the parameters of the last
      * given handle. If no handle was given at all, then a MethodHandle returning a constant FALSE value without any
      * incoming parameters, is returned.
-     * <p/>
+     * <p>
      * Each handle starting from the second one is invoked only if all previous handles returned false.
      */
     public static MethodHandle or(MethodHandle... handles) {
@@ -1484,7 +1484,7 @@ public class Methods {
      * Creates a method handle that invokes its target only if the guard returns false.
      * Guard and target must have the same argument types. Guard must return a boolean,
      * while the target may return any type.
-     * <p/>
+     * <p>
      * The resulting handle has exactly the same type, and if it returns a value, it will return null
      * or a zero-like value if the guard returned false.
      */
@@ -1497,7 +1497,7 @@ public class Methods {
      * Creates a method handle that invokes its target only if the guard returns true.
      * Guard and target must have the same argument types. Guard must return a boolean,
      * while the target may return any type.
-     * <p/>
+     * <p>
      * The resulting handle has exactly the same type, and if it returns a value, it will return null
      * or a zero-like value if the guard returned false.
      */
@@ -1537,10 +1537,10 @@ public class Methods {
 
     /**
      * Creates a method handle that doesn't execute its target if at least one of the guards returns true.
-     * <p/>
+     * <p>
      * The guard must accept exactly one argument with the type of the given argument of the target, and return a
      * boolean value.
-     * <p/>
+     * <p>
      * The resulting handle has the same type as the target, and returns a null value or zero if the guard doesn't
      * allow to execute.
      */
@@ -1552,12 +1552,12 @@ public class Methods {
 
     /**
      * Creates a method handle that executes its target only if all the guard return true.
-     * <p/>
+     * <p>
      * This methods is just the exact opposite to rejectIfArgument().
-     * <p/>
+     * <p>
      * The guard must accept exactly one argument with the type of the given argument of the target, and return a
      * boolean value.
-     * <p/>
+     * <p>
      * The resulting handle has the same type as the target, and returns a null value or zero if the guard doesn't
      * allow to execute.
      */
@@ -1601,10 +1601,10 @@ public class Methods {
 
     /**
      * Creates a method handle that executes its target, and then returns the argument at the given index.
-     * <p/>
+     * <p>
      * The resulting handle will have the same type as the target except that the return type is the same as the
      * one of the given argument.
-     * <p/>
+     * <p>
      * If the target returns a value, then this simply is discarded.
      */
     public static MethodHandle returnArgument(MethodHandle target, int argumentNumber) {

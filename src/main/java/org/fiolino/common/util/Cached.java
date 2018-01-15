@@ -17,7 +17,9 @@ import java.util.function.UnaryOperator;
  * file system.
  * <p>
  * Example:
- * Cached<DataObject> valueHolder = Cached.updateEvery(5).hours().with(new Callable<DataObject>() {...});
+ * <code>
+ * Cached&lt;DataObject&gt; valueHolder = Cached.updateEvery(5).hours().with(new Callable&lt;DataObject&gt;() {...});
+ * </code>
  *
  * @author kuli
  */

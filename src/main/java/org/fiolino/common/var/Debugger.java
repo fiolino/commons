@@ -1,7 +1,7 @@
 package org.fiolino.common.var;
 
 /**
- * @author Michael Kuhlmann <michael@kuhlmann.org>
+ * Utility to print out instances together with all their internal content.
  */
 public class Debugger {
 

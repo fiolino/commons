@@ -205,11 +205,11 @@ public final class Strings {
 
     /**
      * Gets a String representation of a time delay in nanoseconds.
-     * <p/>
+     * <p>
      * Examples are MM:SS or HH:MM:SS:mmm.nnnnnn
-     * <p/>
+     * <p>
      * The hours are added only if the duration is at least one hour.
-     * <p/>
+     * <p>
      * The finest parameter specifies the fines displayed time unit.
      */
     public static String printDuration(long durationInNanos, TimeUnit finest) {
@@ -344,7 +344,7 @@ public final class Strings {
      * Returns a String where all variables are replaced by their values.
      * Variables appear in the String with a leading $ sign, followed directly by the name if it
      * only contains letters, digits or underscores, or the name surrounded by curly brackets.
-     * <p/>
+     * <p>
      * If the map does not contain the key, then the system property and then the environment is looked up,
      * in that order.
      */
@@ -483,7 +483,7 @@ public final class Strings {
     /**
      * Extracts some text from an input string.
      *
-     * It reads the text until one of these requirements is met:<p/>
+     * It reads the text until one of these requirements is met:<p>
      * <ol>
      *     <li>One of the given characters from the stopper is reached</li>
      *     <li>The end of the line was reached</li>
@@ -505,7 +505,7 @@ public final class Strings {
     /**
      * Extracts some text from an input string.
      *
-     * It reads the text until one of these requirements is met:<p/>
+     * It reads the text until one of these requirements is met:<p>
      * <ol>
      *     <li>One of the given characters from the stopper is reached</li>
      *     <li>The end of the line was reached</li>

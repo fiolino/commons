@@ -8,7 +8,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
- * @author Michael Kuhlmann <michael@kuhlmann.org>
+ * Contains various values based on some Schema.
  */
 public class Container implements ReadOnlyContainer {
 

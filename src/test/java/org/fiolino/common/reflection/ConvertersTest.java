@@ -1,6 +1,5 @@
 package org.fiolino.common.reflection;
 
-import org.fiolino.data.base.Text;
 import org.junit.Test;
 
 import java.lang.annotation.ElementType;
@@ -175,6 +174,7 @@ public class ConvertersTest {
     @Test
     public void testFromString() throws Throwable {
         Object getString = new Object() {
+            @SuppressWarnings("unused")
             String getString(String val) {
                 return val;
             }
@@ -194,8 +194,6 @@ public class ConvertersTest {
         assertTrue((boolean) c.invokeExact("trara with t"));
         assertFalse((boolean) c.invokeExact("something without t"));
         assertFalse((boolean) c.invokeExact(""));
-        c = getHandle(Converters.defaultConverters, Text.class, getString);
-        assertEquals(Text.valueOf("Some text"), (Text) c.invokeExact("Some text"));
         c = getHandle(Converters.defaultConverters, ValueOfTest.class, getString);
         assertEquals(new ValueOfTest(7), (ValueOfTest) c.invokeExact("1234567"));
         c = getHandle(Converters.defaultConverters, BigInteger.class, getString);

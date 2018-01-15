@@ -132,11 +132,6 @@ final class Reflection {
             falseExecution.reset();
             trueExecution.reset();
         }
-
-        @Override
-        public MethodHandle getUpdater() {
-            return createDecider(Registry::getUpdater);
-        }
     }
 
     /**
@@ -192,9 +187,9 @@ final class Reflection {
      * A Registry implementation that fetches accessor and updater from arrays of MethodHandles.
      */
     private static class ParameterToIntMappingCache implements Cache {
-        private final OneTimeExecution[] executions;
         private final CallSite callSite;
-        private final MethodHandle updater;
+        private final MethodHandle target, filter, exceptionHandler;
+        private final int maximum;
 
         /**
          * Creates the caching handle factory.
@@ -204,7 +199,9 @@ final class Reflection {
          */
         ParameterToIntMappingCache(MethodHandle target, MethodHandle filter, int maximum) {
             checkTargetAndFilter(target, filter);
-            this.executions = new OneTimeExecution[maximum];
+            this.target = target;
+            this.filter = filter;
+            this.maximum = maximum;
             MethodHandles.Lookup lookup = lookup();
             MethodHandle exceptionHandler;
             try {
@@ -213,10 +210,14 @@ final class Reflection {
                 throw new InternalError(ex);
             }
             exceptionHandler = MethodHandles.insertArguments(exceptionHandler, 3, maximum - 1);
-            exceptionHandler = modifyExceptionHandler(exceptionHandler, filter, target.type());
-            MethodHandle primary = createFullHandle(target, executions, filter, exceptionHandler, Registry::getAccessor);
-            callSite = new ConstantCallSite(primary);
-            updater = createFullHandle(target, executions, filter, exceptionHandler, Registry::getUpdater);
+            this.exceptionHandler = modifyExceptionHandler(exceptionHandler, filter, target.type());
+            callSite = new MutableCallSite(target.type());
+            reset();
+        }
+
+        private MethodHandle createAccessorHandle() {
+            MethodHandle[] executions = new MethodHandle[maximum];
+            return createFullHandle(target, callSite, executions, filter, exceptionHandler);
         }
 
         @Override
@@ -231,41 +232,42 @@ final class Reflection {
 
         @Override
         public void reset() {
-            for (Resettable r : executions) {
-                r.reset();
+            callSite.setTarget(createAccessorHandle());
+            if (callSite instanceof MutableCallSite) {
+                MutableCallSite.syncAll(new MutableCallSite[] {
+                        (MutableCallSite) callSite
+                });
             }
-        }
-
-        @Override
-        public MethodHandle getUpdater() {
-            return updater;
         }
     }
 
-    private static MethodHandle[] createAccessors(MethodHandle target, OneTimeExecution[] executions, Function<Registry, MethodHandle> type) {
+    private static void fillAccessors(MethodHandle target, CallSite outerCallSite, MethodHandle[] executions) {
         int length = executions.length;
-        MethodHandle[] accessors = new MethodHandle[length];
         for (int i=0; i < length; i++) {
-            OneTimeExecution x = executions[i];
-            if (x == null) {
-                x = OneTimeExecution.createFor(target);
-                executions[i] = x;
+            MethodHandle h = executions[i];
+            if (h == null) {
+                h = createArrayUpdatingHandle(target, outerCallSite, executions, i);
+                executions[i] = h;
             }
-            accessors[i] = type.apply(x);
         }
-
-        return accessors;
     }
 
-    private static MethodHandle createAccessingHandle(MethodHandle target, OneTimeExecution[] executions, MethodHandle filter, Function<Registry, MethodHandle> type) {
-        MethodHandle[] accessors = createAccessors(target, executions, type);
-        MethodHandle getFromArray = MethodHandles.arrayElementGetter(MethodHandle[].class).bindTo(accessors);
+    private static MethodHandle createArrayUpdatingHandle(MethodHandle target, CallSite outerCallSite, MethodHandle[] executions, int arrayIndex) {
+        MethodHandle setTarget = MethodHandles.arrayElementSetter(MethodHandle[].class);
+        setTarget = MethodHandles.insertArguments(setTarget, 0, executions, arrayIndex);
+        setTarget = addMutableCallSiteSynchronization(setTarget, outerCallSite);
+        return createSingleExecutionHandle(target, setTarget);
+    }
+
+    private static MethodHandle createAccessingHandle(MethodHandle target, CallSite outerCallSite, MethodHandle[] executions, MethodHandle filter) {
+        fillAccessors(target, outerCallSite, executions);
+        MethodHandle getFromArray = MethodHandles.arrayElementGetter(MethodHandle[].class).bindTo(executions);
         MethodHandle filtered = applyFilter(getFromArray, filter, 0);
         return Methods.acceptThese(filtered, target.type().parameterArray());
     }
 
-    private static MethodHandle createFullHandle(MethodHandle target, OneTimeExecution[] executions, MethodHandle filter, MethodHandle exceptionHandler, Function<Registry, MethodHandle> type) {
-        MethodHandle primary = createAccessingHandle(target, executions, filter, type);
+    private static MethodHandle createFullHandle(MethodHandle target, CallSite outerCallSite, MethodHandle[] executions, MethodHandle filter, MethodHandle exceptionHandler) {
+        MethodHandle primary = createAccessingHandle(target, outerCallSite, executions, filter);
         MethodHandle handleGetter = MethodHandles.catchException(primary, ArrayIndexOutOfBoundsException.class, exceptionHandler);
         MethodHandle invoker = MethodHandles.exactInvoker(target.type());
         return MethodHandles.foldArguments(invoker, handleGetter);
@@ -279,11 +281,11 @@ final class Reflection {
 
     private static class ExpandableParameterToIntMappingCache implements Cache {
         private final MethodHandle target, filter;
-        private final CallSite accessorCallSite, updaterCallSite;
+        private final CallSite callSite;
         private final int maximumLength, stepSize;
-        private final MethodHandle accessorExceptionHandler, updaterExceptionHandler;
+        private final MethodHandle exceptionHandler;
         private final Semaphore semaphore;
-        private OneTimeExecution[] executions;
+        private MethodHandle[] executions;
 
         /**
          * Creates the caching handle factory.
@@ -293,15 +295,13 @@ final class Reflection {
          * @param finalMaximum This is the absolute maximum size; if this exceeds, an exception is thrown. Use this to limit
          *                     the amount of stored keys to avoid memory and performance issues
          */
-        ExpandableParameterToIntMappingCache(MethodHandle target, MethodHandle filter,
-                                             CallSite accessorCallSite, CallSite updaterCallSite,
+        ExpandableParameterToIntMappingCache(MethodHandle target, MethodHandle filter, MutableCallSite callSite,
                                              int initialMaximum, int finalMaximum, int stepSize) {
             if (finalMaximum >= 0 && finalMaximum < initialMaximum) {
                 throw new IllegalArgumentException(finalMaximum + " < " + initialMaximum);
             }
             checkTargetAndFilter(target, filter);
-            this.accessorCallSite = accessorCallSite;
-            this.updaterCallSite = updaterCallSite;
+            this.callSite = callSite;
             this.target = target;
             this.filter = filter;
             this.maximumLength = finalMaximum;
@@ -311,14 +311,11 @@ final class Reflection {
 
             MethodHandle exceptionHandler;
             try {
-                exceptionHandler = lookup().bind(this, "outOfBounds", methodType(MethodHandle.class, ArrayIndexOutOfBoundsException.class, int.class, Object[].class, Function.class));
+                exceptionHandler = lookup().bind(this, "outOfBounds", methodType(MethodHandle.class, ArrayIndexOutOfBoundsException.class, int.class, Object[].class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
                 throw new InternalError(ex);
             }
-            MethodHandle specificExceptionHandler = MethodHandles.insertArguments(exceptionHandler, 3, (Function<Registry, MethodHandle>) Registry::getAccessor);
-            this.accessorExceptionHandler = modifyExceptionHandler(specificExceptionHandler, filter, target.type(), semaphore);
-            specificExceptionHandler = MethodHandles.insertArguments(exceptionHandler, 3, (Function<Registry, MethodHandle>) Registry::getUpdater);
-            this.updaterExceptionHandler = modifyExceptionHandler(specificExceptionHandler, filter, target.type(), semaphore);
+            this.exceptionHandler = modifyExceptionHandler(exceptionHandler, filter, target.type(), semaphore);
 
             updateCallSites();
         }
@@ -332,7 +329,7 @@ final class Reflection {
          *                     the amount of stored keys to avoid memory and performance issues
          */
         ExpandableParameterToIntMappingCache(MethodHandle target, MethodHandle filter, int initialMaximum, int finalMaximum, int stepSize) {
-            this(target, filter, new MutableCallSite(target.type()), new MutableCallSite(target.type()), initialMaximum, finalMaximum, stepSize);
+            this(target, filter, new MutableCallSite(target.type()), initialMaximum, finalMaximum, stepSize);
         }
 
         private int expandExecutions(int length) {
@@ -343,83 +340,69 @@ final class Reflection {
 
         private void expandExecutions(int start, int length) {
             if (start == 0) {
-                executions = new OneTimeExecution[length];
+                executions = new MethodHandle[length];
             } else if (start < length) {
                 executions = Arrays.copyOf(executions, length);
             } else {
                 return;
             }
             for (int i=start; i < length; i++) {
-                executions[i] = OneTimeExecution.createFor(target);
+                executions[i] = target;
             }
         }
 
         @Override
         public CallSite getCallSite() {
-            return accessorCallSite;
+            return callSite;
         }
 
         @Override
         public void reset() {
-            semaphore.acquireUninterruptibly();
-            try {
-                for (Resettable r : executions) {
-                    r.reset();
-                }
-            } finally {
-                semaphore.release();
-            }
-        }
-
-        @Override
-        public MethodHandle getUpdater() {
-            return updaterCallSite.dynamicInvoker();
+            expandExecutions(0, maximumLength);
         }
 
         @SuppressWarnings("unused")
-        private MethodHandle outOfBounds(ArrayIndexOutOfBoundsException ex, int index, Object[] arguments, Function<Registry, MethodHandle> accessType) {
+        private MethodHandle outOfBounds(ArrayIndexOutOfBoundsException ex, int index, Object[] arguments) {
             if (index < 0) {
                 throw new LimitExceededException("" + index);
             }
             if (index < executions.length) {
-                // If a concurrent call already expanded
-                return accessType.apply(executions[index]);
+                // If a concurrent call already expanded the array
+                return executions[index];
             }
             if (maximumLength >= 0 && index > maximumLength) {
                 throw new LimitExceededException(index + " > " + maximumLength);
             }
             int old = expandExecutions(index + stepSize);
             updateCallSites();
-            return accessType.apply(executions[index]);
+            return executions[index];
         }
 
         private void updateCallSites() {
-            MethodHandle accessor = createFullHandle(target, executions, filter, accessorExceptionHandler, Registry::getAccessor);
-            MethodHandle updater = createFullHandle(target, executions, filter, updaterExceptionHandler, Registry::getUpdater);
-            accessorCallSite.setTarget(accessor);
-            updaterCallSite.setTarget(updater);
+            MethodHandle accessor = createFullHandle(target, callSite, executions, filter, exceptionHandler);
+            callSite.setTarget(accessor);
         }
     }
 
-    static MethodHandle addMutableCallSiteSynchronization(MethodHandle doBefore, MutableCallSite... callSites) {
-        if (callSites.length == 0) {
-            return doBefore;
+    private static MethodHandle addMutableCallSiteSynchronization(MethodHandle doBefore, CallSite callSite) {
+        if (callSite instanceof MutableCallSite) {
+            MethodHandle syncOuterCallSite = SYNC.bindTo(new MutableCallSite[] {(MutableCallSite) callSite });
+            syncOuterCallSite = Methods.acceptThese(syncOuterCallSite, doBefore.type().parameterArray());
+            return MethodHandles.foldArguments(syncOuterCallSite, doBefore);
         }
-        MethodHandle syncOuterCallSite = SYNC.bindTo(callSites);
-        syncOuterCallSite = Methods.acceptThese(syncOuterCallSite, doBefore.type().parameterArray());
-        return MethodHandles.foldArguments(syncOuterCallSite, doBefore);
+        return doBefore;
     }
 
     /**
      * Creates a handle of type (&lt;type.returnType&gt;)MethodHandle that creates a constant handle returning the input value
      * returning the input of this factory.
      *
-     * The created constant handle will be of the same type as the goven type parameter.
+     * The created constant handle will be of the same type as the given type parameter.
      *
      * @param type The type of the new constant handle
      * @return the factory handle
      */
-    static MethodHandle createConstantHandleFactory(MethodType type) {
+    private static MethodHandle createConstantHandleFactory(MethodType type) {
         Class<?> returnType = type.returnType();
         MethodHandle constantHandleFactory = CONSTANT_HANDLE_FACTORY.bindTo(returnType).asType(methodType(MethodHandle.class, returnType));
         if (type.parameterCount() > 0) {
@@ -428,5 +411,70 @@ final class Reflection {
         }
 
         return constantHandleFactory;
+    }
+
+    /**
+     * Creates a handle that calls the given execution, and then creates a static constant handle that will be used
+     * as a parameter in the given setTarget handle.
+     *
+     * @param execution A handle of arbitrary type, executing something
+     * @param setTarget (MethodHandle)void -- sets the created constant handle
+     * @return A handle of the same type as the execution handle
+     */
+    public static MethodHandle createSingleExecutionHandle(MethodHandle execution, MethodHandle setTarget) {
+        MethodType type = execution.type();
+        if (type.returnType() == void.class) {
+            return createVoidSyncHandle(execution, setTarget);
+        }
+
+        MethodHandle constantHandleFactory = Reflection.createConstantHandleFactory(type);
+        setTarget = MethodHandles.filterArguments(setTarget, 0, constantHandleFactory);
+
+        MethodHandle setTargetAndReturnValue = Methods.returnArgument(setTarget, 0);
+        MethodHandle result = MethodHandles.filterReturnValue(execution, setTargetAndReturnValue);
+        if (execution.isVarargsCollector()) {
+            result = result.asVarargsCollector(type.parameterType(type.parameterCount() - 1));
+        }
+        return result;
+    }
+
+    private static MethodHandle createVoidSyncHandle(MethodHandle execution, MethodHandle setTarget) {
+        MethodHandle doNothing = Methods.acceptThese(Methods.DO_NOTHING, execution.type().parameterArray());
+        MethodHandle setTargetToNoop = setTarget.bindTo(doNothing);
+
+        // The following is only needed if execution accepts parameters, which is only the case when used from other MultiArgumentExecutionBuilder
+        setTargetToNoop = Methods.acceptThese(setTargetToNoop, execution.type().parameterArray());
+        return MethodHandles.foldArguments(setTargetToNoop, execution);
+    }
+
+    static MethodHandle createSingleExecutionWithUpdater(MethodHandle target, CallSite callSite, Semaphore semaphore) {
+        MethodHandle setTarget = SET_TARGET.bindTo(callSite);
+        setTarget = addMutableCallSiteSynchronization(setTarget, callSite);
+        return createSingleExecutionWithUpdater(target, setTarget, semaphore);
+    }
+
+    private static MethodHandle createSingleExecutionWithUpdater(MethodHandle target, MethodHandle setTarget, Semaphore semaphore) {
+        MethodType type = target.type();
+        CallSite innerCallSite = new VolatileCallSite(type);
+        MethodHandle setTargetInner = SET_TARGET.bindTo(innerCallSite);
+
+        MethodHandle setBothTargets = MethodHandles.foldArguments(setTarget, setTargetInner);
+        MethodHandle innerCaller = Reflection.createSingleExecutionHandle(target, setBothTargets);
+        innerCallSite.setTarget(innerCaller);
+        MethodHandle guardedCaller = Methods.synchronizeWith(innerCallSite.dynamicInvoker(), semaphore);
+        try {
+            setTarget.invokeExact(guardedCaller);
+        } catch (RuntimeException | Error e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new RuntimeException("Exception when setting target", t);
+        }
+
+        MethodHandle resetInner = setTargetInner.bindTo(innerCaller);
+        resetInner = Methods.acceptThese(resetInner, type.parameterArray());
+        if (target.isVarargsCollector()) {
+            resetInner = resetInner.asVarargsCollector(type.parameterType(type.parameterCount() - 1));
+        }
+        return MethodHandles.foldArguments(guardedCaller, resetInner);
     }
 }

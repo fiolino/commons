@@ -1,5 +1,6 @@
 package org.fiolino.common.util;
 
+import org.fiolino.common.ioc.Instantiator;
 import org.fiolino.common.reflection.Methods;
 import org.junit.Test;
 
@@ -158,9 +159,9 @@ public class DeserializerTest {
 
     @Test
     public void testContainer2() throws Throwable {
-        Deserializer forA = new Deserializer(Instantiator.getDefault().findProvider(A.class));
+        Deserializer forA = new Deserializer(Instantiator.getDefault().findProviderHandle(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
-        Deserializer forC = new Deserializer(Instantiator.getDefault().findProvider(C.class));
+        Deserializer forC = new Deserializer(Instantiator.getDefault().findProviderHandle(C.class));
         addFieldsTo(forC, C.class, "name", "text");
         forC.setEmbeddedField(Methods.findSetter(lookup(), C.class, "a", A.class), forA.createDeserializer(), 2, () -> "a");
         MethodHandle factory = forC.createDeserializer();
@@ -176,9 +177,9 @@ public class DeserializerTest {
 
     @Test
     public void testContainerWithParenthesis() throws Throwable {
-        Deserializer forA = new Deserializer(Instantiator.getDefault().findProvider(A.class));
+        Deserializer forA = new Deserializer(Instantiator.getDefault().findProviderHandle(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
-        Deserializer forC = new Deserializer(Instantiator.getDefault().findProvider(C.class));
+        Deserializer forC = new Deserializer(Instantiator.getDefault().findProviderHandle(C.class));
         addFieldsTo(forC, C.class, "name", "text");
         forC.setEmbeddedField(Methods.findSetter(lookup(), C.class, "a", A.class), forA.createDeserializer(), 2, () -> "a");
         MethodHandle factory = forC.createDeserializer();

@@ -30,12 +30,12 @@ public final class Converters {
 
     /**
      * Creates a MethodHandle that accepts some value as the only argument and returns the specified type.
-     * <p/>
+     * <p>
      * A static valueOf() method is called on the specified type, which works for all Number types and all Enums
      * plus a few more.
-     * <p/>
+     * <p>
      * For String/Number pairs, toString() resp. the constructor is used as well.
-     * <p/>
+     * <p>
      * Or, if the given type is a primitive, parseXXX() is called on the wrapper type, which works for all
      * primitive types except char and void.
      */
@@ -45,12 +45,12 @@ public final class Converters {
 
     /**
      * Creates a MethodHandle that accepts some value as the only argument and returns the specified type.
-     * <p/>
+     * <p>
      * A static valueOf() method is called on the specified type, which works for all Number types and all Enums
      * plus a few more.
-     * <p/>
+     * <p>
      * For String/Number pairs, toString() resp. the constructor is used as well.
-     * <p/>
+     * <p>
      * Or, if the given type is a primitive, parseXXX() is called on the wrapper type, which works for all
      * primitive types except char and void.
      */
@@ -293,10 +293,10 @@ public final class Converters {
 
     /**
      * Finds a converting handle that accepts the input type and returns the target.
-     * <p/>
+     * <p>
      * In contrast to ConverterLocator.find(), this never returns null, and the result is already
      * casted to the exact types.
-     * <p/>
+     * <p>
      *
      * @param loc    The locator
      * @param source From here...
@@ -394,10 +394,10 @@ public final class Converters {
 
     /**
      * Converts the arguments and return type of the given target handle so that it will match the given type.
-     * <p/>
+     * <p>
      * The resulting handle will be of the given type. All arguments and the return value are being converted
      * via the given {@link ConverterLocator}.
-     * <p/>
+     * <p>
      * The number of arguments of the given handle and the expected type don't need to match.
      * If the expected type has more arguments than the given target handle, the redundant parameters will just
      * be dropped.

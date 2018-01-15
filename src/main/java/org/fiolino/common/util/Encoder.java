@@ -2,13 +2,13 @@ package org.fiolino.common.util;
 
 /**
  * Encoding and decoding method for indexer to allow arbitrary names as Solr field names.
- * <p>
+ *
  * Names are encoded like this:
- * <p>
+ *
  * First come all valid characters;
  * if there were invalid ones, then a dollar sign is added, and for each invalid character,
  * a two-char hexadecimal value of its position plus a four-char hexadecimal value of the character follows.
- * <p>
+ *
  * Created by kuli on 09.02.16.
  */
 public class Encoder {

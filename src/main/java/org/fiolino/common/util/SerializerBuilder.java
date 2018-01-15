@@ -1,9 +1,9 @@
 package org.fiolino.common.util;
 
+import org.fiolino.annotations.SerialFieldIndex;
+import org.fiolino.annotations.SerializeEmbedded;
 import org.fiolino.common.analyzing.ClassWalker;
 import org.fiolino.common.reflection.*;
-import org.fiolino.data.annotation.SerialFieldIndex;
-import org.fiolino.data.annotation.SerializeEmbedded;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;

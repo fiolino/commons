@@ -86,7 +86,7 @@ public abstract class CharSet implements Serializable {
     /**
      * Gets the position of the next occurrence of any of my contained characters in the given string.
      *
-     * @see String::indexOf
+     * see String::indexOf
      *
      * @param string Where to look in
      * @return The position, or -1 if none of my characters are inside this string
@@ -98,7 +98,7 @@ public abstract class CharSet implements Serializable {
     /**
      * Gets the position of the next occurrence of any of my contained characters in the given string, starting from the second parameter.
      *
-     * @see String::indexOf
+     * see String::indexOf
      *
      * @param string Where to look in
      * @param start Start looking from here

@@ -1,10 +1,14 @@
 package org.fiolino.common.util;
 
+import org.fiolino.common.ioc.Instantiator;
+
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
+
+import static java.lang.invoke.MethodHandles.publicLookup;
 
 /**
  * Created by kuli on 07.01.16.
@@ -21,12 +25,13 @@ public final class DeserializerBuilder {
 
     /**
      * Creates a deserializer that accepts a String and returns the model's type with all fields filled that
-     * are annotated with {@link org.fiolino.data.annotation.SerialFieldIndex}.
+     * are annotated with {@link org.fiolino.annotations.SerialFieldIndex}.
      */
     public MethodHandle getDeserializer(Class<?> type) {
         return deserializers.computeIfAbsent(type, t -> {
-            MethodHandles.Lookup lookup = instantiator.getLookup().in(t);
-            MethodHandle constructor = instantiator.findProvider(type);
+            MethodHandles.Lookup lookup = // instantiator.getLookup().in(t);
+                    publicLookup().in(t);
+            MethodHandle constructor = instantiator.findProviderHandle(type);
             Deserializer deserializer = new Deserializer(constructor);
             analyze(lookup, t, deserializer);
             return deserializer.createDeserializer();

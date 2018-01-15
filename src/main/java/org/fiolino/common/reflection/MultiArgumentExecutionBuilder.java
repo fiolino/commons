@@ -52,20 +52,19 @@ final class MultiArgumentExecutionBuilder implements Registry {
     @SuppressWarnings("unused")
     private interface ParameterContainer<A> {}
 
-    private static final MethodHandle FILTER_TO_NULL, FILTER_FROM_NULL;
+    private static final MethodHandle FILTER_TO_NULL;
 
     static {
         MethodHandles.Lookup lookup = lookup();
         try {
             FILTER_TO_NULL = lookup.findStatic(lookup.lookupClass(), "returnToNull", methodType(Object.class, Object.class));
-            FILTER_FROM_NULL = lookup.findStatic(lookup.lookupClass(), "returnFromNull", methodType(Object.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError(ex);
         }
     }
 
     private final Map<?, ?> map;
-    private final MethodHandle accessor, updater;
+    private final MethodHandle accessor;
     private final OneTimeExecution nullFallback;
 
     private <T> MultiArgumentExecutionBuilder(Map<?, ?> map, Function<T, ?> targetFunction, MethodHandle targetHandle) {
@@ -74,10 +73,8 @@ final class MultiArgumentExecutionBuilder implements Registry {
         int parameterCount = expectedType.parameterCount();
         assert parameterCount >= 1;
 
-        MethodType setType = methodType(Object.class, Object.class, Object.class);
-        MethodHandle update, setIfAbsent;
+        MethodHandle setIfAbsent;
         try {
-            update = publicLookup().bind(map, "put", setType);
             setIfAbsent = publicLookup().bind(map, "computeIfAbsent", methodType(Object.class, Object.class, Function.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError(ex);
@@ -95,33 +92,12 @@ final class MultiArgumentExecutionBuilder implements Registry {
             setIfAbsent = MethodHandles.insertArguments(setIfAbsent, 1, targetFunction);
         }
 
-        int updateOffset;
-        MethodType updateType;
-        if (returnType == void.class) {
-            update = MethodHandles.insertArguments(update, 1, Null.VALUE);
-            updateOffset = 0;
-            updateType = expectedType;
-        } else {
-            if (needsNullCheck(returnType, map)) {
-                // for Objects it needs null check
-                update = MethodHandles.filterArguments(update, 1, FILTER_FROM_NULL);
-            }
-            update = MethodHandles.permuteArguments(update, setType, 1, 0);
-            update = Methods.returnArgument(update, 0); // Returns null or other new value
-            updateOffset = 1;
-            updateType = expectedType.insertParameterTypes(0, returnType);
-        }
         Class<?>[] expectedParameters = expectedType.parameterArray();
         if (parameterCount > 1) {
-            update = collectArguments(update, updateOffset, parameterCount, updateType.parameterArray());
-            setIfAbsent= collectArguments(setIfAbsent, 0, parameterCount, expectedParameters);
+            setIfAbsent= collectArguments(setIfAbsent, parameterCount, expectedParameters);
         }
-        setIfAbsent = convertArraysToContainers(setIfAbsent, 0, expectedParameters);
+        setIfAbsent = convertArraysToContainers(setIfAbsent, expectedParameters);
         setIfAbsent = setIfAbsent.asType(expectedType);
-
-        update = convertArraysToContainers(update, updateOffset, expectedParameters);
-        update = update.asType(updateType);
-        update = MethodHandles.foldArguments(update, targetHandle);
 
         if (parameterCount > 1 || expectedType.parameterType(0).isArray() || !needsNullCheck(expectedType.parameterType(0), map)) {
             nullFallback = null;
@@ -129,40 +105,37 @@ final class MultiArgumentExecutionBuilder implements Registry {
             OneTimeExecution ex = OneTimeExecution.createFor(targetHandle);
             MethodHandle nullCheck = Methods.nullCheck(expectedType.parameterType(0));
             setIfAbsent = MethodHandles.guardWithTest(nullCheck, ex.getAccessor(), setIfAbsent);
-            update = MethodHandles.guardWithTest(nullCheck, ex.getUpdater(), update);
             nullFallback = ex;
         }
 
         if (targetHandle.isVarargsCollector()) {
             Class<?> parameterType = expectedType.parameterType(expectedType.parameterCount() - 1);
             setIfAbsent = setIfAbsent.asVarargsCollector(parameterType);
-            update = update.asVarargsCollector(parameterType);
         }
         accessor = setIfAbsent;
-        updater = update;
     }
 
     private static boolean needsNullCheck(Class<?> type, Map<?, ?> mapImplementation) {
         return !(type.isPrimitive() || mapImplementation instanceof HashMap);
     }
 
-    private static MethodHandle convertArraysToContainers(MethodHandle target, int offset, Class<?>[] arguments) {
+    private static MethodHandle convertArraysToContainers(MethodHandle target, Class<?>[] arguments) {
         MethodHandle h = target;
         for (int i=0; i < arguments.length; i++) {
             Class<?> p = arguments[i];
             if (p.isArray()) {
                 MethodHandle toContainer = ArrayMappers.toContainer(p).asType(methodType(Object.class, Object.class));
-                h = MethodHandles.filterArguments(h, i + offset, toContainer);
+                h = MethodHandles.filterArguments(h, i, toContainer);
             }
         }
 
         return h;
     }
 
-    private static MethodHandle collectArguments(MethodHandle target, int pos, int argCount, Class<?>[] parameters) {
-        Class<?> p = commonClassOf(parameters, pos, argCount);
+    private static MethodHandle collectArguments(MethodHandle target, int argCount, Class<?>[] parameters) {
+        Class<?> p = commonClassOf(parameters, 0, argCount);
         MethodHandle toContainer = ArrayMappers.toContainer(p);
-        MethodHandle h = MethodHandles.filterArguments(target, pos, toContainer.asType(toContainer.type().changeReturnType(target.type().parameterType(pos))));
+        MethodHandle h = MethodHandles.filterArguments(target, 0, toContainer.asType(toContainer.type().changeReturnType(target.type().parameterType(0))));
         return h.asCollector(toContainer.type().parameterType(0), argCount);
 
     }
@@ -269,11 +242,6 @@ final class MultiArgumentExecutionBuilder implements Registry {
     @Override
     public MethodHandle getAccessor() {
         return accessor;
-    }
-
-    @Override
-    public MethodHandle getUpdater() {
-        return updater;
     }
 
     private static final class ArrayMappers {

@@ -6,7 +6,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
- * @author Michael Kuhlmann <michael@kuhlmann.org>
+ * Defines the data structure used in Containers.
  */
 public class Schema {
 

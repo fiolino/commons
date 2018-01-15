@@ -1,5 +1,8 @@
 package org.fiolino.common.ioc;
 
+import org.fiolino.annotations.Component;
+import org.fiolino.annotations.Factory;
+import org.fiolino.annotations.Inject;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -82,7 +85,7 @@ public class BeansTest {
     public static class ClassWithParameterAndBean extends ClassWithParameter {
         final MyInterface myInterface;
 
-        public ClassWithParameterAndBean(String string, @Bean("a") MyInterface myInterface) {
+        public ClassWithParameterAndBean(String string, @Inject("a") MyInterface myInterface) {
             super(string);
             this.myInterface = myInterface;
         }

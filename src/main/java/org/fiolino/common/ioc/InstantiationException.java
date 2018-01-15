@@ -1,4 +1,4 @@
-package org.fiolino.common.util;
+package org.fiolino.common.ioc;
 
 /**
  * Created by kuli on 09.12.15.

@@ -44,7 +44,7 @@ final class OneTimeRegistryBuilder implements OneTimeExecution {
         this.callSite = callSite;
         semaphore = new Semaphore(1);
 
-        updatingHandle = Reflection.createSingleExecutionWithUpdater(target, callSite, semaphore);
+        updatingHandle = Reflection.createSingleExecutionWithSynchronization(target, callSite, semaphore);
     }
 
     @Override

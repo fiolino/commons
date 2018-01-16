@@ -384,6 +384,13 @@ final class Reflection {
         }
     }
 
+    /**
+     * Adds a call to MutableCallSite.syncAll() after the given handle if the callsite is a {@link MutableCallSite}.
+     *
+     * @param doBefore What will be done before
+     * @param callSite The callsite to sync
+     * @return A handle of the same type as doBefore
+     */
     private static MethodHandle addMutableCallSiteSynchronization(MethodHandle doBefore, CallSite callSite) {
         if (callSite instanceof MutableCallSite) {
             MethodHandle syncOuterCallSite = SYNC.bindTo(new MutableCallSite[] {(MutableCallSite) callSite });
@@ -421,7 +428,7 @@ final class Reflection {
      * @param setTarget (MethodHandle)void -- sets the created constant handle
      * @return A handle of the same type as the execution handle
      */
-    public static MethodHandle createSingleExecutionHandle(MethodHandle execution, MethodHandle setTarget) {
+    private static MethodHandle createSingleExecutionHandle(MethodHandle execution, MethodHandle setTarget) {
         MethodType type = execution.type();
         if (type.returnType() == void.class) {
             return createVoidSyncHandle(execution, setTarget);
@@ -438,6 +445,13 @@ final class Reflection {
         return result;
     }
 
+    /**
+     * Creates a handle that calld execution only once, and then changes the target to a no-op handle.
+     *
+     * @param execution What to do only once
+     * @param setTarget (MethodHandle)void
+     * @return A handle of the same type as execution
+     */
     private static MethodHandle createVoidSyncHandle(MethodHandle execution, MethodHandle setTarget) {
         MethodHandle doNothing = Methods.acceptThese(Methods.DO_NOTHING, execution.type().parameterArray());
         MethodHandle setTargetToNoop = setTarget.bindTo(doNothing);
@@ -447,19 +461,41 @@ final class Reflection {
         return MethodHandles.foldArguments(setTargetToNoop, execution);
     }
 
-    static MethodHandle createSingleExecutionWithUpdater(MethodHandle target, CallSite callSite, Semaphore semaphore) {
+    /**
+     * Creates a handle that will call the given target exactly once, wrapped in a synchronized VolatileCallSite, so
+     * that it's guaranteed that it will definitely be called only once.
+     *
+     * The return value will be stored in a ConstantHandle and pushed back into the given {@link CallSite}.
+     *
+     * @param target What to execute
+     * @param callSite Where to put the constant value
+     * @param semaphore Used to synchronize the execution
+     * @return A handle of the same type as target
+     */
+    static MethodHandle createSingleExecutionWithSynchronization(MethodHandle target, CallSite callSite, Semaphore semaphore) {
         MethodHandle setTarget = SET_TARGET.bindTo(callSite);
         setTarget = addMutableCallSiteSynchronization(setTarget, callSite);
-        return createSingleExecutionWithUpdater(target, setTarget, semaphore);
+        return createSingleExecutionWithSynchronization(target, setTarget, semaphore);
     }
 
-    private static MethodHandle createSingleExecutionWithUpdater(MethodHandle target, MethodHandle setTarget, Semaphore semaphore) {
+    /**
+     * Creates a handle that will call the given target exactly once, wrapped in a synchronized VolatileCallSite, so
+     * that it's guaranteed that it will definitely be called only once.
+     *
+     * The return value will be stored in a ConstantHandle and pushed back via the given setTarget handle.
+     *
+     * @param target What to execute
+     * @param setTarget (MethodHandle)void -- will be called when the return value is set
+     * @param semaphore Used to synchronize the execution
+     * @return A handle of the same type as target
+     */
+    private static MethodHandle createSingleExecutionWithSynchronization(MethodHandle target, MethodHandle setTarget, Semaphore semaphore) {
         MethodType type = target.type();
         CallSite innerCallSite = new VolatileCallSite(type);
         MethodHandle setTargetInner = SET_TARGET.bindTo(innerCallSite);
 
         MethodHandle setBothTargets = MethodHandles.foldArguments(setTarget, setTargetInner);
-        MethodHandle innerCaller = Reflection.createSingleExecutionHandle(target, setBothTargets);
+        MethodHandle innerCaller = createSingleExecutionHandle(target, setBothTargets);
         innerCallSite.setTarget(innerCaller);
         MethodHandle guardedCaller = Methods.synchronizeWith(innerCallSite.dynamicInvoker(), semaphore);
         try {

@@ -20,10 +20,6 @@ repositories {
     mavenLocal()
     mavenCentral()
     maven {
-        name "default"
-        url publicUrl
-    }
-    maven {
         name "snapshots"
         url "https://oss.sonatype.org/content/repositories/snapshots/"
     }

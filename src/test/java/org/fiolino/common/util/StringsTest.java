@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -242,5 +243,62 @@ public class StringsTest {
         assertEquals(-1, x.end);
         assertTrue(x.wasEOL());
         assertEquals(Strings.Extract.QuotationStatus.QUOTED_OPEN, x.quotationStatus);
+    }
+
+    @Test
+    public void testPrintLongDuration0() {
+        String representation = Strings.printLongDuration(0);
+        assertEquals("0", representation);
+    }
+
+    @Test
+    public void testPrintLongDurationNanos() {
+        String representation = Strings.printLongDuration(123);
+        assertEquals("123 nanoseconds", representation);
+    }
+
+    @Test
+    public void testPrintLongDurationDays() {
+        long duration = TimeUnit.DAYS.toNanos(5);
+        duration += TimeUnit.HOURS.toNanos(23);
+        duration += TimeUnit.MINUTES.toNanos(1);
+        duration += TimeUnit.MICROSECONDS.toNanos(99);
+        // MILLIS and NANOS are 0 by intention
+        String representation = Strings.printLongDuration(duration);
+        assertEquals("5 days 23 hours 1 minute 99 microseconds", representation);
+    }
+
+    @Test
+    public void testReadDuration() {
+        long duration = Strings.parseLongDuration("1 hour, 40 minutes and 33 sec.");
+        long expected = TimeUnit.HOURS.toNanos(1) + TimeUnit.MINUTES.toNanos(40) + TimeUnit.SECONDS.toNanos(33);
+        assertEquals(expected, duration);
+    }
+
+    @Test
+    public void testReadDurationIgnoreGarbage() {
+        long duration = Strings.parseLongDuration("The duration should be 5 minutes, not more!");
+        long expected = TimeUnit.MINUTES.toNanos(5);
+        assertEquals(expected, duration);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testReadDurationFailed1() {
+        Strings.parseLongDuration("");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testReadDurationFailed2() {
+        Strings.parseLongDuration("100 years");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testReadDurationFailed3() {
+        Strings.parseLongDuration("351");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testReadDurationFailed4() {
+        Strings.parseLongDuration("seconds: 5");
     }
 }

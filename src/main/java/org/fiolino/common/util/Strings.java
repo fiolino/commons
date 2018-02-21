@@ -1,8 +1,10 @@
 package org.fiolino.common.util;
 
+import java.text.ParseException;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -213,6 +215,23 @@ public final class Strings {
      * The finest parameter specifies the fines displayed time unit.
      */
     public static String printDuration(long durationInNanos, TimeUnit finest) {
+        return appendDuration(new StringBuilder(), durationInNanos, finest).toString();
+    }
+
+    /**
+     * Appends a String representation of a time delay in nanoseconds to a StringBuilder.
+     * <p>
+     * Examples are MM:SS or HH:MM:SS:mmm.nnnnnn
+     * <p>
+     * The hours are added only if the duration is at least one hour.
+     * <p>
+     * The finest parameter specifies the fines displayed time unit.
+     */
+    public static StringBuilder appendDuration(StringBuilder sb, long durationInNanos, TimeUnit finest) {
+        if (durationInNanos < 0) {
+            sb.append('-');
+            durationInNanos *= -1;
+        }
         long nanos = durationInNanos % 1000000L;
         long duration = durationInNanos / 1000000L;
         long millis = duration % 1000L;
@@ -225,7 +244,6 @@ public final class Strings {
         duration /= 24L;
         long days = duration;
 
-        StringBuilder sb = new StringBuilder();
         if (days > 0) {
             sb.append(days).append(':');
             appendNumber(sb, hours, 2).append(':');
@@ -247,7 +265,117 @@ public final class Strings {
             }
         }
 
-        return sb.toString();
+        return sb;
+    }
+
+    private static final TimeUnit[] TIME_UNITS = {
+            DAYS, HOURS, MINUTES, SECONDS, MILLISECONDS, MICROSECONDS, NANOSECONDS
+    };
+
+    private static final String[] TIME_UNIT_REPRESENTATIONS = {
+            "day", "hour", "minute", "second", "millisecond", "microsecond", "nanosecond"
+    };
+
+    /**
+     * Adds a long readable representation of the given duration.
+     * Examples are "1 hour 13 minutes 56 seconds" or so.
+     * Adds only time units whose values would not be zero.
+     */
+    public static StringBuilder appendLongDuration(StringBuilder sb, long durationInNanos) {
+        if (durationInNanos == 0) {
+            sb.append("0");
+            return sb;
+        }
+
+        if (durationInNanos < 0) {
+            sb.append('-');
+            durationInNanos *= -1;
+        }
+        boolean isEmpty = true;
+        long remaining = durationInNanos;
+        for (int i=0; i < TIME_UNITS.length && remaining > 0; i++) {
+            TimeUnit u = TIME_UNITS[i];
+            long thisVal = u.convert(remaining, NANOSECONDS);
+            if (thisVal == 0) continue;
+            if (isEmpty) isEmpty = false;
+            else sb.append(' ');
+            sb.append(thisVal).append(' ').append(TIME_UNIT_REPRESENTATIONS[i]);
+            if (thisVal > 1) sb.append('s');
+            remaining -= u.toNanos(thisVal);
+        }
+
+        return sb;
+    }
+
+    /**
+     * Prints a long readable representation of the given duration.
+     * Examples are "1 hour 13 minutes 56 seconds" or so.
+     * Adds only time units whose values would not be zero.
+     */
+    public static String printLongDuration(long durationInNanos) {
+        return appendLongDuration(new StringBuilder(), durationInNanos).toString();
+    }
+
+    private static final Pattern NUMBERS_AND_STRINGS = Pattern.compile("(\\d+)\\s*(\\w+)");
+
+    /**
+     * Parses a long representation of a duration as in the result of printLongDuration().
+     * The format is:
+     * number + time unit, number + time unit...
+     * The time unit must be the unique start of some TimeUnit constant.
+     * Multiple entries can be added after each other.
+     */
+    public static long parseLongDuration(String desc) {
+        Matcher m = NUMBERS_AND_STRINGS.matcher(desc);
+        if (!m.find()) {
+            throw new IllegalArgumentException("No duration description: " + desc);
+        }
+        long result = 0;
+        do {
+            long longVal = Long.parseLong(m.group(1));
+            String unitVal = m.group(2).toUpperCase();
+
+            TimeUnit found = null;
+            for (TimeUnit u : TimeUnit.values()) {
+                if (u.name().startsWith(unitVal)) {
+                    if (found != null) {
+                        throw new IllegalArgumentException(desc + " has ambiguous time unit " + unitVal);
+                    }
+                    found = u;
+                }
+            }
+
+            if (found == null) {
+                throw new IllegalArgumentException(desc + " has undefined time unit " + unitVal);
+            }
+
+            long toNanos = found.toNanos(longVal);
+            result += toNanos;
+        } while (m.find());
+
+        return result;
+    }
+
+    private static TimeUnit findFrom(String desc) {
+        String textOnly = desc.replaceAll("\\W", "").toUpperCase();
+        if (textOnly.equals("")) {
+            // No unit given assume seconds
+            return TimeUnit.SECONDS;
+        }
+        TimeUnit found = null;
+        for (TimeUnit u : TimeUnit.values()) {
+            if (u.name().startsWith(textOnly)) {
+                if (found != null) {
+                    throw new IllegalArgumentException(desc + " has ambiguous time unit");
+                }
+                found = u;
+            }
+        }
+
+        if (found == null) {
+            throw new IllegalArgumentException(desc + " does not describe a time unit");
+        }
+        return found;
     }
 
     private static final long[] DIGI; // 0, 0, 10, 100, 1000, ...

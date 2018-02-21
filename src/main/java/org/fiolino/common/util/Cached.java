@@ -247,7 +247,7 @@ public abstract class Cached<T> implements Supplier<T> {
      * Update the cached value, if refresh rate has expired.
      */
     @Override
-    public T get() {
+    public final T get() {
         T value = instance;
         if (neededRefresh()) {
             return instance;
@@ -270,7 +270,7 @@ public abstract class Cached<T> implements Supplier<T> {
      * Refreshes the value to an updated instance.
      * This either starts the refresh process immediately, or it waits until another updating thread has finished.
      */
-    public void refresh() {
+    public final void refresh() {
         isInitialized = false;
         if (!tryRefresh()) {
             spinWait();

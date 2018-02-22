@@ -3,14 +3,14 @@ package org.fiolino.common.ioc;
 import org.fiolino.annotations.Component;
 import org.fiolino.annotations.Factory;
 import org.fiolino.annotations.Inject;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class BeansTest {
 
-    public interface MyInterface {
+    interface MyInterface {
     }
 
     @Component
@@ -26,19 +26,19 @@ public class BeansTest {
     }
 
     @Test
-    public void testDefault() {
+    void testDefault() {
         MyInterface bean = Beans.get(DefaultClass.class);
         assertTrue(bean instanceof DefaultClass);
     }
 
     @Test
-    public void testNameA() {
+    void testNameA() {
         MyInterface bean = Beans.get("a", MyInterface.class);
         assertTrue(bean instanceof ClassNamedA);
     }
 
     @Test
-    public void testNameB() {
+    void testNameB() {
         MyInterface bean = Beans.get("b", MyInterface.class);
         assertTrue(bean instanceof ClassNamedB);
     }
@@ -60,7 +60,7 @@ public class BeansTest {
     }
 
     @Test
-    public void testFactory() {
+    void testFactory() {
         NextInterface bean = Beans.get(NextInterface.class);
         String toString = bean.toString();
         assertEquals("From factory", toString);
@@ -76,7 +76,7 @@ public class BeansTest {
     }
 
     @Test
-    public void testParameter() {
+    void testParameter() {
         ClassWithParameter bean = Beans.instantiate(ClassWithParameter.class, "Some String");
         assertEquals("Some String", bean.string);
     }
@@ -92,7 +92,7 @@ public class BeansTest {
     }
 
     @Test
-    public void testWithBean() {
+    void testWithBean() {
         ClassWithParameterAndBean bean = Beans.instantiate(ClassWithParameterAndBean.class, "Another String");
         assertEquals("Another String", bean.string);
         assertTrue(bean.myInterface instanceof ClassNamedA);

@@ -2,7 +2,7 @@ package org.fiolino.common.processing.sink;
 
 import org.fiolino.common.container.Container;
 
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Created by kuli on 05.04.16.

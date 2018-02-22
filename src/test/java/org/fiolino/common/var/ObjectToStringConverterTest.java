@@ -1,8 +1,8 @@
 package org.fiolino.common.var;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Created by kuli on 29.11.16.
@@ -10,7 +10,7 @@ import static org.junit.Assert.assertEquals;
 public class ObjectToStringConverterTest {
 
     @Test
-    public void testSimpleString() {
+    void testSimpleString() {
         String test = "Hello World!";
         String fullPrint = new ObjectToStringConverter(2, 2).append(new StringBuilder(), test).toString();
         assertEquals("\"" + test + "\"", fullPrint);
@@ -22,7 +22,7 @@ public class ObjectToStringConverterTest {
     }
 
     @Test
-    public void testNormalFields() {
+    void testNormalFields() {
         A a = new A();
         a.string = "Hello World";
         a.primitive = 42;
@@ -40,7 +40,7 @@ public class ObjectToStringConverterTest {
     }
 
     @Test
-    public void testAnnotatedFields() {
+    void testAnnotatedFields() {
         B b = new B();
         b.string = "Hello World";
         b.primitive = 42;

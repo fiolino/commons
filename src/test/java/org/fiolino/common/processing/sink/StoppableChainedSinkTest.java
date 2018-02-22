@@ -1,17 +1,18 @@
 package org.fiolino.common.processing.sink;
 
 import org.fiolino.common.container.Container;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Created by kuli on 06.04.16.
  */
-public class StoppableChainedSinkTest {
+class StoppableChainedSinkTest {
     @Test
-    public void testNormal() throws Throwable {
+    void testNormal() throws Throwable {
         MySink<String> sink = new MySink<>();
         Sink<String> stoppable = new StoppableChainedSink<>(sink);
         stoppable.accept("Hello world", Container.empty());
@@ -20,21 +21,19 @@ public class StoppableChainedSinkTest {
         assertEquals(1, sink.finishCount);
     }
 
-    @Test(expected = IllegalStateException.class)
-    public void testStopAccepting() throws Throwable {
+    @Test
+    void testStopAccepting() throws Throwable {
         MySink<String> sink = new MySink<>();
         StoppableChainedSink<String> stoppable = new StoppableChainedSink<>(sink);
         stoppable.stop();
-        stoppable.accept("Hello world", Container.empty());
-        fail("Shouldn't reach here.");
+        assertThrows(IllegalStateException.class, () -> stoppable.accept("Hello world", Container.empty()));
     }
 
-    @Test(expected = IllegalStateException.class)
-    public void testStopFinishing() throws Throwable {
+    @Test
+    void testStopFinishing() throws Throwable {
         MySink<String> sink = new MySink<>();
         StoppableChainedSink<String> stoppable = new StoppableChainedSink<>(sink);
         stoppable.stop();
-        stoppable.commit(Container.empty());
-        fail("Shouldn't reach here.");
+        assertThrows(IllegalStateException.class, () -> stoppable.commit(Container.empty()));
     }
 }

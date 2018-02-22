@@ -2,7 +2,8 @@ package org.fiolino.common.util;
 
 import org.fiolino.common.ioc.Instantiator;
 import org.fiolino.common.reflection.Methods;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.reflect.Field;
@@ -11,12 +12,12 @@ import java.util.concurrent.TimeUnit;
 
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodType.methodType;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by Michael Kuhlmann on 25.01.2016.
  */
-public class DeserializerTest {
+class DeserializerTest {
 
     private MethodHandle create(Class<?> type, String... fieldNames) throws NoSuchFieldException, IllegalAccessException,
             NoSuchMethodException {
@@ -45,7 +46,7 @@ public class DeserializerTest {
     }
 
     @Test
-    public void testClassA() throws Throwable {
+    void testClassA() throws Throwable {
         MethodHandle factory = create(A.class, "integerValue", "string", "intValue", "enumValue");
         A a = (A) factory.invokeExact("500:\"Hello World!\":222:DAYS");
         assertEquals((Integer) 500, a.getIntegerValue());
@@ -55,7 +56,7 @@ public class DeserializerTest {
     }
 
     @Test
-    public void testClassAUnquoted() throws Throwable {
+    void testClassAUnquoted() throws Throwable {
         MethodHandle factory = create(A.class, "integerValue", "string", "intValue", "enumValue");
         A a = (A) factory.invokeExact("500:Hello World!:222:DAYS");
         assertEquals((Integer) 500, a.getIntegerValue());
@@ -65,7 +66,7 @@ public class DeserializerTest {
     }
 
     @Test
-    public void testClassAWithEmptyValues() throws Throwable {
+    void testClassAWithEmptyValues() throws Throwable {
         MethodHandle factory = create(A.class, "integerValue", "string", "intValue", "enumValue");
         A a = (A) factory.invokeExact(":::");
         assertNull(a.getIntegerValue());
@@ -84,7 +85,7 @@ public class DeserializerTest {
     }
 
     @Test
-    public void testClassAWithDefaultValues() throws Throwable {
+    void testClassAWithDefaultValues() throws Throwable {
         MethodHandle factory = create(AWithDefault.class, "integerValue", "string", "intValue", "enumValue");
         A a = (AWithDefault) factory.invokeExact(":::");
         assertEquals((Integer) 1, a.getIntegerValue());
@@ -94,7 +95,7 @@ public class DeserializerTest {
     }
 
     @Test
-    public void testClassAWithIgnoredValues() throws Throwable {
+    void testClassAWithIgnoredValues() throws Throwable {
         MethodHandle factory = create(A.class, null, null, "integerValue", null, "string", "intValue", null, "enumValue", null);
         A a = (A) factory.invokeExact("::500::\"Hello World!\":222::DAYS:");
         assertEquals((Integer) 500, a.getIntegerValue());
@@ -104,28 +105,29 @@ public class DeserializerTest {
     }
 
     @Test
-    public void testClassB() throws Throwable {
+    void testClassB() throws Throwable {
         MethodHandle factory = create(B.class, null, null, "integerValue", null, "string", "intValue", null, "enumValue", null, "intList", "enumList", "doubleValue", null, "longValue");
         B b = (B) factory.invokeExact("::500::\"Hello World!\":222::DAYS::5,,7,-1,-100,155:SECONDS,MILLISECONDS,,,,:::5131358468514531553");
         assertEquals((Integer) 500, b.getIntegerValue());
         assertEquals("Hello World!", b.getString());
         assertEquals(222, b.getIntValue());
         assertEquals(TimeUnit.DAYS, b.getEnumValue());
-        assertEquals(Arrays.<Integer>asList(5, 7, -1, -100, 155), b.getIntList());
+        assertEquals(Arrays.asList(5, 7, -1, -100, 155), b.getIntList());
         assertEquals(Arrays.asList(TimeUnit.SECONDS, TimeUnit.MILLISECONDS), b.getEnumList());
         assertNull(b.getDoubleValue());
         assertEquals(5131358468514531553L, b.getLongValue());
     }
 
     @Test
-    public void testClassBWithEmptyList() throws Throwable {
+    void testClassBWithEmptyList() throws Throwable {
         MethodHandle factory = create(B.class, "intList");
         B b = (B) factory.invokeExact("::");
         assertNull(b.getIntList());
     }
 
-    //@Test
-    public void testBuilder() throws Throwable {
+    @Test
+    @Disabled
+    void testBuilder() throws Throwable {
         DeserializerBuilder builder = new DeserializerBuilder(Instantiator.getDefault());
         MethodHandle factory = builder.getDeserializer(B.class);
         B b = (B) factory.invokeExact("Hello World!:222:500:DAYS:9999999999999999:50.9:1,2,3:MILLISECONDS,NANOSECONDS");
@@ -133,7 +135,7 @@ public class DeserializerTest {
         assertEquals("Hello World!", b.getString());
         assertEquals(222, b.getIntValue());
         assertEquals(TimeUnit.DAYS, b.getEnumValue());
-        assertEquals(Arrays.<Integer>asList(1, 2, 3), b.getIntList());
+        assertEquals(Arrays.asList(1, 2, 3), b.getIntList());
         assertEquals(Arrays.asList(TimeUnit.MILLISECONDS, TimeUnit.NANOSECONDS), b.getEnumList());
         assertEquals((Double) 50.9, b.getDoubleValue());
         assertEquals(9999999999999999L, b.getLongValue());
@@ -142,8 +144,9 @@ public class DeserializerTest {
         assertTrue(factory == factory2);
     }
 
-    //@Test
-    public void testContainer() throws Throwable {
+    @Test
+    @Disabled
+    void testContainer() throws Throwable {
         DeserializerBuilder b = new DeserializerBuilder(Instantiator.getDefault());
         MethodHandle factory = b.getDeserializer(C.class);
         C c = (C) factory.invokeExact("My name:(\"Hello World!\":222:500:DAYS):Some text");
@@ -158,7 +161,7 @@ public class DeserializerTest {
     }
 
     @Test
-    public void testContainer2() throws Throwable {
+    void testContainer2() throws Throwable {
         Deserializer forA = new Deserializer(Instantiator.getDefault().findProviderHandle(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
         Deserializer forC = new Deserializer(Instantiator.getDefault().findProviderHandle(C.class));
@@ -176,7 +179,7 @@ public class DeserializerTest {
     }
 
     @Test
-    public void testContainerWithParenthesis() throws Throwable {
+    void testContainerWithParenthesis() throws Throwable {
         Deserializer forA = new Deserializer(Instantiator.getDefault().findProviderHandle(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
         Deserializer forC = new Deserializer(Instantiator.getDefault().findProviderHandle(C.class));

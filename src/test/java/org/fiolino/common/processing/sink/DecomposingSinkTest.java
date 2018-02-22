@@ -1,18 +1,18 @@
 package org.fiolino.common.processing.sink;
 
 import org.fiolino.common.container.Container;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by kuli on 06.04.16.
  */
-public class DecomposingSinkTest {
+class DecomposingSinkTest {
     @Test
-    public void test() throws Throwable {
+    void test() throws Throwable {
         final boolean[] finished = new boolean[] {
                 false
         };

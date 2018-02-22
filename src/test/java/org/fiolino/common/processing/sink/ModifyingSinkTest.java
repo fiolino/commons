@@ -1,19 +1,19 @@
 package org.fiolino.common.processing.sink;
 
 import org.fiolino.common.container.Container;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Created by kuli on 05.04.16.
  */
-public class ModifyingSinkTest {
+class ModifyingSinkTest {
 
     private static class MyModifyingSink extends ModifyingSink<AtomicInteger> {
-        public MyModifyingSink(Sink<AtomicInteger> target) {
+        MyModifyingSink(Sink<AtomicInteger> target) {
             super(target);
         }
 
@@ -24,7 +24,7 @@ public class ModifyingSinkTest {
     }
 
     @Test
-    public void test() throws Throwable {
+    void test() throws Throwable {
         MySink<AtomicInteger> sink = new MySink<>();
         MyModifyingSink modifyingSink = new MyModifyingSink(sink);
         AtomicInteger value = new AtomicInteger(150);

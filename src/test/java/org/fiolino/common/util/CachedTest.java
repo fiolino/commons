@@ -1,16 +1,16 @@
 package org.fiolino.common.util;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-public class CachedTest {
+class CachedTest {
 
     @Test
-    public void testDelay() throws InterruptedException {
+    void testDelay() throws InterruptedException {
         AtomicInteger counter = new AtomicInteger(0);
         Cached<Integer> getNext = Cached.updateEvery(200).milliseconds().with(counter::incrementAndGet);
         int start = getNext.get();
@@ -25,7 +25,7 @@ public class CachedTest {
     }
 
     @Test
-    public void testParse() throws InterruptedException {
+    void testParse() throws InterruptedException {
         AtomicInteger counter = new AtomicInteger(0);
         Cached<Integer> getNext = Cached.updateEvery("80 millis and 120000 micros").with(counter::incrementAndGet);
         int start = getNext.get();
@@ -40,7 +40,7 @@ public class CachedTest {
     }
 
     @Test
-    public void testForever() throws InterruptedException {
+    void testForever() throws InterruptedException {
         Cached<Long> getTimestamp = Cached.with(System::currentTimeMillis);
         long start = getTimestamp.get();
         TimeUnit.SECONDS.sleep(2);
@@ -49,7 +49,7 @@ public class CachedTest {
     }
 
     @Test
-    public void testAlways() {
+    void testAlways() {
         Cached<String> appendX = Cached.updateAlways("", s -> s + "x");
         for (int i=1; i < 100; i++) {
             String val = appendX.get();
@@ -60,21 +60,21 @@ public class CachedTest {
         }
     }
 
-    @Test(expected = NullPointerException.class)
-    public void failWithNull() {
+    @Test
+    void failWithNull() {
         Cached<Object> getNull = Cached.with(() -> null);
-        getNull.get();
+        assertThrows(NullPointerException.class, getNull::get);
     }
 
     @Test
-    public void allowNull() {
+    void allowNull() {
         Cached<Object> getNull = Cached.withNullable(() -> null);
         Object result = getNull.get();
         assertNull(result);
     }
 
     @Test
-    public void testRefreshNotPossible() throws InterruptedException {
+    void testRefreshNotPossible() throws InterruptedException {
         AtomicInteger counter = new AtomicInteger(0);
         Cached<String> appendX = Cached.updateEvery(10).milliseconds().with("", s -> {
             if (counter.incrementAndGet() > 3) throw new Cached.RefreshNotPossibleException();
@@ -102,16 +102,16 @@ public class CachedTest {
         assertEquals("xxx", x);
     }
 
-    @Test(expected = IllegalStateException.class)
-    public void testRefreshNotPossibleOnInitialCall() {
+    @Test
+    void testRefreshNotPossibleOnInitialCall() {
         Cached<Object> neverGetAnything = Cached.with(() -> {
             throw new Cached.RefreshNotPossibleException();
         });
-        neverGetAnything.get();
+        assertThrows(IllegalStateException.class, neverGetAnything::get);
     }
 
     @Test
-    public void testRefreshNotPossibleOnInitialCallNullable() {
+    void testRefreshNotPossibleOnInitialCallNullable() {
         Cached<Object> neverGetAnything = Cached.withNullable(() -> {
             throw new Cached.RefreshNotPossibleException();
         });
@@ -119,7 +119,7 @@ public class CachedTest {
     }
 
     @Test
-    public void testConcurrentStart() throws InterruptedException, ExecutionException {
+    void testConcurrentStart() throws InterruptedException, ExecutionException {
         AtomicInteger counter = new AtomicInteger(0);
         Cached<Integer> getNextWithDelay = Cached.updateEvery("5 sec").with(() -> {
             try {
@@ -148,7 +148,7 @@ public class CachedTest {
     }
 
     @Test
-    public void testConcurrentAccess() throws InterruptedException, ExecutionException {
+    void testConcurrentAccess() throws InterruptedException, ExecutionException {
         AtomicInteger counter = new AtomicInteger(0);
         Cached<Integer> getNextWithDelay = Cached.updateEvery("200 millis").with(() -> {
             if (counter.get() > 0) {

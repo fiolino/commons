@@ -1,7 +1,7 @@
 package org.fiolino.common.reflection;
 
 import org.fiolino.common.reflection.otherpackage.ClassFromOtherPackage;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -13,12 +13,12 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by Kuli on 6/16/2016.
  */
-public class MethodsVisitorTest {
+class MethodsVisitorTest {
     private void validate(MethodHandles.Lookup lookup, Class<?> type, String... expectedVisibleMethods) {
         final Set<String> exp = new HashSet<>(Arrays.asList(expectedVisibleMethods));
         Methods.visitAllMethods(lookup, type, null, (v, m, handleSupplier) -> {
@@ -26,7 +26,7 @@ public class MethodsVisitorTest {
                 return null;
             }
             String name = m.getName();
-            assertTrue(name + " should be expected to be visible", exp.remove(name));
+            assertTrue(exp.remove(name), () -> name + " should be expected to be visible");
 
             // Now check that MethodHandle can be created
             MethodHandle h = handleSupplier.get();
@@ -34,7 +34,7 @@ public class MethodsVisitorTest {
             return null;
         });
 
-        assertTrue("Methods expected to be visible but they aren't: " + exp, exp.isEmpty());
+        assertTrue(exp.isEmpty(), () -> "Methods expected to be visible but they aren't: " + exp);
 
         // Now check that other methods will not be visible
         Collections.addAll(exp, expectedVisibleMethods);
@@ -68,7 +68,7 @@ public class MethodsVisitorTest {
     }
 
     @Test
-    public void testWithPublicLookup() {
+    void testWithPublicLookup() {
         MethodHandles.Lookup lookup = MethodHandles.publicLookup();
         validate(lookup, ClassFromSamePackage.class, "publicMethod");
         validate(lookup, ClassFromOtherPackage.class, "publicMethod");
@@ -76,7 +76,7 @@ public class MethodsVisitorTest {
     }
 
     @Test
-    public void testWithMyLookup() {
+    void testWithMyLookup() {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
         validate(lookup, ClassFromSamePackage.class, "publicMethod", "packageMethod", "protectedMethod");
         validate(lookup, ClassFromOtherPackage.class, "publicMethod");
@@ -85,7 +85,7 @@ public class MethodsVisitorTest {
     }
 
     @Test
-    public void testWithLocalLookup() {
+    void testWithLocalLookup() {
         MethodHandles.Lookup lookup = new LocalClass().lookup();
         validate(lookup, LocalClass.class, "publicMethod", "protectedMethod",
                 "publicMethod2", "packageMethod2", "protectedMethod2", "privateMethod2");
@@ -94,7 +94,7 @@ public class MethodsVisitorTest {
     }
 
     @Test
-    public void testWithReducedLookup() {
+    void testWithReducedLookup() {
         MethodHandles.Lookup lookup = new LocalClass().lookup().in(ClassFromSamePackage.class);
         validate(lookup, LocalClass.class, "publicMethod", "publicMethod2", "packageMethod2", "protectedMethod2");
         validate(lookup, ClassFromSamePackage.class, "publicMethod", "packageMethod", "protectedMethod");
@@ -102,7 +102,7 @@ public class MethodsVisitorTest {
     }
 
     @Test
-    public void testWithLookupOfSuperclass() {
+    void testWithLookupOfSuperclass() {
         MethodHandles.Lookup lookup = new LocalClass().lookup().in(ClassFromOtherPackage.class);
         validate(lookup, LocalClass.class, "publicMethod", "publicMethod2");
         validate(lookup, ClassFromSamePackage.class, "publicMethod");
@@ -110,7 +110,7 @@ public class MethodsVisitorTest {
     }
 
     private static class PrivateClass {
-        public void publicMethod() {
+        void publicMethod() {
         }
 
         void packageMethod() {
@@ -124,55 +124,55 @@ public class MethodsVisitorTest {
     }
 
     @Test
-    public void testPrivateClass() {
+    void testPrivateClass() {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
         validate(lookup, PrivateClass.class, "publicMethod", "protectedMethod", "packageMethod");
     }
 
     @Test
-    public void testPrivateClassWithInContext() {
+    void testPrivateClassWithInContext() {
         MethodHandles.Lookup lookup = MethodHandles.lookup().in(PrivateClass.class);
         validate(lookup, PrivateClass.class, "publicMethod", "protectedMethod", "packageMethod", "privateMethod");
     }
 
     @Test
-    public void testPrivateClassAndPublicLookup() {
+    void testPrivateClassAndPublicLookup() {
         MethodHandles.Lookup lookup = MethodHandles.publicLookup();
         validate(lookup, PrivateClass.class);
     }
 
     @Test
-    public void testPrivateClassAndReducedLookup() {
+    void testPrivateClassAndReducedLookup() {
         MethodHandles.Lookup lookup = MethodHandles.lookup().in(ClassFromSamePackage.class);
         validate(lookup, PrivateClass.class, "publicMethod", "protectedMethod", "packageMethod");
     }
 
     @Test
-    public void testPrivateClassAndEvenMoreReducedLookup() {
+    void testPrivateClassAndEvenMoreReducedLookup() {
         MethodHandles.Lookup lookup = MethodHandles.lookup().in(ClassFromOtherPackage.class);
         validate(lookup, PrivateClass.class);
     }
 
     @Test
-    public void testPackagePrivateClass() {
+    void testPackagePrivateClass() {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
         validate(lookup, PackagePrivateClass.class, "publicMethod", "protectedMethod", "packageMethod");
     }
 
     @Test
-    public void testPackagePrivateClassAndPublicLookup() {
+    void testPackagePrivateClassAndPublicLookup() {
         MethodHandles.Lookup lookup = MethodHandles.publicLookup();
         validate(lookup, PackagePrivateClass.class);
     }
 
     @Test
-    public void testPackagePrivateClassAndReducedLookup() {
+    void testPackagePrivateClassAndReducedLookup() {
         MethodHandles.Lookup lookup = MethodHandles.lookup().in(ClassFromSamePackage.class);
         validate(lookup, PackagePrivateClass.class, "publicMethod", "protectedMethod", "packageMethod");
     }
 
     @Test
-    public void testPackagePrivateClassAndEvenMoreReducedLookup() {
+    void testPackagePrivateClassAndEvenMoreReducedLookup() {
         MethodHandles.Lookup lookup = MethodHandles.lookup().in(ClassFromOtherPackage.class);
         validate(lookup, PackagePrivateClass.class);
     }
@@ -193,7 +193,7 @@ public class MethodsVisitorTest {
     }
 
     @Test
-    public void testOverriddenMethodOnlyOnce() {
+    void testOverriddenMethodOnlyOnce() {
         final AtomicReference<Method> foundAnother = new AtomicReference<>();
 
         Method foundMethod = Methods.visitAllMethods(MethodHandles.lookup(), B.class, null, (v, m, handleSupplier) -> {
@@ -230,7 +230,7 @@ public class MethodsVisitorTest {
     }
 
     @Test
-    public void testStaticMethods() throws Throwable {
+    void testStaticMethods() throws Throwable {
         MethodHandle h = Methods.visitMethodsWithStaticContext(
                 MethodHandles.lookup(), Uninstantiable.class, Uninstantiable::new, null, (v, m, handleSupplier) -> {
                     if (m.getName().equals("staticMethod")) {
@@ -261,7 +261,7 @@ public class MethodsVisitorTest {
     }
 
     @Test
-    public void testStaticContextOnInstances() throws Throwable {
+    void testStaticContextOnInstances() throws Throwable {
         final AtomicReference<MethodHandle> staticRef = new AtomicReference<>();
         final AtomicReference<MethodHandle> instanceRef = new AtomicReference<>();
 
@@ -277,7 +277,7 @@ public class MethodsVisitorTest {
             return null;
         });
 
-        assertFalse("Wasn't instantiated because instance was already given.", wasInstantiated.get());
+        assertFalse(wasInstantiated.get(), "Wasn't instantiated because instance was already given.");
         MethodHandle h = staticRef.get();
         assertNotNull(h);
         String val = (String) h.invokeExact();
@@ -300,7 +300,7 @@ public class MethodsVisitorTest {
             return null;
         });
 
-        assertTrue("Was instantiated because there is an instance method.", wasInstantiated.get());
+        assertTrue(wasInstantiated.get(), "Was instantiated because there is an instance method.");
         h = staticRef.get();
         assertNotNull(h);
         val = (String) h.invokeExact();
@@ -312,7 +312,7 @@ public class MethodsVisitorTest {
     }
 
     @Test
-    public void testInstanceContext() throws Throwable {
+    void testInstanceContext() throws Throwable {
         final AtomicReference<MethodHandle> staticRef = new AtomicReference<>();
         final AtomicReference<MethodHandle> instanceRef = new AtomicReference<>();
 
@@ -327,7 +327,7 @@ public class MethodsVisitorTest {
             return null;
         });
 
-        assertFalse("Wasn't instantiated because instance is injected onn every call.", wasInstantiated.get());
+        assertFalse(wasInstantiated.get(), "Wasn't instantiated because instance is injected on every call.");
         MethodHandle h = staticRef.get();
         assertNotNull(h);
         // Even static methods now expect an instance

@@ -1,6 +1,6 @@
 package org.fiolino.common.util;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -16,13 +16,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author Michael Kuhlmann <michael@kuhlmann.org>
  */
 @SuppressWarnings("unused")
-public class TypesTest {
+class TypesTest {
 
     private static class NoException extends ThreadDeath {
     }
@@ -34,7 +34,7 @@ public class TypesTest {
     }
 
     @Test
-    public void testAsPrimitive() {
+    void testAsPrimitive() {
         assertEquals(int.class, Types.asPrimitive(Integer.class));
         assertEquals(int.class, Types.asPrimitive(int.class));
         assertEquals(void.class, Types.asPrimitive(Void.class));
@@ -42,7 +42,7 @@ public class TypesTest {
     }
 
     @Test
-    public void testToWrapper() {
+    void testToWrapper() {
         assertEquals(Integer.class, Types.toWrapper(int.class));
         assertEquals(Integer.class, Types.toWrapper(Integer.class));
         assertEquals(Void.class, Types.toWrapper(void.class));
@@ -50,7 +50,7 @@ public class TypesTest {
     }
 
     @Test
-    public void testAssignable() {
+    void testAssignable() {
         assertTrue(Types.isAssignableFrom(Map.class, HashMap.class));
         assertFalse(Types.isAssignableFrom(HashMap.class, Map.class));
         assertTrue(Types.isAssignableFrom(Number.class, int.class));
@@ -62,7 +62,7 @@ public class TypesTest {
     }
 
     @Test
-    public void testWithGenerics() throws Throwable {
+    void testWithGenerics() throws Throwable {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
         for (Method m : getClass().getDeclaredMethods()) {
             TestWithParameter testAnno = m.getAnnotation(TestWithParameter.class);
@@ -159,7 +159,7 @@ public class TypesTest {
         Types.erasedArgument(t, Map.class, 0, Types.Bounded.EXACT);
     }
 
-    private static interface SwapParameters<A, B> extends Map<B, A> {
+    private interface SwapParameters<A, B> extends Map<B, A> {
     }
 
     @TestWithParameter

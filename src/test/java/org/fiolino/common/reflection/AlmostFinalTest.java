@@ -1,6 +1,6 @@
 package org.fiolino.common.reflection;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -9,12 +9,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.lang.invoke.MethodType.methodType;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by Kuli on 10/11/2016.
  */
-public class AlmostFinalTest {
+class AlmostFinalTest {
     private static final MethodHandle GET_STRING;
     private static final AlmostFinal<String> STRING_VAL;
     private static final MethodHandle GET_INT;
@@ -44,7 +44,7 @@ public class AlmostFinalTest {
     }
 
     @Test
-    public void testString() throws Throwable {
+    void testString() throws Throwable {
         String s = (String) GET_STRING.invokeExact();
         assertEquals("Initial", s);
         MethodHandle longer = MethodHandles.publicLookup().findVirtual(String.class, "concat",
@@ -61,8 +61,8 @@ public class AlmostFinalTest {
         assertEquals("New value", l);
     }
 
-    @Test(timeout = 60000)
-    public void testMultiThreads() throws Throwable {
+    @Test
+    void testMultiThreads() throws Throwable {
         assertFalse((boolean) GET_BOOLEAN.invokeExact());
         AtomicInteger falseCounter = new AtomicInteger();
         AtomicInteger trueCounter = new AtomicInteger();
@@ -82,16 +82,16 @@ public class AlmostFinalTest {
         });
         t.start();
         TimeUnit.SECONDS.sleep(1);
-        assertTrue("Background thread didn't start yet?", falseCounter.get() > 100);
-        assertEquals("Wrong target counter", 0, trueCounter.get());
+        assertTrue(falseCounter.get() > 100, "Background thread didn't start yet?");
+        assertEquals(0, trueCounter.get(), "Wrong target counter");
 
         BOOLEAN_VAL.updateTo(true);
         TimeUnit.SECONDS.sleep(1);
-        assertTrue("Background thread didn't notice value update?", trueCounter.get() > 100);
+        assertTrue(trueCounter.get() > 100, "Background thread didn't notice value update?");
     }
 
     @Test
-    public void testInt() throws Throwable {
+    void testInt() throws Throwable {
         int i = (int) GET_INT.invokeExact();
         assertEquals(2046, i);
         MethodHandle negate = MethodHandles.publicLookup().findStatic(Math.class, "negateExact",
@@ -108,7 +108,7 @@ public class AlmostFinalTest {
     }
 
     @Test
-    public void testLong() throws Throwable {
+    void testLong() throws Throwable {
         long l = (long) GET_LONG.invokeExact();
         assertEquals(199191991919919L, l);
         MethodHandle negate = MethodHandles.publicLookup().findStatic(Math.class, "negateExact",
@@ -125,7 +125,7 @@ public class AlmostFinalTest {
     }
 
     @Test
-    public void testDouble() throws Throwable {
+    void testDouble() throws Throwable {
         double d = (double) GET_DOUBLE.invokeExact();
         assertEquals(Math.PI, d, 0.0001);
         MethodHandle rint = MethodHandles.publicLookup().findStatic(Math.class, "rint",

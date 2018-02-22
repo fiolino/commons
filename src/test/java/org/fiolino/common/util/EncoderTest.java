@@ -1,13 +1,13 @@
 package org.fiolino.common.util;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by kuli on 09.02.16.
  */
-public class EncoderTest {
+class EncoderTest {
 
     private static final CharSet VALID = CharSet.of("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._");
     private static final Encoder ENCODER = new Encoder(VALID, '$');
@@ -30,7 +30,7 @@ public class EncoderTest {
     }
 
     @Test
-    public void testNormal() {
+    void testNormal() {
         validate("Hello");
         validate("Hello World!");
         validate("Viele Umlaute: äüöÄÜÖáàéè");
@@ -41,7 +41,7 @@ public class EncoderTest {
     }
 
     @Test
-    public void testRestricted() {
+    void testRestricted() {
         Encoder e = new Encoder("o", '!');
         String test = "The quick brown fox jumps over the lazy dog.";
         String encoded = e.encode(test);

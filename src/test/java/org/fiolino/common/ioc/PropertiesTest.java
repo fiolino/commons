@@ -1,17 +1,17 @@
 package org.fiolino.common.ioc;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by kuli on 16.06.17.
  */
 
-public class PropertiesTest {
+class PropertiesTest {
 
     @Test
-    public void testSingleProperties() {
+    void testSingleProperties() {
         String v = Properties.getSingleEntry("key1");
         assertEquals("value1", v);
         v = Properties.getSingleEntry("key2");
@@ -23,7 +23,7 @@ public class PropertiesTest {
     }
 
     @Test
-    public void testSinglePropertiesAsMulti() {
+    void testSinglePropertiesAsMulti() {
         String[] v = Properties.getMultipleEntries("key1");
         assertArrayEquals(new String[] {"value1"}, v);
         v = Properties.getMultipleEntries("key2");
@@ -35,7 +35,7 @@ public class PropertiesTest {
     }
 
     @Test
-    public void testMultiProperties() {
+    void testMultiProperties() {
         String[] v = Properties.getMultipleEntries("multi1");
         assertArrayEquals(new String[] {"v1", "v2"}, v);
 
@@ -50,7 +50,7 @@ public class PropertiesTest {
     }
 
     @Test
-    public void testMultiPropertiesAsSingle() {
+    void testMultiPropertiesAsSingle() {
         String v = Properties.getSingleEntry("multi1");
         assertNull(v); // Because the only entry has multiple values
 
@@ -65,19 +65,19 @@ public class PropertiesTest {
     }
 
     @Test
-    public void testEscapedComma() {
+    void testEscapedComma() {
         String v = Properties.getSingleEntry("withComma");
         assertEquals("one,  two", v);
     }
 
     @Test
-    public void testMultiline() {
+    void testMultiline() {
         String v = Properties.getSingleEntry("multiLine");
         assertEquals("This\nis\non\nfive\nlines. ", v);
     }
 
     @Test
-    public void testIndividualLines() {
+    void testIndividualLines() {
         assertTrue(Properties.isIndividualTerm("Individual line"));
         assertFalse(Properties.isIndividualTerm("No such line"));
     }

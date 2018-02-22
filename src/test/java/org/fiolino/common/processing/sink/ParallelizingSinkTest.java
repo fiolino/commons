@@ -2,7 +2,7 @@ package org.fiolino.common.processing.sink;
 
 import org.fiolino.common.container.Container;
 import org.fiolino.common.util.Strings;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -17,13 +17,13 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Created by kuli on 06.04.16.
  */
-public class ParallelizingSinkTest {
+class ParallelizingSinkTest {
 
     private static final int[] KNOWN_PRIMS;
     private static final int NUMBER_OF_WALKTHROUGHS = 2;
@@ -66,7 +66,7 @@ public class ParallelizingSinkTest {
     });
 
     @Test
-    public void testMultipleParallelity() throws Exception {
+    void testMultipleParallelity() throws Exception {
         for (int w = 1; w <= NUMBER_OF_WALKTHROUGHS; w++) {
             for (int parallelity = 1; parallelity < 16; parallelity++) {
                 MySink<List<Integer>> prims = new MySink<>();
@@ -95,7 +95,8 @@ public class ParallelizingSinkTest {
         int i = 0;
         for (Integer c : calculated) {
             int p = KNOWN_PRIMS[i++];
-            assertEquals("Check expected prim " + p + " with calculated " + c + " at pos #" + i, p, c.intValue());
+            int pos = i;
+            assertEquals(p, c.intValue(), () -> "Check expected prim " + p + " with calculated " + c + " at pos #" + pos);
         }
     }
 
@@ -127,31 +128,8 @@ public class ParallelizingSinkTest {
         return new AggregatingSink<>(parallel, 1000);
     }
 
-    private static class Logger extends ChainedSink<List<Integer>, List<Integer>> implements CloneableSink<List<Integer>, Logger> {
-        public Logger(Sink<? super List<Integer>> target) {
-            super(target);
-        }
-
-        @Override
-        public void partialCommit(Container metadata) throws Exception {
-            if (getTarget() instanceof CloneableSink)
-                ((CloneableSink) getTarget()).partialCommit(metadata);
-        }
-
-        @Override
-        public Logger createClone() {
-            return new Logger(targetForCloning());
-        }
-
-        @Override
-        public void accept(List<Integer> value, Container metadata) throws Exception {
-            System.out.println(value.get(0));
-            getTarget().accept(value, metadata);
-        }
-    }
-
     @Test
-    public void testGrowingFeed() throws Exception {
+    void testGrowingFeed() throws Exception {
         MySink<List<Integer>> prims = new MySink<>();
         Sink<Integer> sink = createParallelSink(4, prims);
         for (int max = 3; max < 10000; max++) {
@@ -172,12 +150,12 @@ public class ParallelizingSinkTest {
         }
 
         @Override
-        public void commit(Container metadata) throws Exception {
+        public void commit(Container metadata) {
             // Does nothing
         }
 
         @Override
-        public void partialCommit(Container metadata) throws Exception {
+        public void partialCommit(Container metadata) {
             // Does nothing
         }
 
@@ -188,7 +166,7 @@ public class ParallelizingSinkTest {
     }
 
     @Test
-    public void testException() throws Exception {
+    void testException() throws Exception {
         ExceptionThrower thrower = new ExceptionThrower();
         Sink<Object> sink = ParallelizingSink.createFor(thrower, "Test Exception", executor::execute, 4, 10);
         Sink<List<Object>> listSink = new DecomposingSink<>(sink);

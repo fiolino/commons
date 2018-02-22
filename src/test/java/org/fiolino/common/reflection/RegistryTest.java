@@ -1,6 +1,6 @@
 package org.fiolino.common.reflection;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -15,15 +15,15 @@ import java.util.function.*;
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by kuli on 08.03.17.
  */
-public class RegistryTest {
+class RegistryTest {
 
     @Test
-    public void testNoArgumentsNoReturn() throws Throwable {
+    void testNoArgumentsNoReturn() throws Throwable {
         MethodHandles.Lookup lookup = lookup();
         MethodHandle incrementCounter = lookup.findStatic(lookup.lookupClass(), "incrementCounter", methodType(void.class));
         Registry reg = Registry.buildFor(incrementCounter);
@@ -53,7 +53,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testNoArgumentsButReturnSomething() throws Throwable {
+    void testNoArgumentsButReturnSomething() throws Throwable {
         MethodHandles.Lookup lookup = lookup();
         MethodHandle incrementCounter = lookup.findStatic(lookup.lookupClass(), "incrementAndGet", methodType(int.class));
         Registry reg = Registry.buildFor(incrementCounter);
@@ -96,7 +96,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testRunnable() {
+    void testRunnable() {
         AtomicInteger counter = new AtomicInteger(100);
         LambdaRegistry<Runnable> registry = Registry.buildForFunctionalType(counter::incrementAndGet);
         Runnable onlyOnce = registry.getAccessor();
@@ -110,7 +110,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testCallable() throws Exception {
+    void testCallable() throws Exception {
         AtomicInteger counter = new AtomicInteger(100);
         @SuppressWarnings({"unchecked", "rawTypes"})
         LambdaRegistry<Callable<String>> registry = Registry.buildForFunctionalType(() -> String.valueOf(counter.incrementAndGet()));
@@ -128,7 +128,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testConcurrentRunnable() throws InterruptedException {
+    void testConcurrentRunnable() throws InterruptedException {
         AtomicInteger counter = new AtomicInteger(100);
         LambdaRegistry<Runnable> registry = Registry.buildForFunctionalType(() -> {
             try {
@@ -157,7 +157,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void setConcurrentSupplier() throws NoSuchMethodException, IllegalAccessException, InterruptedException {
+    void setConcurrentSupplier() throws NoSuchMethodException, IllegalAccessException, InterruptedException {
         AtomicInteger counter = new AtomicInteger(500);
         MethodHandles.Lookup lookup = lookup();
         MethodHandle execute = lookup.findStatic(lookup.lookupClass(), "sleepAndIncrement", methodType(int.class, AtomicInteger.class, int.class));
@@ -183,7 +183,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testWithParameter() throws Throwable {
+    void testWithParameter() throws Throwable {
         testWithParameter(true);
         testWithParameter(false);
     }
@@ -203,7 +203,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testWithParameterAndReturnValue() throws Throwable {
+    void testWithParameterAndReturnValue() throws Throwable {
         testWithParameterAndReturnValue(true);
         testWithParameterAndReturnValue(false);
     }
@@ -222,7 +222,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void setConcurrentFunction() throws NoSuchMethodException, IllegalAccessException, InterruptedException {
+    void setConcurrentFunction() throws NoSuchMethodException, IllegalAccessException, InterruptedException {
         AtomicInteger counter = new AtomicInteger(500);
         MethodHandles.Lookup lookup = lookup();
         MethodHandle execute = lookup.findStatic(lookup.lookupClass(), "sleepAndIncrement", methodType(int.class, AtomicInteger.class, int.class));
@@ -255,7 +255,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testFunctions() throws InterruptedException {
+    void testFunctions() throws InterruptedException {
         LambdaRegistry<UnaryOperator<String>> reg = Registry.buildForFunctionalType(RegistryTest::sayHello);
         UnaryOperator<String> func = reg.getAccessor();
 
@@ -288,7 +288,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testConsumer() {
+    void testConsumer() {
         AtomicReference<String> ref = new AtomicReference<>();
         LambdaRegistry<Consumer<String>> reg = Registry.buildForFunctionalType(ref::set);
         Consumer<String> consumer = reg.getAccessor();
@@ -314,7 +314,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testMultiArguments() throws Throwable {
+    void testMultiArguments() throws Throwable {
         AtomicInteger ref = new AtomicInteger(100);
         MethodHandles.Lookup lookup = lookup();
         MethodHandle sum = lookup.findStatic(lookup.lookupClass(), "getAndSetSum", methodType(String.class, AtomicInteger.class, int.class, String.class));
@@ -363,7 +363,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testBiConsumer() {
+    void testBiConsumer() {
         AtomicReference<String> ref = new AtomicReference<>();
         LambdaRegistry<BiConsumer<AtomicReference<String>, String>> reg = Registry.buildForFunctionalType(AtomicReference::set);
         BiConsumer<AtomicReference<String>, String> set = reg.getAccessor();
@@ -387,7 +387,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testVarArgs() throws Throwable {
+    void testVarArgs() throws Throwable {
         AtomicInteger ref = new AtomicInteger();
         MethodHandles.Lookup lookup = lookup();
         MethodHandle handle = lookup.findStatic(lookup.lookupClass(), "sum", methodType(void.class, AtomicInteger.class, int[].class));
@@ -405,7 +405,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testVarArgsOnly() throws Throwable {
+    void testVarArgsOnly() throws Throwable {
         AtomicInteger ref = new AtomicInteger();
         MethodHandles.Lookup lookup = lookup();
         MethodHandle handle = lookup.findStatic(lookup.lookupClass(), "sum", methodType(void.class, AtomicInteger.class, int[].class));
@@ -423,7 +423,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testBiInt() {
+    void testBiInt() {
         AtomicInteger ref = new AtomicInteger();
         LambdaRegistry<IntBinaryOperator> reg = Registry.buildForFunctionalType((a, b) -> ref.getAndAdd(a + b));
         IntBinaryOperator operator = reg.getAccessor();
@@ -451,7 +451,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testUpdateable() throws Throwable {
+    void testUpdateable() throws Throwable {
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandle setRef = publicLookup().bind(ref, "getAndSet", methodType(Object.class, Object.class));
         OneTimeExecution ex = OneTimeExecution.createFor(setRef);
@@ -471,7 +471,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testUpdateFirst() throws Throwable {
+    void testUpdateFirst() throws Throwable {
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandle setRef = publicLookup().bind(ref, "getAndSet", methodType(Object.class, Object.class));
         OneTimeExecution ex = OneTimeExecution.createFor(setRef);
@@ -493,7 +493,7 @@ public class RegistryTest {
 
     // Enum and boolean types are handles explicitly in Registry of they're the singular parameters
     @Test
-    public void testEnumParameter() throws Throwable {
+    void testEnumParameter() throws Throwable {
         MethodHandle arrayOfTwoValues = MethodHandles.identity(Object[].class).asCollector(Object[].class, 2);
         arrayOfTwoValues = arrayOfTwoValues.asType(methodType(Object[].class, TimeUnit.class, long.class));
         MethodHandle getNanos = publicLookup().findStatic(System.class, "nanoTime", methodType(long.class));
@@ -515,17 +515,17 @@ public class RegistryTest {
         array2 = (Object[])accessor.invokeExact(TimeUnit.SECONDS);
         assertEquals(TimeUnit.SECONDS, array1[0]);
         assertEquals(TimeUnit.SECONDS, array2[0]);
-        assertTrue("Both must be the same", (long)array1[1] == (long)array2[1]);
-        assertTrue("Even the array should be the same", array1 == array2);
+        assertTrue((long)array1[1] == (long)array2[1], "Both must be the same");
+        assertTrue(array1 == array2, "Even the array should be the same");
 
         // Now test that different value returns different result
         array2 = (Object[])accessor.invokeExact(TimeUnit.HOURS);
         assertEquals(TimeUnit.HOURS, array2[0]);
-        assertTrue("Second call comes later", (long)array1[1] < (long)array2[1]);
+        assertTrue((long)array1[1] < (long)array2[1], "Second call comes later");
         array2 = (Object[])accessor.invokeExact(TimeUnit.SECONDS);
         assertEquals(TimeUnit.SECONDS, array2[0]);
-        assertTrue("Both must be the same", (long)array1[1] == (long)array2[1]);
-        assertTrue("Even the array should be the same, again", array1 == array2);
+        assertTrue((long)array1[1] == (long)array2[1], "Both must be the same");
+        assertTrue(array1 == array2, "Even the array should be the same, again");
 
         // Now test reset
         registry.reset();
@@ -535,7 +535,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testBooleanParameter() throws Throwable {
+    void testBooleanParameter() throws Throwable {
         AtomicBoolean ref = new AtomicBoolean();
         MethodHandle setBool = publicLookup().bind(ref, "getAndSet", methodType(boolean.class, boolean.class));
         Registry registry = Registry.buildFor(setBool);
@@ -553,7 +553,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testMapOnlyFirstArgumentToInteger() throws Throwable {
+    void testMapOnlyFirstArgumentToInteger() throws Throwable {
         MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
         MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
         Registry r = Registry.buildForLimitedRange(concat, toInt, 10, 10, 1);
@@ -572,7 +572,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testIndexOutOfRange() throws Throwable {
+    void testIndexOutOfRange() throws Throwable {
         MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
         MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
         MethodHandle sumBoth = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
@@ -597,7 +597,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testExpandingRange() throws Throwable {
+    void testExpandingRange() throws Throwable {
         MethodHandle toInt = publicLookup().findVirtual(String.class, "length", methodType(int.class)); // Would be a ridiculous mapping
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandle getAndSet = publicLookup().bind(ref, "getAndSet", methodType(Object.class, Object.class));
@@ -620,7 +620,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testNoFilter() throws Throwable {
+    void testNoFilter() throws Throwable {
         AtomicInteger ref = new AtomicInteger();
         MethodHandle getAndSet = publicLookup().bind(ref, "getAndSet", methodType(int.class, int.class));
 
@@ -637,7 +637,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testFilterWithSimilarType() throws Throwable {
+    void testFilterWithSimilarType() throws Throwable {
         MethodHandle sumBoth = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
         Set<Object> set = new HashSet<>();
         MethodHandle addAll = publicLookup().findStatic(Collections.class, "addAll", methodType(boolean.class, Collection.class, Object[].class)).bindTo(set);
@@ -658,7 +658,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testForFixedValues() throws Throwable {
+    void testForFixedValues() throws Throwable {
         MethodHandle target = publicLookup().findStatic(System.class, "nanoTime", methodType(long.class));
         target = MethodHandles.dropArguments(target, 0, String.class);
         Registry registry = Registry.buildForFixedValues(target, "white", "yellow", "green", "red", "blue", "black");
@@ -711,19 +711,19 @@ public class RegistryTest {
         assertTrue(black < black2);
     }
 
-    @Test(expected = LimitExceededException.class)
-    public void testForFixedValuesAndTakeWrong() throws Throwable {
+    @Test
+    void testForFixedValuesAndTakeWrong() throws NoSuchMethodException, IllegalAccessException {
         MethodHandle target = publicLookup().findStatic(System.class, "nanoTime", methodType(long.class));
         target = MethodHandles.dropArguments(target, 0, String.class);
         Registry registry = Registry.buildForFixedValues(target, "red", "green", "blue");
         MethodHandle h = registry.getAccessor();
 
-        h.invoke("white");
+        assertThrows(LimitExceededException.class, () -> h.invoke("white"));
         // Should fail
     }
 
     @Test
-    public void testForFixedPrimitiveValues() throws Throwable {
+    void testForFixedPrimitiveValues() throws Throwable {
         MethodHandle sumBoth = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
         AtomicInteger ref = new AtomicInteger();
         MethodHandle getInt = publicLookup().bind(ref, "get", methodType(int.class));
@@ -748,7 +748,7 @@ public class RegistryTest {
     }
 
     @Test
-    public void testForFixedValuesWithComparator() throws Throwable {
+    void testForFixedValuesWithComparator() throws Throwable {
         MethodHandle target = publicLookup().findStatic(System.class, "nanoTime", methodType(long.class));
         target = MethodHandles.dropArguments(target, 0, Class.class);
         Registry registry = Registry.buildForFixedValues(target, Comparator.comparing(Class::getName), String.class, Integer.class, Date.class);

@@ -1,23 +1,22 @@
 package org.fiolino.common.util;
 
-import org.junit.Test;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by kuli on 25.11.15.
  */
-public class StringsTest {
+class StringsTest {
 
     @Test
-    public void testQuote() {
+    void testQuote() {
         String quoted = Strings.quote("Hello World!");
         assertEquals("\"Hello World!\"", quoted);
 
@@ -38,7 +37,7 @@ public class StringsTest {
     }
 
     @Test
-    public void testUnquote() {
+    void testUnquote() {
         String unquoted = Strings.unquote("\"Hello World!\"");
         assertEquals("Hello World!", unquoted);
 
@@ -68,7 +67,7 @@ public class StringsTest {
     }
 
     @Test
-    public void testRemoveLeading() {
+    void testRemoveLeading() {
         String removed = Strings.removeLeading("setName", "set");
         assertEquals("name", removed);
 
@@ -87,7 +86,7 @@ public class StringsTest {
     }
 
     @Test
-    public void testLowercaseFirst() {
+    void testLowercaseFirst() {
         String lower = Strings.lowerCaseFirst("startsWithLowercase.");
         assertEquals("startsWithLowercase.", lower);
 
@@ -105,7 +104,7 @@ public class StringsTest {
     }
 
     @Test
-    public void testUppercase() {
+    void testUppercase() {
         String upper = Strings.toUpperCase("Hello World!");
         assertEquals("HELLO WORLD!", upper);
 
@@ -120,7 +119,7 @@ public class StringsTest {
     }
 
     @Test
-    public void testNormalize() {
+    void testNormalize() {
         String normal = Strings.normalizeName("Hello World!");
         assertEquals("Hello World!", normal);
 
@@ -135,7 +134,7 @@ public class StringsTest {
     }
 
     @Test
-    public void appendNumberTest() {
+    void appendNumberTest() {
         String num = Strings.appendNumber(new StringBuilder(), 1313, 5).toString();
         assertEquals("01313", num);
 
@@ -153,7 +152,7 @@ public class StringsTest {
     }
 
     @Test
-    public void testOverlap() {
+    void testOverlap() {
         String overlap = Strings.combinationOf("one_two_three_four", "two_three_foooour");
         assertEquals("two_three", overlap);
 
@@ -161,13 +160,14 @@ public class StringsTest {
         assertEquals("three", overlap);
     }
 
-    @Test(expected = IllegalArgumentException.class)
-    public void testFailedOverlap() {
-        Strings.combinationOf("one_two_three_four", "two_three_foooour", "two_two", "three_three");
+    @Test
+    void testFailedOverlap() {
+        assertThrows(IllegalArgumentException.class,
+                () -> Strings.combinationOf("one_two_three_four", "two_three_foooour", "two_two", "three_three"));
     }
 
     @Test
-    public void testInsertValues() {
+    void testInsertValues() {
         Map<String, String> map = new HashMap<>();
         map.put("Normal_value", "Normal-Replacement");
         map.put("123", "987");
@@ -186,13 +186,14 @@ public class StringsTest {
         assertEquals("1. weird, and 2. weird", multi);
     }
 
-    @Test(expected = IllegalArgumentException.class)
-    public void testFailedInsertValues() {
-        Strings.insertValues("$bbb", new HashMap<>());
+    @Test
+    void testFailedInsertValues() {
+        assertThrows(IllegalArgumentException.class,
+                () -> Strings.insertValues("$bbb", new HashMap<>()));
     }
 
     @Test
-    public void testExtractUntil() {
+    void testExtractUntil() {
         String text = " Some text # comment";
         int sign = text.indexOf('#');
         Strings.Extract x = Strings.extractUntil(text, 0, CharSet.of("#%!"));
@@ -247,19 +248,19 @@ public class StringsTest {
     }
 
     @Test
-    public void testPrintLongDuration0() {
+    void testPrintLongDuration0() {
         String representation = Strings.printLongDuration(0);
         assertEquals("0", representation);
     }
 
     @Test
-    public void testPrintLongDurationNanos() {
+    void testPrintLongDurationNanos() {
         String representation = Strings.printLongDuration(123);
         assertEquals("123 nanoseconds", representation);
     }
 
     @Test
-    public void testPrintLongDurationDays() {
+    void testPrintLongDurationDays() {
         long duration = TimeUnit.DAYS.toNanos(5);
         duration += TimeUnit.HOURS.toNanos(23);
         duration += TimeUnit.MINUTES.toNanos(1);
@@ -270,7 +271,7 @@ public class StringsTest {
     }
 
     @Test
-    public void testPrintLongNegativeDuration() {
+    void testPrintLongNegativeDuration() {
         long duration = TimeUnit.DAYS.toNanos(5);
         duration += TimeUnit.HOURS.toNanos(23);
         duration += TimeUnit.MINUTES.toNanos(1);
@@ -281,65 +282,69 @@ public class StringsTest {
     }
 
     @Test
-    public void testPrintLongDurationSeconds() {
+    void testPrintLongDurationSeconds() {
         String representation = Strings.printLongDuration(18, TimeUnit.SECONDS);
         assertEquals("18 seconds", representation);
     }
 
     @Test
-    public void testReadDuration() {
+    void testReadDuration() {
         long duration = Strings.parseLongDuration("1 hour, 40 minutes and 33 sec.");
         long expected = TimeUnit.HOURS.toNanos(1) + TimeUnit.MINUTES.toNanos(40) + TimeUnit.SECONDS.toNanos(33);
         assertEquals(expected, duration);
     }
 
     @Test
-    public void testReadDurationInHours() {
+    void testReadDurationInHours() {
         long duration = Strings.parseLongDuration("7days", TimeUnit.HOURS);
         assertEquals(7 * 24, duration);
     }
 
     @Test
-    public void testReadDurationIgnoreGarbage() {
+    void testReadDurationIgnoreGarbage() {
         long duration = Strings.parseLongDuration("The delay should be 5 minutes, not more!");
         long expected = TimeUnit.MINUTES.toNanos(5);
         assertEquals(expected, duration);
     }
 
     @Test
-    public void testReadNegativeDuration() {
+    void testReadNegativeDuration() {
         long duration = Strings.parseLongDuration("-1 day 12 hours -30 minutes", TimeUnit.MINUTES);
         assertEquals(-TimeUnit.DAYS.toMinutes(1) + TimeUnit.HOURS.toMinutes(11) + 30, duration);
     }
 
-    @Test(expected = IllegalArgumentException.class)
-    public void testReadDurationFailed1() {
-        Strings.parseLongDuration("");
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testReadDurationFailed2() {
-        Strings.parseLongDuration("100 years");
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testReadDurationFailed3() {
-        Strings.parseLongDuration("351");
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testReadDurationFailed4() {
-        Strings.parseLongDuration("seconds: 5");
+    @Test
+    void testReadDurationFailed1() {
+        assertThrows(IllegalArgumentException.class,
+                () -> Strings.parseLongDuration(""));
     }
 
     @Test
-    public void testRandomDurations() {
-        ThreadLocalRandom r = ThreadLocalRandom.current();
+    void testReadDurationFailed2() {
+        assertThrows(IllegalArgumentException.class,
+                () -> Strings.parseLongDuration("100 years"));
+    }
+
+    @Test
+    void testReadDurationFailed3() {
+        assertThrows(IllegalArgumentException.class,
+                () -> Strings.parseLongDuration("351"));
+    }
+
+    @Test
+    void testReadDurationFailed4() {
+        assertThrows(IllegalArgumentException.class,
+                () -> Strings.parseLongDuration("seconds: 5"));
+    }
+
+    //@RepeatedTest(100) -- Alas this does not work in Intellij
+    @Test
+    void testRandomDurations() {
         for (int i=0; i < 100; i++) {
-            long time = r.nextLong();
+            long time = ThreadLocalRandom.current().nextLong();
             String repr = Strings.printLongDuration(time);
             long reverse = Strings.parseLongDuration(repr);
-            assertEquals("Random duration " + time + " printed as " + repr + " is read to " + reverse, time, reverse);
+            assertEquals(time, reverse, () -> "Random duration " + time + " printed as " + repr + " is read to " + reverse);
         }
     }
 }

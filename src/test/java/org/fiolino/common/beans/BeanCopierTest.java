@@ -1,17 +1,17 @@
 package org.fiolino.common.beans;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigInteger;
 import java.util.Date;
 
 import static java.lang.invoke.MethodHandles.lookup;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by kuli on 21.02.16.
  */
-public class BeanCopierTest {
+class BeanCopierTest {
     private static class A {
         private int intField;
         private String stringField;
@@ -139,7 +139,7 @@ public class BeanCopierTest {
     }
 
     @Test
-    public void testFactory() {
+    void testFactory() {
         BeanCopier<A, X> copier = BeanCopier.copyFromTo(lookup(), A.class, X.class);
         A a = new A();
         Object identity = new Object();
@@ -154,7 +154,7 @@ public class BeanCopierTest {
     }
 
     @Test
-    public void testCopy() {
+    void testCopy() {
         BeanCopier<A, X> copier = BeanCopier.copyFromTo(lookup(), A.class, X.class);
         A a = new A();
         Object identity = new Object();
@@ -173,7 +173,7 @@ public class BeanCopierTest {
     }
 
     @Test
-    public void testSubclass() {
+    void testSubclass() {
         BeanCopier<B, X> copier = BeanCopier.copyFromTo(lookup(), B.class, X.class);
         B b = new B();
         Object identity = new Object();
@@ -197,7 +197,7 @@ public class BeanCopierTest {
     }
 
     @Test
-    public void testDontCopy() {
+    void testDontCopy() {
         BeanCopier<B, X> copier = BeanCopier.copyFromTo(lookup(), B.class, X.class);
         B b = new B();
         BigInteger toTest = new BigInteger("1111");
@@ -208,7 +208,7 @@ public class BeanCopierTest {
     }
 
     @Test
-    public void testCheckNull() {
+    void testCheckNull() {
         BeanCopier<B, X> copier = BeanCopier.copyFromTo(lookup(), B.class, X.class);
         B b = new B();
         b.setLongField(null);
@@ -246,7 +246,7 @@ public class BeanCopierTest {
     }
 
     @Test
-    public void testSuperclassOwnersOnly() {
+    void testSuperclassOwnersOnly() {
         BeanCopier<B, C> copier = BeanCopier.copyFromTo(lookup(), B.class, C.class, FieldMatcher.combinationOf(
                 FieldMatcher.SAME_NAME, FieldMatcher.SAME_OWNER));
 
@@ -272,19 +272,19 @@ public class BeanCopierTest {
         private String copyThis;
         private Number number;
 
-        public String getCopyThis() {
+        String getCopyThis() {
             return copyThis;
         }
 
-        public void setCopyThis(String copyThis) {
+        void setCopyThis(String copyThis) {
             this.copyThis = copyThis;
         }
 
-        public Number getNumber() {
+        Number getNumber() {
             return number;
         }
 
-        public void setNumber(Number number) {
+        void setNumber(Number number) {
             this.number = number;
         }
     }
@@ -293,25 +293,25 @@ public class BeanCopierTest {
         private String copyThis;
         private int number = -1;
 
-        public String getCopyThis() {
+        String getCopyThis() {
             return copyThis;
         }
 
-        public void setCopyThis(String copyThis) {
+        void setCopyThis(String copyThis) {
             this.copyThis = copyThis;
         }
 
-        public int getNumber() {
+        int getNumber() {
             return number;
         }
 
-        public void setNumber(int number) {
+        void setNumber(int number) {
             this.number = number;
         }
     }
 
     @Test
-    public void testCopySubToSuper() {
+    void testCopySubToSuper() {
         BeanCopier<ContainsSubclass, ContainsSuperclass> copier = BeanCopier.copyFromTo(lookup(), ContainsSubclass.class, ContainsSuperclass.class);
         ContainsSubclass sub = new ContainsSubclass();
         sub.setCopyThis("Hello!");
@@ -323,7 +323,7 @@ public class BeanCopierTest {
     }
 
     @Test
-    public void testCopySuperToSub() {
+    void testCopySuperToSub() {
         BeanCopier<ContainsSuperclass, ContainsSubclass> copier = BeanCopier.copyFromTo(lookup(), ContainsSuperclass.class, ContainsSubclass.class);
         ContainsSuperclass sup = new ContainsSuperclass();
         sup.setCopyThis("Hello!");
@@ -335,7 +335,7 @@ public class BeanCopierTest {
     }
 
     @Test
-    public void testDontCopySuperToSubIfNotMatching() {
+    void testDontCopySuperToSubIfNotMatching() {
         BeanCopier<ContainsSuperclass, ContainsSubclass> copier = BeanCopier.copyFromTo(lookup(), ContainsSuperclass.class, ContainsSubclass.class);
         ContainsSuperclass sup = new ContainsSuperclass();
         sup.setCopyThis("Hello!");

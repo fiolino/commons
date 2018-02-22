@@ -1,6 +1,6 @@
 package org.fiolino.common.reflection;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.lang.annotation.ElementType;
 import java.lang.invoke.MethodHandle;
@@ -13,12 +13,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by Michael Kuhlmann on 15.12.2015.
  */
-public class ConvertersTest {
+@SuppressWarnings("unused")
+class ConvertersTest {
 
     private static class DataContainer {
         final int number;
@@ -37,7 +38,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testAcceptStrings() throws Throwable {
+    void testAcceptStrings() throws Throwable {
         MethodHandle constructor = lookup().findConstructor(DataContainer.class, methodType(void.class, int.class, String.class, Object.class, TimeUnit.class, BigDecimal.class));
         Object object = new AtomicInteger(9997);
         BigDecimal dec = new BigDecimal("888888888888");
@@ -86,7 +87,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testFromInt() throws Throwable {
+    void testFromInt() throws Throwable {
         Object getInt = new Object() {
             int getInt() {
                 return 15;
@@ -107,7 +108,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testFromInteger() throws Throwable {
+    void testFromInteger() throws Throwable {
         Object getInteger = new Object() {
             Integer getInteger() {
                 return 15;
@@ -124,7 +125,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testFromEnum() throws Throwable {
+    void testFromEnum() throws Throwable {
         Object getEnum = new Object() {
             TimeUnit getEnum() {
                 return TimeUnit.DAYS;
@@ -137,7 +138,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testFromNullEnum() throws Throwable {
+    void testFromNullEnum() throws Throwable {
         Object getEnum = new Object() {
             TimeUnit getEnum() {
                 return null;
@@ -172,7 +173,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testFromString() throws Throwable {
+    void testFromString() throws Throwable {
         Object getString = new Object() {
             @SuppressWarnings("unused")
             String getString(String val) {
@@ -223,7 +224,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testToPrimitive() throws Throwable {
+    void testToPrimitive() throws Throwable {
         Object getTester = new Object() {
             ToPrimitiveTester getTester() {
                 return new ToPrimitiveTester();
@@ -240,7 +241,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testDateConversion() throws Throwable {
+    void testDateConversion() throws Throwable {
         Object getDate = new Object() {
             Date getData(long time) {
                 return new Date(time);
@@ -282,7 +283,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testBooleanAndChar() throws Throwable {
+    void testBooleanAndChar() throws Throwable {
         Object getBool = new Object() {
             boolean getBool(boolean b) {
                 return b;
@@ -313,7 +314,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testDirectConverter() throws Throwable {
+    void testDirectConverter() throws Throwable {
         // Test unnecessary converter
         Converter c = Converters.defaultConverters.find(Integer.class, Number.class);
         assertNotNull(c);
@@ -336,7 +337,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testConvertParameter() throws Throwable {
+    void testConvertParameter() throws Throwable {
         MethodHandle appendCharSeq = publicLookup().findVirtual(StringBuilder.class, "append",
                 methodType(StringBuilder.class, CharSequence.class));
         // First try something that doesn't need to be converted
@@ -360,14 +361,14 @@ public class ConvertersTest {
 
     // Can't convert from any primitive to another wrapper
     @Test
-    public void testWrongPrimitive() throws NoMatchingConverterException {
+    void testWrongPrimitive() throws NoMatchingConverterException {
         Converter converter = Converters.defaultConverters.find(long.class, Integer.class);
         assertFalse(converter.isConvertable());
     }
 
     // But can convert from any wrapper to some primitive as long as there's an xxxValue() method
     @Test
-    public void testConvertablePrimitive() throws Throwable {
+    void testConvertablePrimitive() throws Throwable {
         Converter c = Converters.defaultConverters.find(Integer.class, long.class);
         long val = (long) c.getConverter().invokeExact((Integer) 12345);
         assertEquals(12345L, val);
@@ -394,7 +395,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testConvertType() throws Throwable {
+    void testConvertType() throws Throwable {
         MethodHandle concat = lookup().findStatic(ConvertersTest.class, "concat", methodType(
                 String.class, String.class, long.class, Date.class, boolean.class));
         MethodHandle different = Converters.convertTo(concat, Converters.defaultConverters,
@@ -410,7 +411,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testLessArguments() throws Throwable {
+    void testLessArguments() throws Throwable {
         MethodHandle concat = lookup().findStatic(ConvertersTest.class, "concat", methodType(
                 String.class, String.class, long.class, Date.class, boolean.class));
         Date now = new Date();
@@ -427,7 +428,7 @@ public class ConvertersTest {
     }
 
     @Test
-    public void testMoreArguments() throws Throwable {
+    void testMoreArguments() throws Throwable {
         MethodHandle max = lookup().findStatic(Math.class, "max", methodType(int.class, int.class, int.class));
         MethodHandle more = Converters.convertTo(max, Converters.defaultConverters,
                 methodType(String.class, Float.class, BigInteger.class, Date.class, TimeUnit.class));

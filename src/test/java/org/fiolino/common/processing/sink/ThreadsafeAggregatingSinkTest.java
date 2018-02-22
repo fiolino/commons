@@ -1,19 +1,19 @@
 package org.fiolino.common.processing.sink;
 
 import org.fiolino.common.container.Container;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * Created by kuli on 06.04.16.
  */
-public class ThreadsafeAggregatingSinkTest {
+class ThreadsafeAggregatingSinkTest {
     @Test
-    public void testNotFilled() throws Throwable {
+    void testNotFilled() throws Throwable {
         MySink<List<String>> sink = new MySink<>();
         Sink<String> aggregator = new ThreadsafeAggregatingSink<>(sink, 10);
 
@@ -28,7 +28,7 @@ public class ThreadsafeAggregatingSinkTest {
     }
 
     @Test
-    public void testFull() throws Throwable {
+    void testFull() throws Throwable {
         MySink<List<String>> sink = new MySink<>();
         Sink<String> aggregator = new ThreadsafeAggregatingSink<>(sink, 2);
         aggregator.accept("One", Container.empty());

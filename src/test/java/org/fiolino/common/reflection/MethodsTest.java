@@ -1,6 +1,6 @@
 package org.fiolino.common.reflection;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import javax.annotation.concurrent.ThreadSafe;
 import java.awt.event.ActionListener;
@@ -17,7 +17,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntBinaryOperator;
@@ -27,37 +26,38 @@ import java.util.function.UnaryOperator;
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by Michael Kuhlmann on 15.12.2015.
  */
-public class MethodsTest {
+class MethodsTest {
 
     private static final MethodHandles.Lookup LOOKUP = lookup();
 
+    @SuppressWarnings("unused")
     private static class Bean {
         int value;
 
-        public int getValue() {
+        int getValue() {
             return value / 10;
         }
 
-        public void setValue(int value) {
+        void setValue(int value) {
             this.value = value * 10;
         }
 
-        public int getValue(int plus) {
+        int getValue(int plus) {
             return value + plus;
         }
 
-        public void setValue(int value, int multi) {
+        void setValue(int value, int multi) {
             this.value = value * multi;
         }
     }
 
     @Test
-    public void testFindGetter() throws Throwable {
+    void testFindGetter() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
         MethodHandle handle = Methods.findGetter(LOOKUP, field);
         assertNotNull(handle);
@@ -69,7 +69,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindSetter() throws Throwable {
+    void testFindSetter() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
         MethodHandle handle = Methods.findSetter(LOOKUP, field);
         assertNotNull(handle);
@@ -80,7 +80,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindGetterWithInt() throws Throwable {
+    void testFindGetterWithInt() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
         MethodHandle handle = Methods.findGetter(LOOKUP, field, int.class);
         assertNotNull(handle);
@@ -92,7 +92,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindSetterWithIntAndString() throws Throwable {
+    void testFindSetterWithIntAndString() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
         MethodHandle handle = Methods.findSetter(LOOKUP, field, int.class, String.class); // String is ignored
         assertNotNull(handle);
@@ -103,7 +103,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindGetterWithIntAndDate() throws Throwable {
+    void testFindGetterWithIntAndDate() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
         MethodHandle handle = Methods.findGetter(LOOKUP, field, int.class, Date.class); // Date is ignored
         assertNotNull(handle);
@@ -115,7 +115,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindSetterWithInt() throws Throwable {
+    void testFindSetterWithInt() throws Throwable {
         Field field = Bean.class.getDeclaredField("value");
         MethodHandle handle = Methods.findSetter(LOOKUP, field, int.class);
         assertNotNull(handle);
@@ -130,7 +130,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindGetterWithoutMethods() throws Throwable {
+    void testFindGetterWithoutMethods() throws Throwable {
         Field field = BeanWithoutMethods.class.getDeclaredField("value");
         MethodHandle handle = Methods.findGetter(LOOKUP, field);
         assertNotNull(handle);
@@ -142,7 +142,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindSetterWithoutMethods() throws Throwable {
+    void testFindSetterWithoutMethods() throws Throwable {
         Field field = BeanWithoutMethods.class.getDeclaredField("value");
         MethodHandle handle = Methods.findSetter(LOOKUP, field);
         assertNotNull(handle);
@@ -157,25 +157,25 @@ public class MethodsTest {
         boolean isWithIsInGetterAndSetter;
         boolean isWithoutIsInGetterAndSetter;
 
-        public boolean getIsWithIsInGetterAndSetter() {
+        boolean getIsWithIsInGetterAndSetter() {
             return isWithIsInGetterAndSetter;
         }
 
-        public void setIsWithIsInGetterAndSetter(boolean withIsInGetterAndSetter) {
+        void setIsWithIsInGetterAndSetter(boolean withIsInGetterAndSetter) {
             isWithIsInGetterAndSetter = withIsInGetterAndSetter;
         }
 
-        public boolean isWithoutIsInGetterAndSetter() {
+        boolean isWithoutIsInGetterAndSetter() {
             return isWithoutIsInGetterAndSetter;
         }
 
-        public void setWithoutIsInGetterAndSetter(boolean withoutIsInGetterAndSetter) {
+        void setWithoutIsInGetterAndSetter(boolean withoutIsInGetterAndSetter) {
             isWithoutIsInGetterAndSetter = withoutIsInGetterAndSetter;
         }
     }
 
     @Test
-    public void testFindBooleanWithGetAndIs() throws Throwable {
+    void testFindBooleanWithGetAndIs() throws Throwable {
         Field field = BeanWithBooleanValues.class.getDeclaredField("isWithIsInGetterAndSetter");
         MethodHandle getter = Methods.findGetter(LOOKUP, field);
         assertNotNull(getter);
@@ -189,7 +189,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindBooleanWithoutGetAndIs() throws Throwable {
+    void testFindBooleanWithoutGetAndIs() throws Throwable {
         Field field = BeanWithBooleanValues.class.getDeclaredField("isWithoutIsInGetterAndSetter");
         MethodHandle getter = Methods.findGetter(LOOKUP, field);
         assertNotNull(getter);
@@ -203,7 +203,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindViaConsumer() throws Throwable {
+    void testFindViaConsumer() throws Throwable {
         @SuppressWarnings("unchecked")
         MethodHandle handle = Methods.findUsing(LOOKUP, List.class, l -> l.add(null));
         assertNotNull(handle);
@@ -215,7 +215,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testBindUsing() throws Throwable {
+    void testBindUsing() throws Throwable {
         List<String> testList = new ArrayList<>();
         MethodHandle handle = Methods.bindUsing(LOOKUP, testList, l -> l.add(null));
         assertNotNull(handle);
@@ -242,7 +242,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFindUsingPrototype() throws Throwable {
+    void testFindUsingPrototype() throws Throwable {
         final MethodHandle[] handles = new MethodHandle[2];
         Methods.findUsing(LOOKUP, new Prototype(), null, (v, m, handleSupplier) -> {
             handles[m.getName().equals("createAddHandle") ? 0 : 1] = handleSupplier.get();
@@ -260,7 +260,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testEnumConversion() throws Throwable {
+    void testEnumConversion() throws Throwable {
         MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class, (f, v) -> null);
         assertNotNull(handle);
         TimeUnit unit = (TimeUnit) handle.invokeExact("DAYS");
@@ -268,7 +268,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testEnumConversionWithSpecial() throws Throwable {
+    void testEnumConversionWithSpecial() throws Throwable {
         MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class, (f, v) -> v == TimeUnit.DAYS ? "hola!" : null);
         assertNotNull(handle);
         TimeUnit unit = (TimeUnit) handle.invokeExact("MINUTES");
@@ -278,23 +278,26 @@ public class MethodsTest {
     }
 
     @Test
-    public void testEnumConversionWithNullValue() throws Throwable {
+    void testEnumConversionWithNullValue() throws Throwable {
         MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class, (f, v) -> null);
         assertNotNull(handle);
         TimeUnit unit = (TimeUnit) handle.invokeExact((String) null);
         assertNull(unit);
     }
 
-    @Test(expected = IllegalArgumentException.class)
-    public void testEnumConversionWithException() throws Throwable {
+    @Test
+    void testEnumConversionWithException() {
         MethodHandle handle = Methods.convertStringToEnum(TimeUnit.class, (f, v) -> null);
         assertNotNull(handle);
-        TimeUnit unit = (TimeUnit) handle.invokeExact("Boom!");
-        fail("Should not be here!");
+        assertThrows(IllegalArgumentException.class,
+                () -> {
+                    @SuppressWarnings("unused")
+                    TimeUnit unit = (TimeUnit) handle.invokeExact("Boom!");
+                });
     }
 
     @Test
-    public void testEnumToStringNoSpecial() throws Throwable {
+    void testEnumToStringNoSpecial() throws Throwable {
         MethodHandle handle = Methods.convertEnumToString(TimeUnit.class, (f, u) -> null); // Normally you would just use findVirtual("name")
         for (TimeUnit u : TimeUnit.values()) {
             String name = (String) handle.invokeExact(u);
@@ -303,7 +306,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testEnumToStringWithSpecial() throws Throwable {
+    void testEnumToStringWithSpecial() throws Throwable {
         MethodHandle handle = Methods.convertEnumToString(TimeUnit.class, (f, u) -> u == TimeUnit.DAYS || u == TimeUnit.HOURS ? "Boing!" : null);
         for (TimeUnit u : TimeUnit.values()) {
             String name = (String) handle.invokeExact(u);
@@ -321,7 +324,7 @@ public class MethodsTest {
     }
     
     @Test
-    public void testRethrowExceptionNoArguments() throws Throwable {
+    void testRethrowExceptionNoArguments() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
         booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
                 ExceptionHandler.rethrowException(UnsupportedOperationException::new, "I have no {0} parameters"));
@@ -337,7 +340,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testRethrowExceptionWithInjections() throws Throwable {
+    void testRethrowExceptionWithInjections() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
         booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
                 ExceptionHandler.rethrowException(UnsupportedOperationException::new, "No. 1: {0}, no. 2: {1}"), "One", 2);
@@ -358,7 +361,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testRethrowExceptionWithParameters() throws Throwable {
+    void testRethrowExceptionWithParameters() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class, int.class, String.class));
         booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
                 ExceptionHandler.rethrowException(UnsupportedOperationException::new, "Injection 1: {0}, injection 2: {1}, param 1: {2}, param 2: {3}"),
@@ -375,7 +378,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testRethrowExceptionWithSuppliers() throws Throwable {
+    void testRethrowExceptionWithSuppliers() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class, int.class, String.class));
         AtomicInteger readCount = new AtomicInteger();
         booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class,
@@ -402,7 +405,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testWrapExceptionNoArguments() throws Throwable {
+    void testWrapExceptionNoArguments() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
         AtomicInteger ref = new AtomicInteger();
         booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class, (ex, v) -> {
@@ -415,7 +418,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testWrapExceptionTwoArguments() throws Throwable {
+    void testWrapExceptionTwoArguments() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class, int.class, String.class));
         AtomicInteger refInt = new AtomicInteger();
         AtomicReference<String> refString = new AtomicReference<>();
@@ -431,17 +434,17 @@ public class MethodsTest {
         assertEquals("Fnord", refString.get());
     }
 
-    @Test(expected = UnsupportedOperationException.class)
-    public void testWrapExceptionAndThrow() throws Throwable {
+    @Test
+    void testWrapExceptionAndThrow() throws Throwable {
         MethodHandle booom = LOOKUP.findStatic(LOOKUP.lookupClass(), "booom", methodType(void.class));
         booom = Methods.wrapWithExceptionHandler(booom, FileNotFoundException.class, (ex, v) -> {
             throw new UnsupportedOperationException(ex);
         });
-        booom.invokeExact();
+        assertThrows(UnsupportedOperationException.class, booom::invokeExact);
     }
 
     @Test
-    public void testWrapExceptionReturnSomethingElse() throws Throwable {
+    void testWrapExceptionReturnSomethingElse() throws Throwable {
         MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
         AtomicReference<String> ref = new AtomicReference<>();
         parseInt = Methods.wrapWithExceptionHandler(parseInt, NumberFormatException.class, (ex, v) -> {
@@ -460,7 +463,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testWrapExceptionReturnNull() throws Throwable {
+    void testWrapExceptionReturnNull() throws Throwable {
         MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
         AtomicReference<String> ref = new AtomicReference<>();
         parseInt = Methods.wrapWithExceptionHandler(parseInt, NumberFormatException.class, (ex, v) -> {
@@ -479,7 +482,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testWrapExceptionHandleAlternative() throws Throwable {
+    void testWrapExceptionHandleAlternative() throws Throwable {
         MethodHandle charAt = publicLookup().findVirtual(String.class, "charAt", methodType(char.class, int.class));
         ExceptionHandler<RuntimeException> exceptionHandler = (ex, v) -> '0';
         charAt = Methods.wrapWithExceptionHandler(charAt, RuntimeException.class, exceptionHandler.orIf(IndexOutOfBoundsException.class, (ex, v) -> '?'));
@@ -493,7 +496,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testNullSafeObjectToPrimitive() throws Throwable {
+    void testNullSafeObjectToPrimitive() throws Throwable {
         MethodHandle identity = MethodHandles.identity(Object.class);
         MethodHandle handle = Methods.changeNullSafeReturnType(identity, int.class);
 
@@ -507,7 +510,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testNullSafeObjectToVoid() throws Throwable {
+    void testNullSafeObjectToVoid() throws Throwable {
         MethodHandle identity = MethodHandles.identity(Object.class);
         MethodHandle handle = Methods.changeNullSafeReturnType(identity, void.class);
 
@@ -515,7 +518,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testNullSafePrimitiveToObject() throws Throwable {
+    void testNullSafePrimitiveToObject() throws Throwable {
         MethodHandle identity = MethodHandles.identity(int.class);
         MethodHandle handle = Methods.changeNullSafeReturnType(identity, Object.class);
 
@@ -524,16 +527,16 @@ public class MethodsTest {
     }
 
     @Test
-    public void testNullSafePrimitiveToPrimitive() throws Throwable {
+    void testNullSafePrimitiveToPrimitive() throws Throwable {
         MethodHandle identity = MethodHandles.identity(int.class);
         MethodHandle handle = Methods.changeNullSafeReturnType(identity, long.class);
 
         long value = (long) handle.invokeExact(10);
-        assertEquals(10l, value);
+        assertEquals(10L, value);
     }
 
     @Test
-    public void testNullSafePrimitiveToVoid() throws Throwable {
+    void testNullSafePrimitiveToVoid() throws Throwable {
         MethodHandle identity = MethodHandles.identity(int.class);
         MethodHandle handle = Methods.changeNullSafeReturnType(identity, void.class);
 
@@ -541,25 +544,25 @@ public class MethodsTest {
     }
 
     @Test
-    public void testNullSafeVoidToObject() throws Throwable {
+    void testNullSafeVoidToObject() throws Throwable {
         Date date = new Date();
         MethodHandle setTime = publicLookup().bind(date, "setTime", methodType(void.class, long.class));
         MethodHandle handle = Methods.changeNullSafeReturnType(setTime, Object.class);
 
-        Object value = handle.invokeExact(123456789l);
+        Object value = handle.invokeExact(123456789L);
         assertNull(value);
-        assertEquals(123456789l, date.getTime());
+        assertEquals(123456789L, date.getTime());
     }
 
     @Test
-    public void testNullSafeVoidToPrimitive() throws Throwable {
+    void testNullSafeVoidToPrimitive() throws Throwable {
         Date date = new Date();
         MethodHandle setTime = publicLookup().bind(date, "setTime", methodType(void.class, long.class));
         MethodHandle handle = Methods.changeNullSafeReturnType(setTime, double.class);
 
-        double value = (double) handle.invokeExact(123456789l);
+        double value = (double) handle.invokeExact(123456789L);
         assertEquals(0, value, 0.01);
-        assertEquals(123456789l, date.getTime());
+        assertEquals(123456789L, date.getTime());
     }
 
     @SuppressWarnings("unused")
@@ -575,7 +578,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testAnd() throws Throwable {
+    void testAnd() throws Throwable {
         AtomicInteger counter = new AtomicInteger();
         MethodHandle check = LOOKUP.findStatic(LOOKUP.lookupClass(), "checkEquals", methodType(boolean.class, String.class, String.class, AtomicInteger.class));
         check = MethodHandles.insertArguments(check, 2, counter);
@@ -603,7 +606,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testOr() throws Throwable {
+    void testOr() throws Throwable {
         AtomicInteger counter = new AtomicInteger();
         MethodHandle check = LOOKUP.findStatic(LOOKUP.lookupClass(), "checkEquals", methodType(boolean.class, String.class, String.class, AtomicInteger.class));
         check = MethodHandles.insertArguments(check, 2, counter);
@@ -635,13 +638,13 @@ public class MethodsTest {
     }
 
     @Test
-    public void testDoNothing() throws Throwable {
+    void testDoNothing() throws Throwable {
         MethodHandle doNothing = Methods.DO_NOTHING;
         doNothing.invokeExact();
     }
 
     @Test
-    public void testIsNull() throws Throwable {
+    void testIsNull() throws Throwable {
         MethodHandle isNull = Methods.nullCheck(String.class);
         boolean test = (boolean) isNull.invokeExact("ABC");
         assertFalse(test);
@@ -655,7 +658,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testNotNull() throws Throwable {
+    void testNotNull() throws Throwable {
         MethodHandle isNotNull = Methods.notNullCheck(Object.class);
         boolean test = (boolean) isNotNull.invokeExact((Object) new Date());
         assertTrue(test);
@@ -679,7 +682,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testNullCheck() throws Throwable {
+    void testNullCheck() throws Throwable {
         MethodHandle handle = LOOKUP.findStatic(LOOKUP.lookupClass(), "concatenate", methodType(String.class, String.class, int.class, String.class, boolean.class, String.class));
         handle = Methods.secureNull(handle);
         String notNull = (String) handle.invokeExact("Num ", 12, " is not ", true, ".");
@@ -721,7 +724,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testSecureArgument() throws Throwable {
+    void testSecureArgument() throws Throwable {
         @SuppressWarnings({"unchecked", "rawTypes"})
         MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
         MethodHandle check = LOOKUP.findVirtual(String.class, "startsWith", methodType(boolean.class, String.class));
@@ -743,7 +746,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testAssertNotNull() throws Throwable {
+    void testAssertNotNull() throws Throwable {
         @SuppressWarnings({"unchecked", "rawTypes"})
         MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
         addToList = Methods.assertNotNull(addToList, 1, "blubber");
@@ -760,18 +763,19 @@ public class MethodsTest {
         fail("Should have thrown NPE");
     }
 
-    @Test(expected = FileNotFoundException.class)
-    public void testAssertNotNullOwnException() throws Throwable {
+    @Test
+    void testAssertNotNullOwnException() {
         @SuppressWarnings({"unchecked", "rawTypes"})
         MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
-        addToList = Methods.assertNotNull(addToList, FileNotFoundException.class, "This was a test");
+        MethodHandle nullChecked = Methods.assertNotNull(addToList, FileNotFoundException.class, "This was a test");
         List<Object> list = new ArrayList<>();
 
-        assertTrue((boolean) addToList.invokeExact(list, (Object) null));
+        assertThrows(FileNotFoundException.class, 
+                () -> assertTrue((boolean) nullChecked.invokeExact(list, (Object) null)));
     }
 
     @Test
-    public void testReturnEmpty() throws Throwable {
+    void testReturnEmpty() throws Throwable {
         Date date = new Date();
         MethodHandle getTime = publicLookup().findVirtual(Date.class, "getTime", methodType(long.class));
         MethodHandle returnEmpty = Methods.returnEmptyValue(getTime, long.class);
@@ -791,7 +795,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testReturnArgument() throws Throwable {
+    void testReturnArgument() throws Throwable {
         Date date = new Date();
         MethodHandle setTime = publicLookup().findVirtual(Date.class, "setTime", methodType(void.class, long.class));
         MethodHandle returnArg = Methods.returnArgument(setTime, 1);
@@ -812,29 +816,29 @@ public class MethodsTest {
     }
 
     @Test
-    public void testInstanceCheck() throws Throwable {
+    void testInstanceCheck() throws Throwable {
         MethodHandle instanceCheck = Methods.instanceCheck(String.class);
         boolean isInstance = (boolean) instanceCheck.invokeExact((Object) 1848);
-        assertFalse("Number is not String", isInstance);
+        assertFalse(isInstance, "Number is not String");
         isInstance = (boolean) instanceCheck.invokeExact((Object) "Some string");
-        assertTrue("String is a String", isInstance);
+        assertTrue(isInstance, "String is a String");
         isInstance = (boolean) instanceCheck.invokeExact((Object) null);
-        assertFalse("null is not a String", isInstance);
+        assertFalse(isInstance, "null is not a String");
     }
 
     @Test
-    public void testInstanceCheckIsNotNullCheckForObject() throws Throwable {
+    void testInstanceCheckIsNotNullCheckForObject() throws Throwable {
         MethodHandle instanceCheck = Methods.instanceCheck(Object.class);
         boolean isInstance = (boolean) instanceCheck.invokeExact((Object) 1848);
-        assertTrue("Number is not null", isInstance);
+        assertTrue(isInstance, "Number is not null");
         isInstance = (boolean) instanceCheck.invokeExact((Object) "Some string");
-        assertTrue("String is not null", isInstance);
+        assertTrue(isInstance, "String is not null");
         isInstance = (boolean) instanceCheck.invokeExact((Object) null);
-        assertFalse("null check", isInstance);
+        assertFalse(isInstance, "null check");
     }
 
     @Test
-    public void testMethodTypesEqual() {
+    void testMethodTypesEqual() {
         MethodType prototype = methodType(Date.class, CharSequence.class, int.class);
         Comparison compare = Methods.compare(prototype, methodType(Date.class, CharSequence.class, int.class));
         assertEquals(Comparison.EQUAL, compare);
@@ -843,7 +847,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testMethodTypesMoreGeneric() {
+    void testMethodTypesMoreGeneric() {
         MethodType prototype = methodType(Date.class, String.class, int.class);
         Comparison compare = Methods.compare(prototype, methodType(Timestamp.class, CharSequence.class, Number.class));
         assertEquals(Comparison.MORE_GENERIC, compare);
@@ -858,7 +862,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testMethodTypesMoreSpecific() {
+    void testMethodTypesMoreSpecific() {
         MethodType prototype = methodType(Date.class, CharSequence.class, Integer.class);
         Comparison compare = Methods.compare(prototype, methodType(Date.class, CharSequence.class, int.class));
         assertEquals(Comparison.MORE_SPECIFIC, compare);
@@ -873,7 +877,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testMethodTypesConvertable() {
+    void testMethodTypesConvertable() {
         MethodType prototype = methodType(Date.class, CharSequence.class, Integer.class);
         Comparison compare = Methods.compare(prototype, methodType(Date.class, Object.class, int.class));
         assertEquals(Comparison.CONVERTABLE, compare);
@@ -882,7 +886,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testMethodTypesIncomatible() {
+    void testMethodTypesIncomatible() {
         MethodType prototype = methodType(Date.class, CharSequence.class, Integer.class);
         Comparison compare = Methods.compare(prototype, methodType(Date.class, Date.class, int.class));
         assertEquals(Comparison.INCOMPATIBLE, compare);
@@ -891,23 +895,24 @@ public class MethodsTest {
     }
 
     @Test
-    public void testMethodTypesLessArguments() {
+    void testMethodTypesLessArguments() {
         MethodType prototype = methodType(Date.class, CharSequence.class, Integer.class);
         Comparison compare = Methods.compare(prototype, methodType(Date.class, CharSequence.class));
         assertEquals(Comparison.LESS_ARGUMENTS, compare);
     }
 
     @Test
-    public void testMethodTypesMoreArguments() {
+    void testMethodTypesMoreArguments() {
         MethodType prototype = methodType(Date.class);
         Comparison compare = Methods.compare(prototype, methodType(Date.class, float.class));
         assertEquals(Comparison.MORE_ARGUMENTS, compare);
     }
 
     @Test
-    public void testFindSingleMethod() throws Throwable {
+    void testFindSingleMethod() throws Throwable {
         final AtomicReference<String> ref = new AtomicReference<>();
         MethodHandle handle = Methods.findMethodHandleOfType(LOOKUP, new Object() {
+            @SuppressWarnings("unused")
             void set(String value) {
                 ref.set(value);
             }
@@ -917,6 +922,7 @@ public class MethodsTest {
         assertEquals("Hello world.", ref.get());
 
         handle = Methods.findMethodHandleOfType(LOOKUP, new Object() {
+            @SuppressWarnings("unused")
             void set(String value) {
                 ref.set(value);
             }
@@ -926,13 +932,14 @@ public class MethodsTest {
         assertEquals("Hello world.", ref.get());
     }
 
-    @Test(expected = NoSuchMethodError.class)
-    public void testFindSingleMethodFailed() throws IllegalAccessException {
-        Methods.findMethodHandleOfType(LOOKUP, ActionListener.class, methodType(String.class));
+    @Test
+    void testFindSingleMethodFailed() {
+        assertThrows(NoSuchMethodError.class,
+                () -> Methods.findMethodHandleOfType(LOOKUP, ActionListener.class, methodType(String.class)));
     }
 
     @Test
-    public void findSingleMethodWithNewInstance() throws Throwable {
+    void findSingleMethodWithNewInstance() throws Throwable {
         MethodHandle handle = Methods.findMethodHandleOfType(publicLookup(), StringBuilder.class,
                 methodType(StringBuilder.class, String.class));
         StringBuilder sb1 = (StringBuilder) handle.invokeExact("First");
@@ -943,7 +950,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void findSingleMethodWithSameInstanceOnEveryCall() throws Throwable {
+    void findSingleMethodWithSameInstanceOnEveryCall() throws Throwable {
         StringBuilder sb = new StringBuilder("Initial ");
         MethodHandle handle = Methods.findMethodHandleOfType(publicLookup(), sb,
                 methodType(StringBuilder.class, String.class));
@@ -975,7 +982,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void findSingleBestMatchingMethod() throws Throwable {
+    void findSingleBestMatchingMethod() throws Throwable {
         // Also checks that no new instance ist created because returnHello() is static
         MethodHandle handle = Methods.findMethodHandleOfType(LOOKUP, WithThreeMethods.class, methodType(String.class));
         String s = (String) handle.invokeExact();
@@ -994,15 +1001,15 @@ public class MethodsTest {
         assertEquals("My", o);
     }
 
-    @Test(expected = AmbiguousMethodException.class)
-    public void testFindSingleMethodAmbiguous() throws IllegalAccessException {
+    @Test
+    void testFindSingleMethodAmbiguous() {
         // Both possible methods are more generic
-        Methods.findMethodHandleOfType(LOOKUP, WithThreeMethods.class,
-                methodType(CharSequence.class, String.class));
+        assertThrows(AmbiguousMethodException.class,
+                () -> Methods.findMethodHandleOfType(LOOKUP, WithThreeMethods.class, methodType(CharSequence.class, String.class)));
     }
 
     @Test
-    public void testSynchronize() throws Throwable {
+    void testSynchronize() throws Throwable {
         Semaphore p = new Semaphore(1);
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandle getValue = publicLookup().bind(ref, "get", methodType(Object.class));
@@ -1020,7 +1027,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testSynchronizeWithException() throws Throwable {
+    void testSynchronizeWithException() throws Throwable {
         Semaphore p = new Semaphore(1);
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandle checkValue = LOOKUP.findStatic(LOOKUP.lookupClass(), "check", methodType(void.class, AtomicReference.class, Object.class));
@@ -1045,7 +1052,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testSynchronizeConcurrent() throws Throwable {
+    void testSynchronizeConcurrent() throws Throwable {
         AtomicReference<String> ref = new AtomicReference<>("Initial");
         MethodHandle sleepAndCompare = LOOKUP.findStatic(LOOKUP.lookupClass(), "sleepAndCompare", methodType(String.class, long.class, AtomicReference.class, String.class));
         MethodHandle guarded = Methods.synchronize(sleepAndCompare);
@@ -1067,7 +1074,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFinallyNormalExecution() throws Throwable {
+    void testFinallyNormalExecution() throws Throwable {
         MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
         AtomicReference<String> ref = new AtomicReference<>();
         MethodHandle set = publicLookup().bind(ref, "set", methodType(void.class, Object.class));
@@ -1083,7 +1090,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testFinallyWithException() throws Throwable {
+    void testFinallyWithException() throws Throwable {
         MethodHandle parseInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
         AtomicReference<String> ref = new AtomicReference<>();
         MethodHandle set = publicLookup().bind(ref, "set", methodType(void.class, Object.class));
@@ -1104,7 +1111,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testLambdaFactory() throws Throwable {
+    void testLambdaFactory() throws Throwable {
         MethodHandle mult = publicLookup().findStatic(Math.class, "multiplyExact", methodType(int.class, int.class, int.class));
         MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, mult, IntUnaryOperator.class);
         assertNotNull(lambdaFactory);
@@ -1121,7 +1128,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testLambdaFactoryWithMarkers() throws Throwable {
+    void testLambdaFactoryWithMarkers() throws Throwable {
         MethodHandle mult = publicLookup().findStatic(Math.class, "multiplyExact", methodType(int.class, int.class, int.class));
         MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, mult, IntBinaryOperator.class,
                 ThreadSafe.class, Override.class); // Hehe, annotations as marker interfaces
@@ -1138,12 +1145,12 @@ public class MethodsTest {
         return String.valueOf(a + Integer.parseInt(b.toString()));
     }
 
-    public interface SumToString {
+    interface SumToString {
         Object sumUpNonsense(int a, Integer b);
     }
 
     @Test
-    public void testLambdaFactoryWithConversion() throws Throwable {
+    void testLambdaFactoryWithConversion() throws Throwable {
         MethodHandle sum = LOOKUP.findStatic(LOOKUP.lookupClass(), "sumUp", methodType(String.class, Integer.class, Object.class));
         MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, sum, SumToString.class);
         assertNotNull(lambdaFactory);
@@ -1156,7 +1163,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testLambdaFactoryNotDirect() throws NoSuchMethodException, IllegalAccessException {
+    void testLambdaFactoryNotDirect() throws NoSuchMethodException, IllegalAccessException {
         MethodHandle sum = LOOKUP.findStatic(LOOKUP.lookupClass(), "sumUp", methodType(String.class, Integer.class, Object.class));
         MethodHandle modified = MethodHandles.dropArguments(sum, 1, String.class);
         MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, modified, SumToString.class);
@@ -1164,7 +1171,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testLambdafy() throws Throwable {
+    void testLambdafy() throws Throwable {
         MethodHandle mult = publicLookup().findStatic(Math.class, "multiplyExact", methodType(int.class, int.class, int.class));
         IntUnaryOperator doubleIt = Methods.lambdafy(mult, IntUnaryOperator.class, 2);
         assertFalse(MethodHandleProxies.isWrapperInstance(doubleIt));
@@ -1177,7 +1184,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testLambdafyNotDirect() throws Throwable {
+    void testLambdafyNotDirect() throws Throwable {
         MethodHandle mult = publicLookup().findStatic(Math.class, "multiplyExact", methodType(int.class, int.class, int.class));
         MethodHandle modified = MethodHandles.dropArguments(mult, 1, String.class);
         IntUnaryOperator doubleIt = Methods.lambdafy(modified, IntUnaryOperator.class, 2, "Ignored");
@@ -1214,7 +1221,7 @@ public class MethodsTest {
     }
 
     @Test
-    public void testLambdaInFull() throws Throwable {
+    void testLambdaInFull() throws Throwable {
         MethodHandle loop = LOOKUP.findVirtual(StringLoop.class, "loop", methodType(String.class, CharSequence.class));
         MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, loop, UnaryOperator.class);
         assertNotNull(lambdaFactory);

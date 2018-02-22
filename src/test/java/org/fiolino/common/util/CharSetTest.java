@@ -3,18 +3,18 @@ package org.fiolino.common.util;
 import java.text.CharacterIterator;
 import java.util.function.IntPredicate;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Created by kuli on 07.11.16.
  */
-public class CharSetTest {
+class CharSetTest {
     @Test
-    public void contains() {
+    void contains() {
         CharSet cs = CharSet.empty();
         for (int i = 0; i < 1024; i++) {
             assertFalse(cs.contains((char) i));
@@ -28,7 +28,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void asPredicate() {
+    void asPredicate() {
         IntPredicate pred = CharSet.of("abc").asPredicate();
         assertTrue(pred.test((int) 'a'));
         assertTrue(pred.test((int) 'b'));
@@ -37,7 +37,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void remove() {
+    void remove() {
         CharSet cs = CharSet.of("abc");
         assertTrue(cs.contains('b'));
         assertEquals(3, cs.size());
@@ -54,7 +54,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void add() {
+    void add() {
         CharSet cs = CharSet.of("abc");
         assertFalse(cs.contains('z'));
         assertEquals(3, cs.size());
@@ -69,21 +69,21 @@ public class CharSetTest {
     }
 
     @Test
-    public void isContainedIn() {
+    void isContainedIn() {
         CharSet cs = CharSet.of("abc");
         assertFalse(cs.isContainedIn("Your mother"));
         assertTrue(cs.isContainedIn("The quick brown fox jumps over the lazy dog."));
     }
 
     @Test
-    public void size() {
+    void size() {
         assertEquals(0, CharSet.empty().size());
         CharSet cs = CharSet.of("Your life!");
         assertEquals(10, cs.size());
     }
 
     @Test
-    public void isEmpty() {
+    void isEmpty() {
         assertTrue(CharSet.empty().isEmpty());
         assertTrue(CharSet.of("").isEmpty());
         assertFalse(CharSet.of("abc").isEmpty());
@@ -92,7 +92,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void iterator() {
+    void iterator() {
         CharSet cs = CharSet.empty();
         CharacterIterator it = cs.iterator();
         assertEquals(CharacterIterator.DONE, it.current());
@@ -162,7 +162,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void union() {
+    void union() {
         CharSet first = CharSet.of("abcdef");
         CharSet second = CharSet.of("acegij");
         CharSet combined = first.union(second);
@@ -177,7 +177,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void intersection() {
+    void intersection() {
         CharSet first = CharSet.of("abcdef");
         CharSet second = CharSet.of("acegij");
         CharSet reduced = first.intersection(second);
@@ -200,7 +200,7 @@ public class CharSetTest {
     }
 
     @Test
-    public void allCharactersAsString() {
+    void allCharactersAsString() {
         CharSet cs = CharSet.empty();
         String s = cs.allCharactersAsString();
         assertEquals("\"\"", s);
@@ -214,7 +214,8 @@ public class CharSetTest {
         assertEquals("\" \\\"\\'aefhkorsw\"", s);
     }
 
-    public void nextIndexOf() {
+    @Test
+    void nextIndexOf() {
         CharSet cs = CharSet.empty();
         int index = cs.nextIndexIn("Any text.");
         assertEquals(-1, index);

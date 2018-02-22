@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
@@ -269,6 +270,17 @@ public class StringsTest {
     }
 
     @Test
+    public void testPrintLongNegativeDuration() {
+        long duration = TimeUnit.DAYS.toNanos(5);
+        duration += TimeUnit.HOURS.toNanos(23);
+        duration += TimeUnit.MINUTES.toNanos(1);
+        duration += TimeUnit.MICROSECONDS.toNanos(99);
+        // MILLIS and NANOS are 0 by intention
+        String representation = Strings.printLongDuration(-duration);
+        assertEquals("-5 days, -23 hours, -1 minute and -99 microseconds", representation);
+    }
+
+    @Test
     public void testPrintLongDurationSeconds() {
         String representation = Strings.printLongDuration(18, TimeUnit.SECONDS);
         assertEquals("18 seconds", representation);
@@ -283,7 +295,7 @@ public class StringsTest {
 
     @Test
     public void testReadDurationInHours() {
-        long duration = Strings.parseLongDuration("7 days", TimeUnit.HOURS);
+        long duration = Strings.parseLongDuration("7days", TimeUnit.HOURS);
         assertEquals(7 * 24, duration);
     }
 
@@ -292,6 +304,12 @@ public class StringsTest {
         long duration = Strings.parseLongDuration("The delay should be 5 minutes, not more!");
         long expected = TimeUnit.MINUTES.toNanos(5);
         assertEquals(expected, duration);
+    }
+
+    @Test
+    public void testReadNegativeDuration() {
+        long duration = Strings.parseLongDuration("-1 day 12 hours -30 minutes", TimeUnit.MINUTES);
+        assertEquals(-TimeUnit.DAYS.toMinutes(1) + TimeUnit.HOURS.toMinutes(11) + 30, duration);
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -312,5 +330,16 @@ public class StringsTest {
     @Test(expected = IllegalArgumentException.class)
     public void testReadDurationFailed4() {
         Strings.parseLongDuration("seconds: 5");
+    }
+
+    @Test
+    public void testRandomDurations() {
+        ThreadLocalRandom r = ThreadLocalRandom.current();
+        for (int i=0; i < 100; i++) {
+            long time = r.nextLong();
+            String repr = Strings.printLongDuration(time);
+            long reverse = Strings.parseLongDuration(repr);
+            assertEquals("Random duration " + time + " printed as " + repr + " is read to " + reverse, time, reverse);
+        }
     }
 }

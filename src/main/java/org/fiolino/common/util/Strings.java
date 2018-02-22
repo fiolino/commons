@@ -296,13 +296,9 @@ public final class Strings {
             return sb;
         }
 
-        if (duration < 0) {
-            sb.append('-');
-            duration *= -1;
-        }
         boolean isEmpty = true;
         long remaining = duration;
-        for (int i=0; i < TIME_UNITS.length && remaining > 0; i++) {
+        for (int i=0; i < TIME_UNITS.length && remaining != 0; i++) {
             TimeUnit u = TIME_UNITS[i];
             long thisVal = u.convert(remaining, unit);
             if (thisVal == 0) continue;
@@ -310,7 +306,7 @@ public final class Strings {
             if (isEmpty) isEmpty = false;
             else sb.append(remaining == 0 ? " and " : ", ");
             sb.append(thisVal).append(' ').append(TIME_UNIT_REPRESENTATIONS[i]);
-            if (thisVal > 1) sb.append('s');
+            if (Math.abs(thisVal) > 1) sb.append('s');
         }
 
         return sb;
@@ -334,7 +330,7 @@ public final class Strings {
         return appendLongDuration(new StringBuilder(), duration, unit).toString();
     }
 
-    private static final Pattern NUMBERS_AND_STRINGS = Pattern.compile("(\\d+)\\s*(\\w+)");
+    private static final Pattern NUMBERS_AND_STRINGS = Pattern.compile("(-?\\d+)\\s*(\\w+)");
 
     /**
      * Parses a long representation of a duration as in the result of printLongDuration().

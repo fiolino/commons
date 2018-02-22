@@ -265,7 +265,13 @@ public class StringsTest {
         duration += TimeUnit.MICROSECONDS.toNanos(99);
         // MILLIS and NANOS are 0 by intention
         String representation = Strings.printLongDuration(duration);
-        assertEquals("5 days 23 hours 1 minute 99 microseconds", representation);
+        assertEquals("5 days, 23 hours, 1 minute and 99 microseconds", representation);
+    }
+
+    @Test
+    public void testPrintLongDurationSeconds() {
+        String representation = Strings.printLongDuration(18, TimeUnit.SECONDS);
+        assertEquals("18 seconds", representation);
     }
 
     @Test
@@ -276,8 +282,14 @@ public class StringsTest {
     }
 
     @Test
+    public void testReadDurationInHours() {
+        long duration = Strings.parseLongDuration("7 days", TimeUnit.HOURS);
+        assertEquals(7 * 24, duration);
+    }
+
+    @Test
     public void testReadDurationIgnoreGarbage() {
-        long duration = Strings.parseLongDuration("The duration should be 5 minutes, not more!");
+        long duration = Strings.parseLongDuration("The delay should be 5 minutes, not more!");
         long expected = TimeUnit.MINUTES.toNanos(5);
         assertEquals(expected, duration);
     }

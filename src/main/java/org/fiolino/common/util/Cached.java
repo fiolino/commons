@@ -51,8 +51,8 @@ public abstract class Cached<T> implements Supplier<T> {
      * The time unit must be a unique start of some {@link TimeUnit} name. If none is given, seconds are assumed.
      */
     public static ExpectEvaluator updateEvery(String value) {
-        long duration = Strings.parseLongDuration(value);
-        return new ExpectEvaluator(TimeUnit.NANOSECONDS.toMillis(duration));
+        long duration = Strings.parseLongDuration(value, TimeUnit.MILLISECONDS);
+        return new ExpectEvaluator(duration);
     }
 
     /**
@@ -375,11 +375,11 @@ public abstract class Cached<T> implements Supplier<T> {
         void postToString(StringBuilder sb) {
             super.postToString(sb);
             if (isValid()) {
-                sb.append("; expires in ").append(Strings.printDuration(
-                        TimeUnit.MILLISECONDS.toNanos(refreshRate + lastUpdate - System.currentTimeMillis()), TimeUnit.MILLISECONDS));
+                sb.append("; expires in ");
+                Strings.appendLongDuration(sb, refreshRate + lastUpdate - System.currentTimeMillis(), TimeUnit.MILLISECONDS);
             } else {
-                sb.append("; expired since ").append(Strings.printDuration(
-                        TimeUnit.MILLISECONDS.toNanos(System.currentTimeMillis() - refreshRate - lastUpdate), TimeUnit.MILLISECONDS));
+                sb.append("; expired since ");
+                Strings.appendLongDuration(sb, System.currentTimeMillis() - refreshRate - lastUpdate, TimeUnit.MILLISECONDS);
             }
         }
     }

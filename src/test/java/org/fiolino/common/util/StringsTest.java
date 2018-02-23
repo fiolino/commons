@@ -173,23 +173,23 @@ class StringsTest {
         map.put("123", "987");
         map.put("   -- !!!! --   ", "weird");
 
-        String replaceAll = Strings.insertValues("This is a $Normal_value, this is a $123 number, and this is ${   -- !!!! --   } of course.", map);
+        String replaceAll = Strings.insertValues("This is a $Normal_value, this is a $123 number, and this is ${   -- !!!! --   } of course.", map::get);
         assertEquals("This is a Normal-Replacement, this is a 987 number, and this is weird of course.", replaceAll);
 
-        String withDollars = Strings.insertValues(" $$$ ", map);
+        String withDollars = Strings.insertValues(" $$$ ", map::get);
         assertEquals(" $$$ ", withDollars);
 
-        String only = Strings.insertValues("$123", map);
+        String only = Strings.insertValues("$123", map::get);
         assertEquals("987", only);
 
-        String multi = Strings.insertValues("1. ${   -- !!!! --   }, and 2. ${   -- !!!! --   }", map);
+        String multi = Strings.insertValues("1. ${   -- !!!! --   }, and 2. ${   -- !!!! --   }", map::get);
         assertEquals("1. weird, and 2. weird", multi);
     }
 
     @Test
     void testFailedInsertValues() {
         assertThrows(IllegalArgumentException.class,
-                () -> Strings.insertValues("$bbb", new HashMap<>()));
+                () -> Strings.insertValues("$bbb", x -> null));
     }
 
     @Test

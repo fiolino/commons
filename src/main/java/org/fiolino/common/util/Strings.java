@@ -1,11 +1,8 @@
 package org.fiolino.common.util;
 
-import java.text.ParseException;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.function.LongUnaryOperator;
-import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -373,7 +370,18 @@ public final class Strings {
             }
 
             if (found == null) {
-                throw new IllegalArgumentException(desc + " has undefined time unit " + unitVal);
+                switch (unitVal) {
+                    case "ms":
+                    case "msec":
+                        found = MILLISECONDS;
+                        break;
+                    case "µs":
+                    case "µsec":
+                        found = MICROSECONDS;
+                        break;
+                    default:
+                        throw new IllegalArgumentException(desc + " has undefined time unit " + unitVal);
+                }
             }
 
             long asTarget = targetUnit.convert(longVal, found);
@@ -471,7 +479,7 @@ public final class Strings {
         throw new IllegalArgumentException("No overlap between " + s1 + " and " + s2);
     }
 
-    private static final Pattern VARIABLE = Pattern.compile("\\$(\\{[^}]+\\}|\\w+)");
+    private static final Pattern VARIABLE = Pattern.compile("\\$(\\{[^}]+}|\\w+)");
 
     /**
      * Returns a String where all variables are replaced by their values.
@@ -481,7 +489,7 @@ public final class Strings {
      * If the map does not contain the key, then the system property and then the environment is looked up,
      * in that order.
      */
-    public static String insertValues(String input, Map<String, String> repository) {
+    public static String insertValues(String input, UnaryOperator<String> repository) {
         Matcher m = VARIABLE.matcher(input);
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
@@ -489,7 +497,7 @@ public final class Strings {
             if (keyword.charAt(0) == '{') {
                 keyword = keyword.substring(1, keyword.length() - 1);
             }
-            String value = repository.get(keyword);
+            String value = repository.apply(keyword);
             if (value == null) {
                 value = System.getProperty(keyword);
                 if (value == null) {

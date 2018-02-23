@@ -15,7 +15,7 @@ import java.util.function.IntPredicate;
  * CharSets are immutable and therefore thread safe. Methods like intersection() or union() create new
  * instances.
  */
-public abstract class CharSet implements Serializable {
+public abstract class CharSet implements Serializable, IntPredicate {
 
     private static final long serialVersionUID = -841531812351L;
 
@@ -31,7 +31,15 @@ public abstract class CharSet implements Serializable {
     public abstract boolean contains(char ch);
 
     /**
-     * Returns the CharSet as an IntPredicate, handling all contained charactersd as their int counterparts.
+     * Same as contains(), but can use code points.
+     */
+    @Override
+    public boolean test(int value) {
+        return contains((char) value);
+    }
+
+    /**
+     * Returns the CharSet as an IntPredicate, handling all contained characters as their int counterparts.
      */
     public IntPredicate asPredicate() {
         return c -> contains((char) c);

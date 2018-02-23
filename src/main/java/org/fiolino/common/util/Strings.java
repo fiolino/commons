@@ -1,7 +1,8 @@
 package org.fiolino.common.util;
 
-import java.util.Map;
+import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntPredicate;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -19,14 +20,14 @@ public final class Strings {
         throw new AssertionError("Static class");
     }
 
-    private static final char[] escapedToSpecial, specialToEscaped;
+    private static final int[] escapedToSpecial, specialToEscaped;
     private static final CharSet specialChars;
 
     static {
-        escapedToSpecial = new char[256];
-        specialToEscaped = new char[256];
+        escapedToSpecial = new int[256];
+        specialToEscaped = new int[256];
         for (int i=0; i < 256; i++) {
-            escapedToSpecial[i] = (char) i;
+            escapedToSpecial[i] = i;
         }
         CharSet cs = CharSet.empty();
 
@@ -45,7 +46,7 @@ public final class Strings {
 
     /**
      * Appends a quoted version of the given input string to the string builder.
-     * Quotation marks and backslashes are being escaped with a leading backslash.
+     * Quotation marks and other special characters are being escaped with a leading backslash.
      */
     public static StringBuilder appendQuotedString(StringBuilder sb, String string) {
         sb.append('"');
@@ -56,7 +57,7 @@ public final class Strings {
             if (nextStop >= 0) {
                 int ch = string.charAt(nextStop);
                 sb.append(string, lastStop, nextStop);
-                sb.append('\\').append(specialToEscaped[ch]);
+                sb.append('\\').append((char) specialToEscaped[ch]);
                 lastStop = nextStop + 1;
             } else {
                 sb.append(string, lastStop, string.length());
@@ -69,7 +70,7 @@ public final class Strings {
 
     /**
      * Returns a quoted String.
-     * Quotation marks and backslashes are being escaped with a leading backslash.
+     * Quotation marks and other special characters are being escaped with a leading backslash.
      */
     public static String quote(String value) {
         return appendQuotedString(new StringBuilder(), value).toString();
@@ -84,7 +85,7 @@ public final class Strings {
      * @return The result
      */
     public static String unquote(String value) {
-        Extract x = extractUntil(value, 0, CharSet.empty());
+        Extract x = extractUntil(value, 0, c -> false);
         if (x.wasQuoted()) {
             return x.extraction;
         }
@@ -431,9 +432,109 @@ public final class Strings {
     }
 
     /**
-     * Tries to find an overlap between the given strings.
+     * Contains one splitted item of the splitBy() operation.
      */
-    public static String combinationOf(String... values) {
+    public static final class SplitItem {
+        /**
+         * The index of the plitted item.
+         */
+        public final int index;
+
+        /**
+         * The splitted text part.
+         */
+        public final String text;
+
+        /**
+         * Which character separated this part from the previous one, represented as a code point
+         * Will be Character.UNASSIGNED when it's the first item.
+         */
+        public final int separator;
+
+        /**
+         * The start index in the original text, not counting any separator.
+         */
+        public final int start;
+
+        /**
+         * The end index in the original text, not counting any separator.
+         */
+        public final int end;
+
+        SplitItem(int index, String text, int separator, int start, int end) {
+            this.index = index;
+            this.text = text;
+            this.separator = separator;
+            this.start = start;
+            this.end = end;
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder(text.length() + 6).append('#').append(index).append(": ");
+            if (index > 0) {
+                sb.appendCodePoint(separator).append('!');
+            }
+            return sb.append(text).toString();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            return obj == this ||
+                    obj instanceof SplitItem && text.equals(((SplitItem) obj).text);
+        }
+
+        @Override
+        public int hashCode() {
+            return text.hashCode() * 177;
+        }
+    }
+
+    /**
+     * Splits a given String into some parts, separated by a tester.
+     * Similar to String::split, but does not use regular expressions and is therefore less resource hungry.
+     *
+     * @param input Some input text
+     * @param tester Defines the separators
+     * @return An array of parts of the string
+     */
+    public static SplitItem[] splitBy(String input, IntPredicate tester) {
+        SplitItem[] splits = new SplitItem[3]; // We need to start with some value. 3 because of why not.
+        int index = 0;
+        int last = 0;
+        int nextSeparator = Character.UNASSIGNED;
+        int n = input.length();
+        while (last < n) {
+            int lastSeparator = nextSeparator;
+            int next = last;
+            int adder = 1;
+            while (next < n) {
+                int ch = Character.codePointAt(input, next);
+                adder = Character.charCount(ch);
+                if (tester.test(ch)) {
+                    nextSeparator = ch;
+                    break;
+                }
+                next += adder;
+            }
+            String part = input.substring(last, next);
+            SplitItem item = new SplitItem(index, part, lastSeparator, last, next);
+            last = next + adder;
+            if (index >= splits.length) {
+                splits = Arrays.copyOf(splits, index + 3);
+            }
+            splits[index++] = item;
+        }
+
+        return index == splits.length ? splits : Arrays.copyOf(splits, index);
+    }
+
+    /**
+     * Tries to find an overlap between the given strings, splitted by a given tester.
+     *
+     * Example: MY_TEST and THIS_TEST_IS_NICE returns TEST.
+     */
+    public static String combinationOf(IntPredicate tester, String... values) {
         int n = values.length;
         switch (n) {
             case 0:
@@ -442,31 +543,31 @@ public final class Strings {
                 return values[0];
         }
 
-        String overlap = findOverlap(values[0], values[1]);
+        String overlap = findOverlap(tester, values[0], values[1]);
         for (int i = 2; i < n; i++) {
-            overlap = findOverlap(overlap, values[i]);
+            overlap = findOverlap(tester, overlap, values[i]);
         }
         return overlap;
     }
 
     /**
-     * For now, it only splits by underscores.
+     * Finds overlaps between two strings.
      */
-    private static String findOverlap(String s1, String s2) {
-        String[] split1 = s1.split("_");
-        String[] split2 = s2.split("_");
+    private static String findOverlap(IntPredicate tester, String s1, String s2) {
+        SplitItem[] split1 = splitBy(s1, tester);
+        SplitItem[] split2 = splitBy(s2, tester);
         for (int i = 0; i < split1.length; i++) {
-            String part1 = split1[i];
+            SplitItem part1 = split1[i];
             for (int j = 0; j < split2.length; j++) {
-                String part2 = split2[j];
+                SplitItem part2 = split2[j];
                 if (part1.equals(part2)) {
-                    StringBuilder sb = new StringBuilder(part1);
+                    StringBuilder sb = new StringBuilder(part1.text);
                     int ix = i + 1, jx = j + 1;
                     while (ix < split1.length && jx < split2.length) {
                         part1 = split1[ix++];
                         part2 = split2[jx++];
                         if (part1.equals(part2)) {
-                            sb.append('_').append(part1);
+                            sb.appendCodePoint(part1.separator).append(part1.text);
                         } else {
                             break;
                         }
@@ -486,10 +587,13 @@ public final class Strings {
      * Variables appear in the String with a leading $ sign, followed directly by the name if it
      * only contains letters, digits or underscores, or the name surrounded by curly brackets.
      * <p>
-     * If the map does not contain the key, then the system property and then the environment is looked up,
-     * in that order.
+     * If the first repository does not contain the key, then next one is asked. If no repository contains
+     * such a key, an {@link IllegalArgumentException} is thrown.
+     * <p>
+     * To avoid that, you can add an empty repository returning any default value as the last one.
      */
-    public static String insertValues(String input, UnaryOperator<String> repository) {
+    @SafeVarargs
+    public static String insertValues(String input, UnaryOperator<String>... repositories) {
         Matcher m = VARIABLE.matcher(input);
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
@@ -497,15 +601,13 @@ public final class Strings {
             if (keyword.charAt(0) == '{') {
                 keyword = keyword.substring(1, keyword.length() - 1);
             }
-            String value = repository.apply(keyword);
+            String value = null;
+            for (UnaryOperator<String> op : repositories) {
+                value = op.apply(keyword);
+                if (value != null) break;
+            }
             if (value == null) {
-                value = System.getProperty(keyword);
-                if (value == null) {
-                    value = System.getenv(keyword);
-                    if (value == null) {
-                        throw new IllegalArgumentException("No key " + keyword + " available in pattern " + input);
-                    }
-                }
+                throw new IllegalArgumentException("No key " + keyword + " available in pattern " + input);
             }
             m.appendReplacement(sb, value);
         }
@@ -521,24 +623,37 @@ public final class Strings {
      */
     public static final class Extract {
         public enum QuotationStatus {
+            /**
+             * The text was not quoted at all.
+             */
             UNQUOTED {
                 @Override
                 String toString(Extract x) {
                     return x.wasEOL() ? x.extraction + " EOL" : x.extraction + " --> '" + x.stopSign + "' at " + x.end;
                 }
             },
+            /**
+             * The text was not quoted, but the last character in line was a backslash to indicate an escaped sequence,
+             * but no more lines follow.
+             */
             UNQUOTED_OPEN {
                 @Override
                 String toString(Extract x) {
                     return x.extraction + " \\";
                 }
             },
+            /**
+             * The text is quoted at the beginning, and a closing quotation was found.
+             */
             QUOTED {
                 @Override
                 String toString(Extract x) {
                     return x.wasEOL() ? quote(x.extraction) + " EOL" : quote(x.extraction) + " --> '" + x.stopSign + "' at " + x.end;
                 }
             },
+            /**
+             * The text is quoted, but no closing quotation is there.
+             */
             QUOTED_OPEN {
                 @Override
                 String toString(Extract x) {
@@ -560,7 +675,7 @@ public final class Strings {
         /**
          * The character at the next position, or UNASSIGNED if the end of line was reached.
          */
-        public final char stopSign;
+        public final int stopSign;
         /**
          * Whether the extracted text was in quotated form.
          */
@@ -570,18 +685,11 @@ public final class Strings {
             this(extraction, -1, (char) Character.UNASSIGNED, quotationStatus);
         }
 
-        Extract(String extraction, int end, char stopSign, QuotationStatus quotationStatus) {
+        Extract(String extraction, int end, int stopSign, QuotationStatus quotationStatus) {
             this.extraction = extraction;
             this.end = end;
             this.stopSign = stopSign;
             this.quotationStatus = quotationStatus;
-        }
-
-        Extract(String extraction, String input, int start) {
-            this.extraction = extraction;
-            this.end = nextIndexFrom(input, start);
-            this.stopSign = end == -1 ? (char) Character.UNASSIGNED : input.charAt(end);
-            this.quotationStatus = QuotationStatus.QUOTED;
         }
 
         /**
@@ -611,7 +719,7 @@ public final class Strings {
         public int hashCode() {
             return ((quotationStatus.hashCode() * 31
                     + end) * 31
-                    + Character.hashCode(stopSign)) * 31
+                    + Integer.hashCode(stopSign)) * 31
                     + extraction.hashCode();
         }
 
@@ -639,7 +747,7 @@ public final class Strings {
      * @param stopper Set of characters that should act like delimiters
      * @return The extracted status
      */
-    public static Extract extractUntil(String input, int start, CharSet stopper) {
+    public static Extract extractUntil(String input, int start, IntPredicate stopper) {
         return extractUntil(input, start, stopper, () -> null);
     }
 
@@ -662,29 +770,31 @@ public final class Strings {
      * @param moreLines Used to retrieve more lines if the line ended openly
      * @return The extracted status
      */
-    public static <E extends Throwable> Extract extractUntil(String input, int start, CharSet stopper, SupplierWithException<String, E> moreLines) throws E {
+    public static <E extends Throwable> Extract extractUntil(String input, int start, IntPredicate stopper,
+                                                             SupplierWithException<String, E> moreLines) throws E {
         int i = nextIndexFrom(input, start-1);
         if (i == -1) return new Extract("", Extract.QuotationStatus.UNQUOTED);
 
         StringBuilder sb = new StringBuilder(input.length() - start);
-        char ch = input.charAt(i);
+        int ch = input.codePointAt(i);
         boolean escaped = false;
         if (ch == '"') {
             // quoted
             do {
                 int l = input.length();
-                while (++i < l) {
-                    ch = input.charAt(i);
+                while ((i += Character.charCount(ch)) < l) {
+                    ch = input.codePointAt(i);
                     if (escaped) {
                         escaped = false;
-                        int c = (int) ch;
-                        sb.append(c < 256 ? escapedToSpecial[c] : ch);
+                        sb.appendCodePoint(ch < 256 ? escapedToSpecial[ch] : ch);
                     } else if (ch == '"') {
-                        return new Extract(sb.toString(), input, i);
+                        int end = nextIndexFrom(input, i);
+                        int stopSign = end == -1 ? Character.UNASSIGNED : input.codePointAt(end);
+                        return new Extract(sb.toString(), end, stopSign, Extract.QuotationStatus.QUOTED);
                     } else if (ch == '\\') {
                         escaped = true;
                     } else {
-                        sb.append(ch);
+                        sb.appendCodePoint(ch);
                     }
                 }
 
@@ -705,17 +815,18 @@ public final class Strings {
         do {
             int l = input.length();
             while (i < l) {
-                ch = input.charAt(i++);
+                ch = input.codePointAt(i);
                 if (escaped) {
                     escaped = false;
-                    sb.append(ch);
-                } else if (stopper.contains(ch) || ch == '"') {
-                    return new Extract(sb.toString().trim(), i - 1, ch, Extract.QuotationStatus.UNQUOTED);
+                    sb.appendCodePoint(ch);
+                } else if (stopper.test(ch) || ch == '"') {
+                    return new Extract(sb.toString().trim(), i, ch, Extract.QuotationStatus.UNQUOTED);
                 } else if (ch == '\\') {
                     escaped = true;
                 } else {
-                    sb.append(ch);
+                    sb.appendCodePoint(ch);
                 }
+                i += Character.charCount(ch);
             }
             // EOL
             if (!escaped) {

@@ -34,15 +34,22 @@ public abstract class CharSet implements Serializable, IntPredicate {
      * Same as contains(), but can use code points.
      */
     @Override
-    public boolean test(int value) {
+    public final boolean test(int value) {
         return contains((char) value);
     }
 
     /**
-     * Returns the CharSet as an IntPredicate, handling all contained characters as their int counterparts.
+     * A shortage when used as an IntPredicate.
      */
-    public IntPredicate asPredicate() {
-        return c -> contains((char) c);
+    public final CharSet and(CharSet other) {
+        return intersection(other);
+    }
+
+    /**
+     * A shortage when used as an IntPredicate.
+     */
+    public final CharSet or(CharSet other) {
+        return union(other);
     }
 
     /**
@@ -250,11 +257,6 @@ public abstract class CharSet implements Serializable, IntPredicate {
         @Override
         public boolean contains(char ch) {
             return false;
-        }
-
-        @Override
-        public IntPredicate asPredicate() {
-            return c -> false;
         }
 
         @Override

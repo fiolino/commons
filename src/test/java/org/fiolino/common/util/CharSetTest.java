@@ -28,15 +28,6 @@ class CharSetTest {
     }
 
     @Test
-    void asPredicate() {
-        IntPredicate pred = CharSet.of("abc").asPredicate();
-        assertTrue(pred.test((int) 'a'));
-        assertTrue(pred.test((int) 'b'));
-        assertTrue(pred.test((int) 'c'));
-        assertFalse(pred.test((int) 'd'));
-    }
-
-    @Test
     void remove() {
         CharSet cs = CharSet.of("abc");
         assertTrue(cs.contains('b'));

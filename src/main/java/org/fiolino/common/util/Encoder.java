@@ -1,25 +1,27 @@
 package org.fiolino.common.util;
 
+import java.util.Arrays;
+import java.util.function.IntPredicate;
+
 /**
  * Encoding and decoding method for indexer to allow arbitrary names as Solr field names.
  *
  * Names are encoded like this:
  *
  * First come all valid characters;
- * if there were invalid ones, then a dollar sign is added, and for each invalid character,
- * a two-char hexadecimal value of its position plus a four-char hexadecimal value of the character follows.
+ * if there were invalid ones, then a delimiter is added, and for each invalid character,
+ * a hexadecimal value of its position plus a hexadecimal value of the character code follows.
+ *
+ *
  *
  * Created by kuli on 09.02.16.
  */
 public class Encoder {
 
-    public static final Encoder ALL_LETTERS
-            = new Encoder("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", '$');
-    public static final Encoder ALL_LETTERS_AND_DOT
-            = new Encoder("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.", '$');
+    private static final CharSet HEXADECIMAL_CHARACTERS = CharSet.of("0123456789abcdef");
 
-    private final CharSet validCharacters;
-    private final char delimiter;
+    private final IntPredicate validCharacters;
+    private final int delimiter;
 
     /**
      * Instantiates with a given limitation.
@@ -28,14 +30,16 @@ public class Encoder {
      *                        they're necessary to encode the others anyway.
      * @param delimiter       This delimits between allowed text and encoded remainders
      */
-    public Encoder(CharSet validCharacters, char delimiter) {
-        CharSet withDigits = validCharacters.union(CharSet.of("0123456789abcdef"));
-        if (withDigits.contains(delimiter)) {
-            throw new IllegalArgumentException("Valid characters " + withDigits.allCharactersAsString()
-                    + " should not contain delimiter " + delimiter);
+    public Encoder(IntPredicate validCharacters, int delimiter) {
+        IntPredicate withDigits = validCharacters.or(HEXADECIMAL_CHARACTERS);
+        this.delimiter = delimiter;
+        if (withDigits.test(delimiter)) {
+            if (HEXADECIMAL_CHARACTERS.test(delimiter)) {
+                throw new IllegalArgumentException("Delimiter " + delimiter + " must not be a character of hexadecimal numbers");
+            }
+            withDigits = withDigits.and(x -> x != this.delimiter);
         }
         this.validCharacters = withDigits;
-        this.delimiter = delimiter;
     }
 
     /**
@@ -49,16 +53,20 @@ public class Encoder {
         this(CharSet.of(validCharacters), delimiter);
     }
 
-    private void appendHex(StringBuilder sb, int val, int digits) {
-        String hex = Integer.toHexString(val);
-        int l = hex.length();
-        if (l > digits) {
-            throw new IllegalArgumentException("Hexadecimal value " + hex + " has more characters than the allowed " + digits);
-        }
-        while (l++ < digits) {
-            sb.append('0');
-        }
-        sb.append(hex);
+    private void appendHex(StringBuilder sb, int val) {
+        int following;
+        do {
+            int next7Bits = val & 0x7F;
+            following = val >>> 7;
+            if (following != 0) {
+                next7Bits |= 0x80;
+            }
+            String hex = Integer.toHexString(next7Bits);
+            if (hex.length() == 1) {
+                sb.append('0');
+            }
+            sb.append(hex);
+        } while ((val = following) != 0);
     }
 
     /**
@@ -70,30 +78,34 @@ public class Encoder {
     public String encode(String input) {
         int n = input.length();
         StringBuilder sb = new StringBuilder(n);
+        boolean hasEncoding = false;
         int[] encodings = new int[n];
-        for (int i = 0; i < n; i++) {
-            char c = input.charAt(i);
-            if (!validCharacters.contains(c)) {
-                if (c == ' ') {
+        Arrays.fill(encodings, -1);
+
+        for (int i = 0; i < n; ) {
+            int c = input.codePointAt(i);
+            if (!validCharacters.test(c)) {
+                if (c == ' ' && validCharacters.test('_')) {
                     c = '_';
                 } else {
-                    encodings[i] = c + 1;
+                    hasEncoding = true;
+                    encodings[i] = c;
+                    i += Character.charCount(c);
                     continue;
                 }
             }
-            sb.append(c);
+            sb.appendCodePoint(c);
+            i += Character.charCount(c);
         }
 
-        boolean hasEncoding = false;
-        for (int i = 0; i < n; i++) {
-            int x = encodings[i];
-            if (x > 0) {
-                if (!hasEncoding) {
-                    sb.append(delimiter);
-                    hasEncoding = true;
+        if (hasEncoding) {
+            sb.appendCodePoint(delimiter);
+            for (int i = 0; i < n; i++) {
+                int x = encodings[i];
+                if (x != -1) {
+                    appendHex(sb, i);
+                    appendHex(sb, x);
                 }
-                appendHex(sb, i, 2);
-                appendHex(sb, x - 1, 4);
             }
         }
 
@@ -106,30 +118,85 @@ public class Encoder {
     public String decode(String encoded) {
         int n = encoded.length();
         StringBuilder sb = new StringBuilder(n);
-        for (int i = 0; i < n; i++) {
-            char c = encoded.charAt(i);
-            if (c == '_' && !validCharacters.contains(' ')) {
+        for (int i = 0; i < n; ) {
+            int c = encoded.codePointAt(i);
+            i += Character.charCount(c);
+            if (c == '_' && !validCharacters.test(' ')) {
                 c = ' ';
             } else if (c == delimiter) {
                 return insertEncodedChars(sb, encoded, i);
             }
-            sb.append(c);
+            sb.appendCodePoint(c);
         }
 
         return sb.toString();
     }
 
     private String insertEncodedChars(StringBuilder sb, String encoded, int start) {
-        int i = start + 1;
-        while (i < encoded.length()) {
-            String hex = encoded.substring(i, i + 2);
-            int pos = Integer.parseInt(hex, 16);
-            hex = encoded.substring(i + 2, i + 6);
-            int c = Integer.parseInt(hex, 16);
-            sb.insert(pos, (char) c);
-            i += 6;
+        Position pos = new Position(encoded, start);
+        while (pos.hasNext()) {
+            int charIndex = pos.nextHex();
+            int c = pos.nextHex();
+            if (Character.isSupplementaryCodePoint(c)) {
+                char[] chars = Character.toChars(c);
+                sb.insert(charIndex, chars);
+            } else {
+                sb.insert(charIndex, (char) c);
+            }
         }
 
         return sb.toString();
+    }
+
+    private static final class Position {
+        final String text;
+        int index;
+
+        Position(String text, int index) {
+            this.text = text;
+            this.index = index;
+        }
+
+        boolean hasNext() {
+            return index < text.length();
+        }
+
+        int nextHex() {
+            int value = 0;
+            int shift = 0;
+            for (;;) {
+                int nextByte = nextByte();
+                if ((nextByte & 0x80) == 0) {
+                    return value | (nextByte << shift);
+                }
+                value |= (nextByte & 0x7F) << shift;
+                shift += 7;
+            }
+        }
+
+        private int nextByte() {
+            if (index >= text.length() - 1) {
+                throw new IllegalStateException("Cannot read hex value from #" + index + " of " + text);
+            }
+            int upper = next4Bits() << 4;
+            int lower = next4Bits();
+            return upper | lower;
+        }
+
+        private static final int DIFF_BETWEEN_LETTERS_AND_DIGITS = 'a' - ('0' + 10);
+
+        private int next4Bits() {
+            int c = text.charAt(index++);
+            c -= '0';
+            if (c >= 10) {
+                c -= DIFF_BETWEEN_LETTERS_AND_DIGITS;
+            }
+            return c;
+        }
+
+        @Override
+        public String toString() {
+            return text + " at #" + index;
+        }
     }
 }

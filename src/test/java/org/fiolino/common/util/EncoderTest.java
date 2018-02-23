@@ -25,6 +25,7 @@ class EncoderTest {
     private void validate(String t) {
         String encoded = ENCODER.encode(t);
         checkValidCharacters(VALID.add('$'), encoded);
+        System.out.println(t + " encodes to " + encoded);
         String decoded = ENCODER.decode(encoded);
         assertEquals(t, decoded);
     }
@@ -38,6 +39,8 @@ class EncoderTest {
         validate("!\"§$%&/()=123456789");
         validate("");
         validate("\u0000\u9999");
+        validate("《撒旦之子》");
+        validate("Somalian: 𐒈𐒝𐒑𐒛𐒐𐒘𐒕𐒖");
     }
 
     @Test

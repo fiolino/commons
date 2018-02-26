@@ -1,5 +1,9 @@
 package org.fiolino.common.beans;
 
+import org.fiolino.common.analyzing.ClassWalker;
+import org.fiolino.common.reflection.Methods;
+import org.fiolino.common.util.Types;
+
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
@@ -8,10 +12,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import org.fiolino.common.analyzing.ClassWalker;
-import org.fiolino.common.reflection.Methods;
-import org.fiolino.common.util.Types;
 
 import static java.lang.invoke.MethodType.methodType;
 
@@ -26,14 +26,13 @@ public final class BeanCopier<S, T> {
         private final FieldMatcher matcher;
         private MethodHandle current;
         private final MethodHandles.Lookup sourceLookup, targetLookup;
-        private final Class<?> sourceType, targetType;
+        private final Class<?> targetType;
         private final List<String> fields = new ArrayList<>();
 
         public Builder(MethodHandles.Lookup lookup, Class<?> source, Class<?> target, FieldMatcher matcher) {
             this.sourceLookup = lookup.in(source);
             this.targetLookup = lookup.in(target);
             this.matcher = matcher;
-            this.sourceType = source;
             this.targetType = target;
 
             copyFromTo(source, target);

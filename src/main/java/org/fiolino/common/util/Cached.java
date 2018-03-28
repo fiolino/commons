@@ -230,12 +230,12 @@ public abstract class Cached<T> implements Supplier<T> {
     private final boolean mandatory;
     private final Semaphore updateResource = new Semaphore(1);
 
-    private Cached(Supplier<T> eval, boolean mandatory) {
+    Cached(Supplier<T> eval, boolean mandatory) {
         this.evaluator = x -> eval.get();
         this.mandatory = mandatory;
     }
 
-    private Cached(T initialValue, UnaryOperator<T> evaluator, boolean mandatory) {
+    Cached(T initialValue, UnaryOperator<T> evaluator, boolean mandatory) {
         this.evaluator = evaluator;
         this.mandatory = mandatory;
         instance = initialValue;
@@ -350,59 +350,59 @@ public abstract class Cached<T> implements Supplier<T> {
     public static class RefreshNotPossibleException extends RuntimeException {
         private static final long serialVersionUID = 5734137134481666718L;
     }
+}
 
-    private static final class TimedCache<T> extends Cached<T> {
-        private volatile long lastUpdate;
-        private final long refreshRate;
+final class TimedCache<T> extends Cached<T> {
+    private volatile long lastUpdate;
+    private final long refreshRate;
 
-        private TimedCache(long refreshRate, T initialValue, UnaryOperator<T> evaluator, boolean mandatory) {
-            super(initialValue, evaluator, mandatory);
-            this.refreshRate = refreshRate;
-        }
-
-        @Override
-        boolean isValid() {
-            return System.currentTimeMillis() - lastUpdate <= refreshRate;
-        }
-
-        @Override
-        void postRefresh() {
-            super.postRefresh();
-            lastUpdate = System.currentTimeMillis();
-        }
-
-        @Override
-        void postToString(StringBuilder sb) {
-            super.postToString(sb);
-            if (isValid()) {
-                sb.append("; expires in ");
-                Strings.appendLongDuration(sb, refreshRate + lastUpdate - System.currentTimeMillis(), TimeUnit.MILLISECONDS);
-            } else {
-                sb.append("; expired since ");
-                Strings.appendLongDuration(sb, System.currentTimeMillis() - refreshRate - lastUpdate, TimeUnit.MILLISECONDS);
-            }
-        }
+    TimedCache(long refreshRate, T initialValue, UnaryOperator<T> evaluator, boolean mandatory) {
+        super(initialValue, evaluator, mandatory);
+        this.refreshRate = refreshRate;
     }
 
-    private static final class OneTimeInitializer<T> extends Cached<T> {
-        private OneTimeInitializer(Supplier<T> evaluator, boolean mandatory) {
-            super(evaluator, mandatory);
-        }
-
-        @Override
-        boolean isValid() {
-            return true;
-        }
+    @Override
+    boolean isValid() {
+        return System.currentTimeMillis() - lastUpdate <= refreshRate;
     }
 
-    private static final class ImmediateUpdater<T> extends Cached<T> {
-        private ImmediateUpdater(T initialValue, UnaryOperator<T> evaluator, boolean mandatory) {
-            super(initialValue, evaluator, mandatory);
-        }
+    @Override
+    void postRefresh() {
+        super.postRefresh();
+        lastUpdate = System.currentTimeMillis();
+    }
 
-        @Override
-        boolean isValid() {
-            return false;
+    @Override
+    void postToString(StringBuilder sb) {
+        super.postToString(sb);
+        if (isValid()) {
+            sb.append("; expires in ");
+            Strings.appendLongDuration(sb, refreshRate + lastUpdate - System.currentTimeMillis(), TimeUnit.MILLISECONDS);
+        } else {
+            sb.append("; expired since ");
+            Strings.appendLongDuration(sb, System.currentTimeMillis() - refreshRate - lastUpdate, TimeUnit.MILLISECONDS);
         }
+    }
+}
+
+final class OneTimeInitializer<T> extends Cached<T> {
+    OneTimeInitializer(Supplier<T> evaluator, boolean mandatory) {
+        super(evaluator, mandatory);
+    }
+
+    @Override
+    boolean isValid() {
+        return true;
+    }
+}
+
+final class ImmediateUpdater<T> extends Cached<T> {
+    ImmediateUpdater(T initialValue, UnaryOperator<T> evaluator, boolean mandatory) {
+        super(initialValue, evaluator, mandatory);
+    }
+
+    @Override
+    boolean isValid() {
+        return false;
     }
 }

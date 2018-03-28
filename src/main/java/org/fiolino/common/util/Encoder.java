@@ -147,56 +147,56 @@ public class Encoder {
 
         return sb.toString();
     }
+}
 
-    private static final class Position {
-        final String text;
-        int index;
+final class Position {
+    private final String text;
+    int index;
 
-        Position(String text, int index) {
-            this.text = text;
-            this.index = index;
-        }
+    Position(String text, int index) {
+        this.text = text;
+        this.index = index;
+    }
 
-        boolean hasNext() {
-            return index < text.length();
-        }
+    boolean hasNext() {
+        return index < text.length();
+    }
 
-        int nextHex() {
-            int value = 0;
-            int shift = 0;
-            for (;;) {
-                int nextByte = nextByte();
-                if ((nextByte & 0x80) == 0) {
-                    return value | (nextByte << shift);
-                }
-                value |= (nextByte & 0x7F) << shift;
-                shift += 7;
+    int nextHex() {
+        int value = 0;
+        int shift = 0;
+        for (;;) {
+            int nextByte = nextByte();
+            if ((nextByte & 0x80) == 0) {
+                return value | (nextByte << shift);
             }
+            value |= (nextByte & 0x7F) << shift;
+            shift += 7;
         }
+    }
 
-        private int nextByte() {
-            if (index >= text.length() - 1) {
-                throw new IllegalStateException("Cannot read hex value from #" + index + " of " + text);
-            }
-            int upper = next4Bits() << 4;
-            int lower = next4Bits();
-            return upper | lower;
+    private int nextByte() {
+        if (index >= text.length() - 1) {
+            throw new IllegalStateException("Cannot read hex value from #" + index + " of " + text);
         }
+        int upper = next4Bits() << 4;
+        int lower = next4Bits();
+        return upper | lower;
+    }
 
-        private static final int DIFF_BETWEEN_LETTERS_AND_DIGITS = 'a' - ('0' + 10);
+    private static final int DIFF_BETWEEN_LETTERS_AND_DIGITS = 'a' - ('0' + 10);
 
-        private int next4Bits() {
-            int c = text.charAt(index++);
-            c -= '0';
-            if (c >= 10) {
-                c -= DIFF_BETWEEN_LETTERS_AND_DIGITS;
-            }
-            return c;
+    private int next4Bits() {
+        int c = text.charAt(index++);
+        c -= '0';
+        if (c >= 10) {
+            c -= DIFF_BETWEEN_LETTERS_AND_DIGITS;
         }
+        return c;
+    }
 
-        @Override
-        public String toString() {
-            return text + " at #" + index;
-        }
+    @Override
+    public String toString() {
+        return text + " at #" + index;
     }
 }

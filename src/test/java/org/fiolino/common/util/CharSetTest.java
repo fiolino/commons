@@ -1,13 +1,10 @@
 package org.fiolino.common.util;
 
-import java.text.CharacterIterator;
-import java.util.function.IntPredicate;
-
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.text.CharacterIterator;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by kuli on 07.11.16.

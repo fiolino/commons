@@ -1,4 +1,4 @@
-package org.fiolino.common.util;
+package org.fiolino.common.timer;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -28,12 +28,17 @@ public final class Cron implements Serializable, TemporalAdjuster {
     private final TemporalAdjuster adjuster;
 
     public static Cron forDateTime(String cronDef) {
+        int comment = cronDef.indexOf('#');
+        if (comment >= 0) cronDef = cronDef.substring(0, comment);
+        comment = cronDef.indexOf("//");
+        if (comment >= 0) cronDef = cronDef.substring(0, comment);
+
         return forDateTime(cronDef.split("\\s+"));
     }
 
     public static Cron forDateTime(String... units) {
-        if (units.length < 5 || units.length > 5 && !units[5].startsWith("#") && !units[5].startsWith("//")) {
-            throw new IllegalArgumentException("Bad syntax: " + Arrays.toString(units) + " should be like 'min hour day month weekday'");
+        if (units.length < 3 || units.length == 4 || units.length > 6) {
+            throw new IllegalCronFormatException("Wrong number of arguments: " + units.length);
         }
 
         return new Cron(units);
@@ -189,11 +194,11 @@ public final class Cron implements Serializable, TemporalAdjuster {
             try {
                 return Long.parseLong(input);
             } catch (NumberFormatException ex) {
-                throw new IllegalArgumentException(input + " seems to be a number but is not");
+                throw new IllegalCronFormatException(input + " seems to be a number but is not");
             }
         }
 
-        throw new IllegalArgumentException("Number expected instead of " + input);
+        throw new IllegalCronFormatException("Number expected instead of " + input);
     }
 
     private static TemporalAdjuster createFrom(String[] units) {

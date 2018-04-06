@@ -1,12 +1,12 @@
 package org.fiolino.common.ioc;
 
+import org.fiolino.annotations.PostCreate;
 import org.fiolino.annotations.PostProcessor;
 import org.fiolino.annotations.Provider;
 import org.fiolino.annotations.Requested;
 import org.fiolino.common.reflection.Methods;
 
 import javax.annotation.Nullable;
-import javax.annotation.PostConstruct;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -37,7 +37,7 @@ import static java.lang.invoke.MethodType.methodType;
  * <p>
  * If the instantiated instance implements {@link org.fiolino.annotations.PostProcessor}, then its postConstruct method will be called automatically.
  * <p>
- * If used provider class, if there is any, has a method annotated with {@link PostConstruct}, then this method will be
+ * If used provider class, if there is any, has a method annotated with {@link PostCreate}, then this method will be
  * called after construction. The method must accept one argument, which is the constructed instance, and may return
  * another instance which will be used as a replacement.
  * <p>
@@ -406,11 +406,11 @@ public final class Instantiator {
         }
 
         return Methods.visitMethodsWithInstanceContext(lookup, type, fullConstructor, (h, m, supp) -> {
-            if (!m.isAnnotationPresent(PostConstruct.class)) return h;
+            if (!m.isAnnotationPresent(PostCreate.class)) return h;
             MethodHandle postProcessor = supp.get();
             MethodType t = postProcessor.type();
             if (t.parameterCount() != 1) {
-                throw new AssertionError(m + " is annotated with @" + PostConstruct.class.getSimpleName() + " but has too many parameters.");
+                throw new AssertionError(m + " is annotated with @" + PostCreate.class.getSimpleName() + " but has too many parameters.");
             }
             Class<?> returnType = t.returnType();
             if (returnType == void.class) {

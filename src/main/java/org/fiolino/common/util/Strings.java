@@ -436,7 +436,7 @@ public final class Strings {
      */
     public static final class SplitItem {
         /**
-         * The index of the plitted item.
+         * The index of the splitted item.
          */
         public final int index;
 

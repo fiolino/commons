@@ -1,12 +1,12 @@
 package org.fiolino.common.ioc;
 
+import org.fiolino.annotations.PostCreate;
 import org.fiolino.annotations.PostProcessor;
 import org.fiolino.annotations.Provider;
 import org.fiolino.annotations.Requested;
 import org.junit.jupiter.api.Test;
 
 import javax.annotation.Nullable;
-import javax.annotation.PostConstruct;
 import java.awt.*;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
@@ -70,7 +70,7 @@ class InstantiatorTest {
     public static class WithVoidPostConstruct {
         String content = "Initial";
 
-        @PostConstruct
+        @PostCreate
         public void changeContent() {
             content = "Changed";
         }
@@ -120,12 +120,12 @@ class InstantiatorTest {
             num *= 2;
         }
 
-        @PostConstruct
+        @PostCreate
         void increase() {
             num++;
         }
 
-        @PostConstruct
+        @PostCreate
         void increaseAgain() {
             num += 2;
         }
@@ -150,7 +150,7 @@ class InstantiatorTest {
             this.value = value;
         }
 
-        @PostConstruct
+        @PostCreate
         ModifiedPostConstruct check() {
             if (value.equals("hit")) {
                 return FALLBACK;
@@ -178,7 +178,7 @@ class InstantiatorTest {
             super(value);
         }
 
-        @PostConstruct
+        @PostCreate
         static ModifiedPostConstructWithStatic secondCheck(Object couldBeAnything) {
             if (couldBeAnything instanceof ModifiedPostConstruct) {
                 if (((ModifiedPostConstruct) couldBeAnything).value.equals("second")) {

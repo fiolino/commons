@@ -788,7 +788,7 @@ public class Methods {
         List<Method> usedMethods = new ArrayList<>();
         V value = initialValue;
         do {
-            Method[] methods = AccessController.doPrivileged((PrivilegedAction<Method[]>) c::getDeclaredMethods);
+            Method[] methods = getDeclaredMethodsFrom(c);
             outer:
             for (final Method m : methods) {
                 for (Method used : usedMethods) {
@@ -811,6 +811,10 @@ public class Methods {
         } while ((c = c.getSuperclass()) != null);
 
         return value;
+    }
+
+    private static Method[] getDeclaredMethodsFrom(Class<?> c) {
+        return AccessController.doPrivileged((PrivilegedAction<Method[]>) c::getDeclaredMethods);
     }
 
     private static final int INVOKE_STATIC = Modifier.STATIC | Modifier.PRIVATE;
@@ -2161,7 +2165,7 @@ public class Methods {
             Method bestMatch = null;
             Comparison matchingRank = null;
             boolean ambiguous = false;
-            Method[] methods = AccessController.doPrivileged((PrivilegedAction<Method[]>) c::getDeclaredMethods);
+            Method[] methods = getDeclaredMethodsFrom(c);
             loop:
             for (Method m : methods) {
                 if (!wouldBeVisible(lookup, m)) {
@@ -2226,7 +2230,8 @@ public class Methods {
             throw new IllegalArgumentException(lambdaType.getName() + " should be an interface!");
         }
         Method found = null;
-        for (Method m : lambdaType.getMethods()) {
+        Method[] methods = AccessController.doPrivileged((PrivilegedAction<Method[]>) lambdaType::getMethods);
+        for (Method m : methods) {
             int modifiers = m.getModifiers();
             if (Modifier.isStatic(modifiers) || !Modifier.isAbstract(modifiers)) {
                 continue;
@@ -2283,7 +2288,7 @@ public class Methods {
         }
 
         for (Class<?> marker : markerInterfaces) {
-            if (!marker.isInterface() || marker.getDeclaredMethods().length > 0) {
+            if (!marker.isInterface() || getDeclaredMethodsFrom(marker).length > 0) {
                 throw new IllegalArgumentException(marker.getName() + " must be an empty interface!");
             }
         }

@@ -55,15 +55,13 @@ public final class Deserializer {
             NEXT_STRING_HANDLE = lookup.findVirtual(Pointer.class, "extractQuotedString", methodType(String.class));
             NEXT_EMBEDDED_HANDLE = lookup.findVirtual(Pointer.class, "extractInParenthesises", methodType(String.class));
             IGNORE_NEXT_HANDLE = lookup.findVirtual(Pointer.class, "ignoreNext", methodType(Pointer.class));
+
+            LIST_ADD_HANDLE = lookup.findVirtual(List.class, "add", methodType(boolean.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new AssertionError(ex);
         }
         stringToStringArray = MethodHandles.insertArguments(stringToStringArray, 1, ",");
         STRING_TO_LIST_HANDLE = MethodHandles.filterArguments(stringToList, 1, stringToStringArray);
-
-        @SuppressWarnings("unchecked")
-        MethodHandle handle = Methods.findUsing(publicLookup(), List.class, p -> p.add(new Object()));
-        LIST_ADD_HANDLE = handle;
     }
 
     private abstract static class FieldInfo {

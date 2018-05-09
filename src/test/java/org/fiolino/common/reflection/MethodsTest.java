@@ -213,8 +213,7 @@ class MethodsTest {
     @Test
     void testBindUsing() throws Throwable {
         List<String> testList = new ArrayList<>();
-        MethodHandle handle = Methods.bindUsing(LOOKUP, testList, l -> l.add(null)).orElse(null);
-        assertNotNull(handle);
+        MethodHandle handle = Methods.bindUsing(LOOKUP, testList, l -> l.add(null));
         boolean added = (boolean) handle.invokeExact((Object) "Hello World");
         assertTrue(added);
         assertEquals(1, testList.size());

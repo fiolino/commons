@@ -363,10 +363,9 @@ public class Methods {
      *
      * @param target The instance
      * @param finder Used to identify the method
-     * @return The found MethodHandle, or empty if there is no such
+     * @return The found MethodHandle
      */
-    @Nullable
-    public static <T> Optional<MethodHandle> bindUsing(T target, MethodFinderCallback<T> finder) {
+    public static <T> MethodHandle bindUsing(T target, MethodFinderCallback<T> finder) {
         return bindUsing(publicLookup().in(target.getClass()), target, finder);
     }
 
@@ -377,14 +376,14 @@ public class Methods {
      * @param lookup The lookup
      * @param target The instance
      * @param finder Used to identify the method
-     * @return The found MethodHandle, or empty if there is no such
+     * @return The found MethodHandle
      */
-    @Nullable
-    public static <T> Optional<MethodHandle> bindUsing(Lookup lookup, T target, MethodFinderCallback<T> finder) {
+    public static <T> MethodHandle bindUsing(Lookup lookup, T target, MethodFinderCallback<T> finder) {
         Class<?>[] interfaces = target.getClass().getInterfaces();
         @SuppressWarnings("unchecked")
         T proxy = (T) createProxy(interfaces);
-        return fromMethodByProxy(finder, proxy).map(m -> unreflectMethod(lookup, m)).map(h -> h.bindTo(target));
+        return fromMethodByProxy(finder, proxy).map(m -> unreflectMethod(lookup, m)).map(h -> h.bindTo(target)).
+                orElseThrow(() -> new IllegalArgumentException(target.getClass() + " does not implement the requested method in its interfaces"));
     }
 
     private static Object createProxy(Class<?>... types) {

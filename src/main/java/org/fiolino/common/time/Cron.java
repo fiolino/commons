@@ -1,16 +1,33 @@
-package org.fiolino.common.timer;
+package org.fiolino.common.time;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.*;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.LongUnaryOperator;
 import java.util.regex.Pattern;
 
+/**
+ * Creates a {@link TemporalAdjuster} that sets a given {@link Temporal} to next next defined cron date.
+ *
+ * You can parse cron formats analogue to the Unix cron format:
+ *
+ * min(0-59) hour(0-23) dayOfMonth(1-31) month(1-12 or JAN,FEB,...) dayOfWeek(0-7 or MON,TUE,...)
+ *
+ * In this case, the next date will be set to the beginning of the defined minute.
+ *
+ * You can also specify a leading value for the seconds(0-59); in this case, you have to specify six elements.
+ * Then the next date will be set to the beginning of the defined second.
+ *
+ * You can also specify only the last three elements and get an adjuster only for dates; in this case, the fields for
+ * hour, minute and second remain untouched, so the next returned date will not necessarily be at the beginning of a day
+ * when the Temporal object is time based.
+ *
+ * For each element, you have the following options:
+ *
+ */
 public final class Cron implements Serializable, TemporalAdjuster {
     private static final List<String> MONTHS = Arrays.asList(null, "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec");
     private static final List<String> WEEK_DAYS = Arrays.asList("sun", "mon", "tue", "wed", "thu", "fri", "sat");
@@ -50,8 +67,7 @@ public final class Cron implements Serializable, TemporalAdjuster {
 
     @Override
     public Temporal adjustInto(Temporal temporal) {
-        Temporal t = temporal.with(ChronoField.NANO_OF_SECOND, 0).with(ChronoField.SECOND_OF_MINUTE, 0);
-        return adjuster.adjustInto(t);
+        return adjuster.adjustInto(temporal);
     }
 
     @Override
@@ -71,17 +87,30 @@ public final class Cron implements Serializable, TemporalAdjuster {
         return "Cron; next match at " + nextRun;
     }
 
+    /**
+     * When an adjuster implements this marker interface, then the field's range unit value will <b>always</b> be increased
+     * by one, while it's normally only increased when the adjuster's new value is smaller than the existing one.
+     */
     public interface Jumper {}
 
+    /**
+     * When an adjuster implements this marker interface, then it will be ignored completely if multiple adjusters
+     * for the same {@link TemporalUnit} exists.
+     * Otherwise, these adjusters will be joined so that the next following value of both is taken.
+     */
+    public interface Ignorable {}
+
     @FunctionalInterface
-    public interface Adjuster {
+    public interface Adjuster extends Serializable {
         long adjust(long currentValue, ValueRange range);
 
         default Adjuster join(Adjuster second) {
+            if (second instanceof Ignorable) return this;
+            if (this instanceof Ignorable) return second;
             return (v, r) -> {
                 long v1 = adjust(v, r);
                 long v2 = second.adjust(v, r);
-                return Math.min(v1, v2);
+                return v1 >= v ? (v2 >= v ? Math.min(v1, v2) : v1) : (v2 >= v ? v2 : Math.min(v1, v2));
             };
         }
 
@@ -138,7 +167,7 @@ public final class Cron implements Serializable, TemporalAdjuster {
         }
 
         static Adjuster wildcard() {
-            return (v, r) -> v;
+            return (Ignorable & Adjuster) (v, r) -> v;
         }
 
         static Adjuster random() {
@@ -164,10 +193,15 @@ public final class Cron implements Serializable, TemporalAdjuster {
                 adjuster = adjuster == null ? a : adjuster.join(a);
                 continue;
             }
-            int rangeSplit = i.indexOf('-');
+            int rangeSplit = i.indexOf("..", 1);
+            int splitLength = 2;
+            if (rangeSplit < 0) {
+                rangeSplit = i.indexOf('-', 1);
+                splitLength = 1;
+            }
             if (rangeSplit > 0) {
                 long min = getLong(i.substring(0, rangeSplit).trim(), constants);
-                long max = getLong(i.substring(rangeSplit+1).trim(), constants);
+                long max = getLong(i.substring(rangeSplit + splitLength).trim(), constants);
                 Adjuster a = Adjuster.range(min, max);
                 adjuster = adjuster == null ? a : adjuster.join(a);
                 continue;
@@ -215,19 +249,19 @@ public final class Cron implements Serializable, TemporalAdjuster {
             day = new AlternativeAdjuster(weekday, monthday);
         }
         if (n == 3) {
-            return new StartingUnit(ChronoField.DAY_OF_YEAR, day);
+            return new StartingUnit(day, ChronoUnit.DAYS, ChronoUnit.MONTHS, ChronoUnit.YEARS);
         }
 
         TemporalAdjuster a = createFrom(day, ChronoField.HOUR_OF_DAY, units[n-IDX_HOUR]);
         a = createFrom(a, ChronoField.MINUTE_OF_HOUR, units[n-IDX_MINUTE]);
         if (n == 5) {
             // No second field
-            a = new StartingUnit(ChronoField.MINUTE_OF_DAY, a);
+            a = new StartingUnit(a, ChronoUnit.MINUTES, ChronoUnit.HOURS, ChronoUnit.DAYS, ChronoUnit.MONTHS, ChronoUnit.YEARS);
             a = new Initializer(ChronoField.SECOND_OF_MINUTE, a);
         } else {
             // Seconds given
             a = createFrom(a, ChronoField.SECOND_OF_MINUTE, units[n-IDX_SECOND]);
-            a = new StartingUnit(ChronoField.SECOND_OF_DAY, a);
+            a = new StartingUnit(a, ChronoUnit.SECONDS, ChronoUnit.MINUTES, ChronoUnit.HOURS, ChronoUnit.DAYS, ChronoUnit.MONTHS, ChronoUnit.YEARS);
         }
 
         a = new Initializer(ChronoField.MILLI_OF_SECOND, a);
@@ -239,28 +273,171 @@ public final class Cron implements Serializable, TemporalAdjuster {
     }
 
     private static TemporalAdjuster createFrom(TemporalAdjuster parent, TemporalField field, String unit, LongUnaryOperator op, List<String> constants) {
-        if (unit.equals(WILDCARD_SYMBOL)) {
-            return parent;
-        }
         Adjuster a = Cron.parse(unit, op, constants);
-        return new AdjustingUnit(field, parent, a);
+        return a instanceof Ignorable ? parent : new AdjustingUnit(field, parent, a);
     }
 
-    private static abstract class CalendarUnit implements TemporalAdjuster {
+    public static final class Builder {
+        private class Entry implements Comparable<Entry> {
+            final TemporalField field;
+            final Adjuster adjuster;
+            final int index;
+
+            Entry(TemporalField field, Adjuster adjuster, int index) {
+                this.field = field;
+                this.adjuster = adjuster;
+                this.index = index;
+            }
+
+            @Override
+            public int compareTo(Entry o) {
+                if (field instanceof Comparable && o.field instanceof Comparable) {
+                    @SuppressWarnings("unchecked")
+                    int ret = ((Comparable<TemporalField>) field).compareTo(o.field);
+                    return ret;
+                }
+                return o.index - index;
+            }
+        }
+
+        private final List<Entry> entries = new ArrayList<>();
+
+        public Builder and(TemporalField field, Adjuster adjuster) {
+            Entry e = new Entry(field, adjuster, entries.size());
+            entries.add(e);
+            return this;
+        }
+
+        private Entry[] findSuccessors(Entry entry) {
+            TemporalUnit rangeUnit = entry.field.getRangeUnit();
+            return entries.stream().filter(e -> rangeUnit.equals(e.field.getBaseUnit())).toArray(Entry[]::new);
+        }
+
+        private Entry[] findPossibleStartNodes() {
+            return entries.stream().filter(e -> entries.stream().noneMatch(e2 -> e.field.getBaseUnit().equals(e2.field.getRangeUnit()))).toArray(Entry[]::new);
+        }
+
+        /**
+         * Returns the elements with the smallest units coming first
+         */
+        private List<Entry[]> sortedEntries() {
+            List<Entry[]> sortedEntries = new ArrayList<>();
+            Entry[] possibleStartNodes = findPossibleStartNodes();
+            Arrays.sort(possibleStartNodes);
+            int startLength = possibleStartNodes.length;
+            Entry[][] startGroups = new Entry[startLength][];
+            int g = 0;
+            outer:
+            for (Entry start : possibleStartNodes) {
+                TemporalUnit base = start.field.getBaseUnit();
+                for (int i=0; i<g; i++) {
+                    Entry[] group = startGroups[i];
+                    if (group[0].field.getBaseUnit().equals(base)) {
+                        int l = group.length;
+                        group = Arrays.copyOf(group, l + 1);
+                        group[l] = start;
+                        startGroups[i] = group;
+                        continue outer;
+                    }
+                }
+                startGroups[g++] = new Entry[] { start };
+            }
+            if (g < startLength) {
+                startGroups = Arrays.copyOf(startGroups, g);
+            }
+            for (Entry[] startGroup : startGroups) {
+                addEntries(sortedEntries, startGroup);
+            }
+
+            return sortedEntries;
+        }
+
+        private void addEntries(List<Entry[]> sortedEntries, Entry[] start) {
+            sortedEntries.add(start);
+            for (Entry s : start) {
+                Entry[] successors = findSuccessors(s);
+                if (successors.length == 0) return;
+                Arrays.sort(successors);
+                sortedEntries.add(successors);
+                addEntries(sortedEntries, successors);
+            }
+        }
+
+        public TemporalAdjuster withResetted(TemporalField... resettedFields) {
+            List<Entry[]> sortedEntries = sortedEntries();
+            TemporalAdjuster a = t -> t;
+            for (int index=sortedEntries.size() - 1; index >= 0; index--) {
+                Entry[] arr = sortedEntries.get(index);
+                int l = arr.length;
+                if (l == 1) {
+                    a = new AdjustingUnit(arr[0].field, a, arr[0].adjuster);
+                } else {
+                    TemporalAdjuster[] adjusters = new TemporalAdjuster[l];
+                    for (int i = 0; i < l; i++) {
+                        adjusters[i] = new AdjustingUnit(arr[i].field, a, arr[i].adjuster);
+                    }
+                    a = new AlternativeAdjuster(adjusters);
+                }
+            }
+
+            TemporalUnit[] units = sortedEntries.stream().map(e -> e[0].field.getBaseUnit()).distinct().toArray(TemporalUnit[]::new);
+            a = new StartingUnit(a, units);
+            for (TemporalField f : resettedFields) {
+                entries.stream().filter(e -> f.equals(e.field)).findAny().ifPresent(e -> {
+                    throw new IllegalArgumentException("Cannot reset " + f + " because it's already set in " + e);
+                });
+                a = new Initializer(f, a);
+            }
+
+            return a;
+        }
+    }
+
+    private static abstract class StackedUnit implements TemporalAdjuster, Serializable {
+
         private final TemporalAdjuster next;
+
+        StackedUnit(TemporalAdjuster next) {
+            this.next = next;
+        }
+
+        @Override
+        public final Temporal adjustInto(Temporal temporal) {
+            Temporal t = adjustThis(temporal);
+            return next.adjustInto(t);
+        }
+
+        abstract Temporal adjustThis(Temporal temporal);
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            StackedUnit that = (StackedUnit) o;
+            return next.equals(that.next);
+        }
+
+        @Override
+        public int hashCode() {
+            return next.hashCode() * 31;
+        }
+    }
+
+    private static abstract class CalendarUnit extends StackedUnit {
+
         private final TemporalField field;
 
         CalendarUnit(TemporalField field, TemporalAdjuster next) {
-            this.next = next;
+            super(next);
             this.field = field;
         }
 
         @Override
-        public Temporal adjustInto(Temporal t) {
+        Temporal adjustThis(Temporal t) {
             if (t.isSupported(field)) {
-                t = adjustInto(field, t);
+                return adjustInto(field, t);
             }
-            return next.adjustInto(t);
+            return t;
         }
 
         abstract Temporal adjustInto(TemporalField field, Temporal temporal);
@@ -271,16 +448,19 @@ public final class Cron implements Serializable, TemporalAdjuster {
             if (o == null || getClass() != o.getClass()) return false;
             if (!super.equals(o)) return false;
             CalendarUnit that = (CalendarUnit) o;
-            return field.equals(that.field) && next.equals(that.next);
+            return field.equals(that.field);
         }
 
         @Override
         public int hashCode() {
-            return next.hashCode() * 31 + field.hashCode();
+            return super.hashCode() + field.hashCode();
         }
     }
 
     private static final class Initializer extends CalendarUnit {
+
+        private static final long serialVersionUID = -2195127869900604874L;
+
         Initializer(TemporalField field, TemporalAdjuster next) {
             super(field, next);
         }
@@ -291,39 +471,58 @@ public final class Cron implements Serializable, TemporalAdjuster {
         }
     }
 
-    private static final class StartingUnit extends CalendarUnit {
-        StartingUnit(TemporalField field, TemporalAdjuster next) {
-            super(field, next);
+    private static final class StartingUnit extends StackedUnit {
+
+        private static final long serialVersionUID = -1823173113615531961L;
+
+        private final TemporalUnit[] units;
+
+        StartingUnit(TemporalAdjuster next, TemporalUnit... units) {
+            super(next);
+            this.units = units;
         }
 
         @Override
-        public Temporal adjustInto(TemporalField field, Temporal temporal) {
-            return temporal.plus(1, field.getBaseUnit());
+        Temporal adjustThis(Temporal temporal) {
+            for (TemporalUnit u : units) {
+                if (temporal.isSupported(u)) {
+                    return temporal.plus(1, u);
+                }
+            }
+            throw new IllegalArgumentException(temporal + " does not support any of my units: " + Arrays.toString(units));
         }
     }
 
-    private static final class AlternativeAdjuster implements TemporalAdjuster {
-        private final TemporalAdjuster first, second;
+    private static final class AlternativeAdjuster implements TemporalAdjuster, Serializable {
 
-        AlternativeAdjuster(TemporalAdjuster first, TemporalAdjuster second) {
-            this.first = first;
-            this.second = second;
+        private static final long serialVersionUID = -4567999393131106473L;
+
+        private final TemporalAdjuster[] adjusters;
+
+        AlternativeAdjuster(TemporalAdjuster... adjusters) {
+            assert adjusters.length >= 2;
+            this.adjusters = adjusters;
         }
 
         @Override
         public Temporal adjustInto(Temporal temporal) {
-            Temporal t1 = first.adjustInto(temporal);
-            Temporal t2 = second.adjustInto(temporal);
-            if (ChronoUnit.MILLIS.between(t1, t2) < 0) {
-                // t1 is later
-                return t2;
-            } else {
-                return t1;
+            Temporal t1 = adjusters[0].adjustInto(temporal);
+            for (int i=1; i < adjusters.length; i++) {
+                Temporal t2 = adjusters[i].adjustInto(temporal);
+                @SuppressWarnings("unchecked")
+                Comparable<Temporal> comparable = (Comparable<Temporal>) t2; // Must be comparable according to Temporal's Java doc
+                if (comparable.compareTo(t1) <= 0) {
+                    t1 = t2;
+                }
             }
+
+            return t1;
         }
     }
 
     private static class AdjustingUnit extends CalendarUnit {
+
+        private static final long serialVersionUID = -5486360270949135638L;
 
         private final Adjuster adjuster;
 
@@ -335,14 +534,13 @@ public final class Cron implements Serializable, TemporalAdjuster {
         @Override
         public Temporal adjustInto(TemporalField field, Temporal temporal) {
             long actual = temporal.getLong(field);
-            ValueRange range = temporal.range(field);
             Temporal t = temporal;
             long check;
             if (adjuster instanceof Jumper) {
                 t = addOne(field, t);
-                check = adjuster.adjust(actual, range);
+                check = adjuster.adjust(actual, t.range(field));
             } else {
-                check = adjuster.adjust(actual, range);
+                check = adjuster.adjust(actual, t.range(field));
                 if (actual > check) {
                     t = addOne(field, t);
                 }

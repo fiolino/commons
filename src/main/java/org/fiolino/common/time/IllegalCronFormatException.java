@@ -1,4 +1,4 @@
-package org.fiolino.common.timer;
+package org.fiolino.common.time;
 
 /**
  * This is thrown if a String argument given for parsing a cron expression is invalid.

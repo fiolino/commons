@@ -1,4 +1,4 @@
-package org.fiolino.common.timer;
+package org.fiolino.common.time;
 
 import org.junit.jupiter.api.Test;
 
@@ -10,11 +10,11 @@ import java.util.function.Supplier;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class TimersTest {
+class ChronosTest {
     @Test
     void testContinuousSupplier() throws InterruptedException {
         Instant start = Instant.now();
-        Supplier<Instant> s = Timers.continuousTemporalSupplier(i -> i.plus(5, ChronoUnit.MILLIS), start);
+        Supplier<Instant> s = Chronos.continuousTemporalSupplier(i -> i.plus(5, ChronoUnit.MILLIS), start);
         TimeUnit.MILLISECONDS.sleep(20);
         Instant next = s.get();
         assertEquals(5, next.toEpochMilli() - start.toEpochMilli());
@@ -28,7 +28,7 @@ class TimersTest {
     @Test
     void testAdHocSupplier() throws InterruptedException {
         Instant start = Instant.now();
-        Supplier<Instant> s = Timers.adHocTemporalSupplier(i -> i.plus(5, ChronoUnit.MILLIS), Instant::now);
+        Supplier<Instant> s = Chronos.adHocTemporalSupplier(i -> i.plus(5, ChronoUnit.MILLIS), Instant::now);
         TimeUnit.MILLISECONDS.sleep(20);
         Instant next = s.get();
         assertTrue(next.toEpochMilli() - start.toEpochMilli() >= 25);

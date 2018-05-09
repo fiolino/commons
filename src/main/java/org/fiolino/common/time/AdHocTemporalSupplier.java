@@ -1,4 +1,4 @@
-package org.fiolino.common.timer;
+package org.fiolino.common.time;
 
 import java.time.Clock;
 import java.time.LocalDateTime;

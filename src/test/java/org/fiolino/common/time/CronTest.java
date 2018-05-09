@@ -1,6 +1,5 @@
-package org.fiolino.common.timer;
+package org.fiolino.common.time;
 
-import org.fiolino.common.timer.Cron;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;

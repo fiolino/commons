@@ -1,4 +1,4 @@
-package org.fiolino.common.timer;
+package org.fiolino.common.time;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -9,9 +9,9 @@ import java.time.temporal.Temporal;
 import java.time.temporal.TemporalAdjuster;
 import java.util.function.Supplier;
 
-public final class Timers {
+public final class Chronos {
 
-    private Timers() {
+    private Chronos() {
         throw new AssertionError();
     }
 

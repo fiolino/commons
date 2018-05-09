@@ -311,7 +311,7 @@ public class Methods {
      * @param type   The interface type to look in
      * @param finder Used to identify the method
      * @param <T>    The interface type
-     * @return The found MethodHandle, or null if there is no such
+     * @return The found MethodHandle
      */
     public static <T> MethodHandle findUsing(Class<T> type, MethodFinderCallback<T> finder) {
         return findUsing(publicLookup().in(type), type, finder);
@@ -324,27 +324,26 @@ public class Methods {
      * @param type   The interface type to look in
      * @param finder Used to identify the method
      * @param <T>    The interface type
-     * @return The found MethodHandle, or null if there is no such
+     * @return The found MethodHandle
      */
     public static <T> MethodHandle findUsing(Lookup lookup, Class<T> type, MethodFinderCallback<T> finder) {
         if (!type.isInterface()) {
             throw new IllegalArgumentException("Can only find in interfaces.");
         }
         Object proxy = createProxy(type);
-        Method found = fromMethodByProxy(finder, type.cast(proxy));
-        return unreflectMethod(lookup, found);
+        return fromMethodByProxy(finder, type.cast(proxy)).map(m -> unreflectMethod(lookup, m)).orElseThrow(
+                () -> new IllegalArgumentException(finder + " did not return anything on " + type.getName()));
     }
 
-    private static <T> Method fromMethodByProxy(MethodFinderCallback<T> finder, T proxy) {
-        Method found = null;
+    private static <T> Optional<Method> fromMethodByProxy(MethodFinderCallback<T> finder, T proxy) {
         try {
             finder.callMethodFrom(proxy);
         } catch (MethodFoundException ex) {
-            found = ex.getMethod();
+            return Optional.of(ex.getMethod());
         } catch (Throwable ex) {
             throw new IllegalStateException("Prototype " + finder + " threw exception.", ex);
         }
-        return found;
+        return Optional.empty();
     }
 
     private static MethodHandle unreflectMethod(Lookup lookup, Method method) {
@@ -364,9 +363,10 @@ public class Methods {
      *
      * @param target The instance
      * @param finder Used to identify the method
-     * @return The found MethodHandle, or null if there is no such
+     * @return The found MethodHandle, or empty if there is no such
      */
-    public static <T> MethodHandle bindUsing(T target, MethodFinderCallback<T> finder) {
+    @Nullable
+    public static <T> Optional<MethodHandle> bindUsing(T target, MethodFinderCallback<T> finder) {
         return bindUsing(publicLookup().in(target.getClass()), target, finder);
     }
 
@@ -377,15 +377,14 @@ public class Methods {
      * @param lookup The lookup
      * @param target The instance
      * @param finder Used to identify the method
-     * @return The found MethodHandle, or null if there is no such
+     * @return The found MethodHandle, or empty if there is no such
      */
-    public static <T> MethodHandle bindUsing(Lookup lookup, T target, MethodFinderCallback<T> finder) {
+    @Nullable
+    public static <T> Optional<MethodHandle> bindUsing(Lookup lookup, T target, MethodFinderCallback<T> finder) {
         Class<?>[] interfaces = target.getClass().getInterfaces();
-        Object proxy = createProxy(interfaces);
         @SuppressWarnings("unchecked")
-        Method found = fromMethodByProxy(finder, (T) proxy);
-        MethodHandle handle = unreflectMethod(lookup, found);
-        return handle == null ? null : handle.bindTo(target);
+        T proxy = (T) createProxy(interfaces);
+        return fromMethodByProxy(finder, proxy).map(m -> unreflectMethod(lookup, m)).map(h -> h.bindTo(target));
     }
 
     private static Object createProxy(Class<?>... types) {
@@ -403,7 +402,7 @@ public class Methods {
      * @param prototype Contains all methods
      * @param visitor   The callback for each found method
      */
-    public static <V> V findUsing(Object prototype, V initialValue, MethodVisitor<V> visitor) {
+    public static <V> V findUsing(Object prototype, @Nullable V initialValue, MethodVisitor<V> visitor) {
         return findUsing(publicLookup().in(prototype.getClass()), initialValue, visitor);
     }
 
@@ -415,7 +414,7 @@ public class Methods {
      * @param visitor   The callback for each found method
      */
     public static <V> V findUsing(Lookup lookup, Object prototype,
-                                  V initialValue, MethodVisitor<V> visitor) {
+                                  @Nullable V initialValue, MethodVisitor<V> visitor) {
         return visitMethodsWithStaticContext(lookup, prototype, initialValue, (value, m, handleSupplier) -> {
             if (m.isAnnotationPresent(MethodFinder.class)) {
                 return visitor.visit(value, m, () -> findHandleByProxy(lookup, handleSupplier.get()));
@@ -545,7 +544,7 @@ public class Methods {
      * @param visitor      The method visitor
      * @return The return value of the last visitor's run
      */
-    public static <V> V visitAllMethods(Class<?> type, V initialValue, MethodVisitor<V> visitor) {
+    public static <V> V visitAllMethods(Class<?> type, @Nullable V initialValue, MethodVisitor<V> visitor) {
         return visitAllMethods(publicLookup().in(type), type, initialValue, visitor);
     }
 
@@ -563,7 +562,7 @@ public class Methods {
      * @return The return value of the last visitor's run
      */
     public static <V> V visitAllMethods(Lookup lookup, Class<?> type,
-                                        V initialValue, MethodVisitor<V> visitor) {
+                                        @Nullable V initialValue, MethodVisitor<V> visitor) {
         return iterateOver(lookup, type, initialValue, visitor, (m) -> {
             try {
                 return lookup.unreflect(m);
@@ -595,7 +594,7 @@ public class Methods {
      * @param visitor      The method visitor
      * @return The return value of the last visitor's run
      */
-    public static <V> V visitMethodsWithInstanceContext(Class<?> type, V initialValue, MethodVisitor<V> visitor) {
+    public static <V> V visitMethodsWithInstanceContext(Class<?> type, @Nullable V initialValue, MethodVisitor<V> visitor) {
         return visitMethodsWithInstanceContext(publicLookup().in(type), type, initialValue, visitor);
     }
 
@@ -623,7 +622,7 @@ public class Methods {
      * @return The return value of the last visitor's run
      */
     public static <V> V visitMethodsWithInstanceContext(Lookup lookup, Class<?> type,
-                                                        V initialValue, MethodVisitor<V> visitor) {
+                                                        @Nullable V initialValue, MethodVisitor<V> visitor) {
         return iterateOver(lookup, type, initialValue, visitor, (m) -> {
             MethodHandle handle;
             try {
@@ -648,7 +647,7 @@ public class Methods {
      * <p>
      * That means, the visitor doesn't have to care whether the method is static or not.
      * <p>
-     * The reference can either by a Class; in that case, the visitor creates a new instance as a reference to
+     * The reference can either be a Class; in that case, the visitor creates a new instance as a reference to
      * the MethodHandle as soon as the first instance method is unreflected. That means, the class needs an
      * empty constructor visible from the given lookup unless all visited methods are static.
      * <p>
@@ -662,7 +661,7 @@ public class Methods {
      * @param visitor      The method visitor
      * @return The return value of the last visitor's run
      */
-    public static <V> V visitMethodsWithStaticContext(Object reference, V initialValue, MethodVisitor<V> visitor) {
+    public static <V> V visitMethodsWithStaticContext(Object reference, @Nullable V initialValue, MethodVisitor<V> visitor) {
         return visitMethodsWithStaticContext0(null, reference, initialValue, visitor);
     }
 
@@ -675,7 +674,7 @@ public class Methods {
      * <p>
      * That means, the visitor doesn't have to care whether the method is static or not.
      * <p>
-     * The reference can either by a Class; in that case, the visitor creates a new instance as a reference to
+     * The reference can either be a Class; in that case, the visitor creates a new instance as a reference to
      * the MethodHandle as soon as the first instance method is unreflected. That means, the class needs an
      * empty constructor visible from the given lookup unless all visited methods are static.
      * <p>
@@ -691,7 +690,7 @@ public class Methods {
      * @return The return value of the last visitor's run
      */
     public static <V> V visitMethodsWithStaticContext(Lookup lookup, Object reference,
-                                                      V initialValue, MethodVisitor<V> visitor) {
+                                                      @Nullable V initialValue, MethodVisitor<V> visitor) {
         return visitMethodsWithStaticContext0(lookup, reference, initialValue, visitor);
     }
 
@@ -734,7 +733,7 @@ public class Methods {
      * @return The return value of the last visitor's run
      */
     public static <T, V> V visitMethodsWithStaticContext(Class<? extends T> type, Supplier<T> factory,
-                                                         V initialValue, MethodVisitor<V> visitor) {
+                                                         @Nullable V initialValue, MethodVisitor<V> visitor) {
         return visitMethodsWithStaticContext(publicLookup().in(type), type, factory, initialValue, visitor);
     }
 
@@ -759,7 +758,7 @@ public class Methods {
      * @return The return value of the last visitor's run
      */
     public static <T, V> V visitMethodsWithStaticContext(Lookup lookup, Class<? extends T> type, Supplier<T> factory,
-                                                         V initialValue, MethodVisitor<V> visitor) {
+                                                         @Nullable V initialValue, MethodVisitor<V> visitor) {
         Object[] instance = new Object[1];
         return iterateOver(lookup, type, initialValue, visitor, (m) -> {
             MethodHandle handle;
@@ -1092,8 +1091,9 @@ public class Methods {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private static final MethodHandle exceptionHandlerCaller = findUsing(ExceptionHandler.class, h -> h.handle(null, null));
+    private static MethodHandle exceptionHandlerCaller(ExceptionHandler handler) {
+        return findUsing(ExceptionHandler.class, h -> h.handle(null, null)).bindTo(handler);
+    }
 
     /**
      * Wraps the given method handle by an exception handler that is called in case.
@@ -1117,7 +1117,7 @@ public class Methods {
                                                                               ExceptionHandler<? super E> exceptionHandler,
                                                                               Supplier<?>... injections) {
 
-        return wrapWithExceptionHandler(target, catchedExceptionType, exceptionHandlerCaller.bindTo(exceptionHandler),
+        return wrapWithExceptionHandler(target, catchedExceptionType, exceptionHandlerCaller(exceptionHandler),
                 (Object[]) injections);
     }
 
@@ -1143,7 +1143,7 @@ public class Methods {
                                                                               ExceptionHandler<? super E> exceptionHandler,
                                                                               Object... injections) {
 
-        return wrapWithExceptionHandler(target, catchedExceptionType, exceptionHandlerCaller.bindTo(exceptionHandler), injections);
+        return wrapWithExceptionHandler(target, catchedExceptionType, exceptionHandlerCaller(exceptionHandler), injections);
     }
 
     /**
@@ -1177,13 +1177,11 @@ public class Methods {
         return MethodHandles.insertArguments(handle, pos, injections);
     }
 
-    private static final MethodHandle SUPPLIER_GET = findUsing(Supplier.class, Supplier::get);
-
     private static MethodHandle insertSuppliers(MethodHandle handle, int pos, Object[] injections) {
         MethodHandle h = handle;
         for (Object i : injections) {
             if (i instanceof Supplier) {
-                MethodHandle get = SUPPLIER_GET.bindTo(i);
+                MethodHandle get = findUsing(Supplier.class, Supplier::get).bindTo(i);
                 h = MethodHandles.collectArguments(h, pos, get);
             } else {
                 h = MethodHandles.insertArguments(h, pos, i);
@@ -1193,10 +1191,21 @@ public class Methods {
         return h;
     }
 
-    static void checkArgumentLength(MethodType targetType, int argumentNumber) {
-        if (targetType.parameterCount() <= argumentNumber) {
-            throw new IllegalArgumentException("Index " + argumentNumber + " is out of range: Target " + targetType + " has only "
-                    + targetType.parameterCount() + " arguments.");
+    static void checkArgumentLength(MethodType targetType, int actual) {
+        checkArgumentLength(targetType, 0, actual);
+    }
+
+    private static void checkArgumentLength(MethodType targetType, int min, int actual) {
+        checkArgumentLength(min, targetType.parameterCount(), actual);
+    }
+
+    private static void checkArgumentLength(int min, int max, int actual) {
+        if (actual < 0) {
+            throw new IllegalArgumentException(actual + " is less than " + min);
+        }
+        if (actual >= max) {
+            throw new IllegalArgumentException("Index " + actual + " is out of range: Target has only "
+                    + max + " arguments.");
         }
     }
 
@@ -1268,12 +1277,16 @@ public class Methods {
      * @return A handle with the same arguments as the target, but which returns a null value, or a zero-like value if returnType is a primitive
      */
     public static MethodHandle returnEmptyValue(MethodHandle target, Class<?> returnType) {
-        MethodHandle h = target.asType(target.type().changeReturnType(void.class));
+        MethodHandle h = makeVoid(target);
         if (returnType == void.class) {
             return h;
         }
         MethodHandle returnHandle = constantNullHandle(returnType);
         return MethodHandles.filterReturnValue(h, returnHandle);
+    }
+
+    private static MethodHandle makeVoid(MethodHandle target) {
+        return target.asType(target.type().changeReturnType(void.class));
     }
 
     /**
@@ -1543,6 +1556,11 @@ public class Methods {
      * <p>
      * The resulting handle has the same type as the target, and returns a null value or zero if the guard doesn't
      * allow to execute.
+     *
+     * @param target The executed handle
+     * @param argumentNumber The starting argument number to check
+     * @param guards The guards; may contain null values for arguments not being checked
+     * @return A handle of the same type as target
      */
     public static MethodHandle rejectIfArgument(MethodHandle target, int argumentNumber,
                                                 MethodHandle... guards) {
@@ -1551,7 +1569,7 @@ public class Methods {
     }
 
     /**
-     * Creates a method handle that executes its target only if all the guard return true.
+     * Creates a method handle that executes its target only if all the guards return true.
      * <p>
      * This methods is just the exact opposite to rejectIfArgument().
      * <p>
@@ -1560,6 +1578,11 @@ public class Methods {
      * <p>
      * The resulting handle has the same type as the target, and returns a null value or zero if the guard doesn't
      * allow to execute.
+     *
+     * @param target The executed handle
+     * @param argumentNumber The starting argument number to check
+     * @param guards The guards; may contain null values for arguments not being checked
+     * @return A handle of the same type as target
      */
     public static MethodHandle invokeOnlyIfArgument(MethodHandle target, int argumentNumber,
                                                     MethodHandle... guards) {
@@ -1575,7 +1598,7 @@ public class Methods {
             return target;
         }
         MethodType targetType = target.type();
-        checkArgumentLength(targetType, argumentNumber + n - 1);
+        checkArgumentLength(0, targetType.parameterCount() - n + 1, argumentNumber);
 
         MethodHandle handle = target;
         int a = argumentNumber;
@@ -1799,7 +1822,7 @@ public class Methods {
      * @throws AmbiguousMethodException If there are multiple methods matching the searched type
      * @throws NoSuchMethodError        If no method was found
      */
-    public static MethodHandle findMethodHandleOfType(Lookup lookup, Object object, MethodType reference) {
+    public static MethodHandle findMethodHandleOfType(@Nullable Lookup lookup, Object object, MethodType reference) {
         MethodHandle handle = findSingleMethodHandle(lookup, object, reference);
         return handle.asType(reference);
     }
@@ -1843,7 +1866,7 @@ public class Methods {
      * @throws AmbiguousMethodException If there are multiple methods matching the searched type
      * @throws NoSuchMethodError        If no method was found
      */
-    public static Method findMethodOfType(Lookup lookup, Class<?> type, MethodType reference) {
+    public static Method findMethodOfType(@Nullable Lookup lookup, Class<?> type, MethodType reference) {
         Method m = findSingleMethodIn(lookup, type, reference);
         if (m == null) {
             throw new NoSuchMethodError("No method " + reference + " in " + type.getName());
@@ -1945,7 +1968,6 @@ public class Methods {
      */
     public static MethodHandle synchronizeWith(MethodHandle target, Semaphore semaphore) {
         MethodType type = target.type();
-        Class<?> returnType = type.returnType();
         MethodHandle acquire, release;
         try {
             acquire = publicLookup().bind(semaphore, "acquireUninterruptibly", methodType(void.class));
@@ -1975,34 +1997,163 @@ public class Methods {
      * @return A handle of the exact same type as target
      */
     public static MethodHandle doFinally(MethodHandle target, MethodHandle finallyBlock) {
-        MethodType finallyBlockType = finallyBlock.type();
-        if (finallyBlockType.returnType() != void.class) {
-            throw new IllegalArgumentException(finallyBlock + " should not return some value");
-        }
-        MethodType type = target.type();
-        Class<?> returnType = type.returnType();
-        Class<?>[] finallyBlockAccepts = Arrays.copyOf(type.parameterArray(), finallyBlockType.parameterCount());
-        MethodHandle transformedFinallyBlock = finallyBlock.asType(methodType(void.class, finallyBlockAccepts));
-        MethodHandle throwException = MethodHandles.throwException(returnType, Throwable.class);
-        if (finallyBlockAccepts.length > 0) {
-            transformedFinallyBlock = MethodHandles.dropArguments(transformedFinallyBlock, 0, Throwable.class);
-            throwException = MethodHandles.dropArguments(throwException, 1, finallyBlockAccepts);
-        }
-        MethodHandle catchedBlock = MethodHandles.foldArguments(throwException, transformedFinallyBlock);
-        MethodHandle catchedTarget = MethodHandles.catchException(target, Throwable.class, catchedBlock);
+        MethodHandle cleanup = acceptThese(finallyBlock, target.type().parameterArray());
+        Class<?> returnType = target.type().returnType();
         if (returnType == void.class) {
-            return MethodHandles.foldArguments(acceptThese(finallyBlock, type.parameterArray()), catchedTarget);
+            cleanup = MethodHandles.dropArguments(cleanup, 0, Throwable.class);
+            cleanup = cleanup.asType(cleanup.type().changeReturnType(void.class));
+        } else {
+            cleanup = MethodHandles.dropArguments(cleanup, 0, Throwable.class, returnType);
+            cleanup = returnArgument(cleanup, 1);
         }
 
-        if (finallyBlockType.parameterCount() == 0) {
-            MethodHandle returnValue = MethodHandles.identity(returnType);
-            MethodHandle doFinallyAndReturn = MethodHandles.foldArguments(returnValue, finallyBlock);
-            return MethodHandles.filterReturnValue(catchedTarget, doFinallyAndReturn);
-        } else {
-            MethodHandle doFinallyAndReturn = MethodHandles.dropArguments(acceptThese(finallyBlock, type.parameterArray()), 0, returnType);
-            doFinallyAndReturn = returnArgument(doFinallyAndReturn, 0);
-            return MethodHandles.foldArguments(doFinallyAndReturn, catchedTarget);
+        return MethodHandles.tryFinally(target, cleanup);
+    }
+
+    /**
+     * Creates a handle that iterates over some {@link Iterable} instance, which is being passed as the first parameter.
+     * Only stateless iterations are supported, and no value is returned.
+     *
+     * The given target handle will be called for each element in the given Iterable instance. If the target returns
+     * some values, it will be ignored.
+     *
+     * Let (l1, ... lN, a1, ... aP, aP+1, aP+2, ... aO)R be the target type, where N is the number of leading arguments,
+     * P is the parameter index of the iterated value, O is the number of arguments minus the leading ones,
+     * and R is the return type.
+     *
+     * Then the resulting handle will be of type (Iterable, a1, ... aP, aP+2, ... aO)void.
+     *
+     * This means, the resulting handle will always accept an Iterable as the first arguments, then all arguments
+     * from the target type except the leading values and the one at position parameterIndex, which is the iterated element.
+     *
+     * The given parameter index may be smaller than the number of leading arguments. In this case, the index still refers
+     * to the target's argument index, and the remaining leading arguments are filled thereafter.
+     *
+     * @param target This will be called
+     * @param parameterIndex The index of the target's iterated element parameter, starting from 0, not counting the
+     *                       leading arguments
+     * @param leadingArguments These will be passed to every call of the target as the first arguments
+     * @return A handle that iterates over all elements of the given iterable
+     */
+    public static MethodHandle iterate(MethodHandle target,  int parameterIndex, Object... leadingArguments) {
+        return iterate(publicLookup(), target, parameterIndex, leadingArguments);
+    }
+
+    /**
+     * Creates a handle that iterates over some {@link Iterable} instance, which is being passed as the first parameter.
+     * Only stateless iterations are supported, and no value is returned.
+     *
+     * The given target handle will be called for each element in the given Iterable instance. If the target returns
+     * some values, it will be ignored.
+     *
+     * Let (l1, ... lN, aN+1, ... aP, aP+1, aP+2, ... aM)R be the target type, where N is the number of leading arguments,
+     * P is the parameter index of the iterated value, M is the number of all target's arguments,
+     * and R is the return type.
+     *
+     * Then the resulting handle will be of type (Iterable, a1, ... aP-N, aP-N+2, ... aM)void.
+     *
+     * This means, the resulting handle will always accept an Iterable as the first arguments, then all arguments
+     * from the target type except the leading values and the one at position parameterIndex, which is the iterated element.
+     *
+     * The given parameter index may be smaller than the number of leading arguments. In this case, the index still refers
+     * to the target's argument index, and the remaining leading arguments are filled thereafter.
+     *
+     * Implementation note:
+     * The resulting handle will prefer calling forEach() when the target handle can be directly converted to a lambda.
+     * This is the case when
+     * <ol>
+     *     <li>the target is a direct method handle,</li>
+     *     <li>it originally returns void,</li>
+     *     <li>the iterated value is the target's last parameter,</li>
+     *     <li>and it is non-primitive.</li>
+     * </ol>
+     * In any other case, the default iterator pattern is used.
+     *
+     * @param lookup The local lookup; necessary when the target is a direct, private member
+     * @param target This will be called
+     * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
+     *                       leading arguments
+     * @param leadingArguments These will be passed to every call of the target as the first arguments
+     * @return A handle that iterates over all elements of the given iterable
+     */
+    public static MethodHandle iterate(Lookup lookup, MethodHandle target,  int parameterIndex, Object... leadingArguments) {
+        MethodType targetType = target.type();
+        int numberOfLeadingArguments = leadingArguments.length;
+        checkArgumentLength(targetType, numberOfLeadingArguments, parameterIndex);
+        int parameterCount = targetType.parameterCount();
+        if (numberOfLeadingArguments >= parameterCount) {
+            throw new IllegalArgumentException(target + " cannot accept " + numberOfLeadingArguments + " leading arguments");
         }
+        Class<?> iteratedType = targetType.parameterType(parameterIndex);
+        if (targetType.returnType() == void.class && parameterCount == parameterIndex + 1
+                && !iteratedType.isPrimitive()) {
+            // Try forEach() with direct lambda
+            MethodHandle lambdaFactory;
+            try {
+                lambdaFactory = createLambdaFactory(lookup, target, Consumer.class);
+            } catch (IllegalArgumentException ex) {
+                // Lookup not available or iterated type is primitive
+                lambdaFactory = null;
+            }
+            if (lambdaFactory != null) {
+                @SuppressWarnings({ "unchecked", "rawTypes" })
+                MethodHandle forEach = findUsing(Iterable.class, i -> i.forEach(null));
+                if (parameterIndex == numberOfLeadingArguments) {
+                    Object action;
+                    try {
+                        action = lambdaFactory.invokeWithArguments(leadingArguments);
+                    } catch (RuntimeException | Error e) {
+                        throw e;
+                    } catch (Throwable t) {
+                        throw new UndeclaredThrowableException(t);
+                    }
+                    return MethodHandles.insertArguments(forEach, 1, action);
+                } else {
+                    // has leading arguments
+                    Class<?>[] leadingTypes = Arrays.copyOf(targetType.parameterArray(), parameterCount - 1);
+                    MethodHandle factory = MethodHandles.exactInvoker(methodType(Consumer.class, leadingTypes)).bindTo(lambdaFactory);
+                    factory = MethodHandles.insertArguments(factory, 0, leadingArguments);
+                    return MethodHandles.collectArguments(forEach, 1, factory);
+                }
+            }
+        }
+
+        // Not possible to create Consumer interface, use standard iterator pattern
+        target = target.asType(targetType.changeReturnType(void.class));
+        if (parameterIndex < numberOfLeadingArguments) {
+            target = MethodHandles.insertArguments(target, 0, Arrays.copyOf(leadingArguments, parameterIndex));
+            Object[] remainingLeadingArguments = new Object[numberOfLeadingArguments - parameterIndex];
+            System.arraycopy(leadingArguments, parameterIndex, remainingLeadingArguments, 0, numberOfLeadingArguments - parameterIndex);
+            target = MethodHandles.insertArguments(target, 1, remainingLeadingArguments);
+            parameterIndex = 0;
+        } else {
+            target = MethodHandles.insertArguments(target, 0, leadingArguments);
+            parameterIndex -= numberOfLeadingArguments;
+        }
+        parameterCount -= numberOfLeadingArguments;
+        if (parameterIndex > 0) {
+            Class<?>[] parameterArray = target.type().parameterArray();
+            Class<?>[] newArguments = new Class<?>[parameterCount];
+            newArguments[0] = iteratedType;
+            System.arraycopy(parameterArray, 0, newArguments, 1, parameterIndex);
+            System.arraycopy(parameterArray, parameterIndex + 1, newArguments, parameterIndex + 1, parameterCount - parameterIndex - 1);
+            int[] permutations = new int[parameterCount];
+            for (int i=0; i < parameterIndex; i++) {
+                permutations[i] = i + 1;
+            }
+            for (int i = parameterIndex + 1; i < parameterCount; i++) {
+                permutations[i] = i;
+            }
+            target = MethodHandles.permuteArguments(target, methodType(void.class, newArguments), permutations);
+        }
+
+        MethodHandle getIterator = findUsing(Iterable.class, Iterable::iterator);
+        MethodHandle hasNext = findUsing(Iterator.class, Iterator::hasNext);
+        MethodHandle getNext = findUsing(Iterator.class, Iterator::next).asType(methodType(iteratedType, Iterator.class));
+
+        MethodHandle invokeOnIterator = MethodHandles.filterArguments(target, 0, getNext);
+        MethodHandle whileLoop = MethodHandles.whileLoop(null, hasNext, invokeOnIterator);
+        return MethodHandles.filterArguments(whileLoop, 0, getIterator);
     }
 
     private static Method findSingleMethodIn(Lookup lookup, Class<?> type, MethodType reference) {
@@ -2129,6 +2280,12 @@ public class Methods {
             Class<?>[] params = new Class<?>[methodParamSize];
             System.arraycopy(targetParameters, additional, params, 0, methodParamSize);
             instantiatedType = methodType(targetType.returnType(), params);
+        }
+
+        for (Class<?> marker : markerInterfaces) {
+            if (!marker.isInterface() || marker.getDeclaredMethods().length > 0) {
+                throw new IllegalArgumentException(marker.getName() + " must be an empty interface!");
+            }
         }
 
         Object[] metaArguments = new Object[6 + markerInterfaces.length];

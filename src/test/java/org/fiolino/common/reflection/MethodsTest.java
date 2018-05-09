@@ -5,26 +5,22 @@ import org.junit.jupiter.api.Test;
 import javax.annotation.concurrent.ThreadSafe;
 import java.awt.event.ActionListener;
 import java.io.FileNotFoundException;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandleProxies;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
+import java.lang.invoke.*;
 import java.lang.reflect.Field;
 import java.sql.Timestamp;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.IntBinaryOperator;
 import java.util.function.IntUnaryOperator;
 import java.util.function.UnaryOperator;
 
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
+import static java.lang.invoke.MethodHandles.whileLoop;
 import static java.lang.invoke.MethodType.methodType;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -217,7 +213,7 @@ class MethodsTest {
     @Test
     void testBindUsing() throws Throwable {
         List<String> testList = new ArrayList<>();
-        MethodHandle handle = Methods.bindUsing(LOOKUP, testList, l -> l.add(null));
+        MethodHandle handle = Methods.bindUsing(LOOKUP, testList, l -> l.add(null)).orElse(null);
         assertNotNull(handle);
         boolean added = (boolean) handle.invokeExact((Object) "Hello World");
         assertTrue(added);
@@ -837,6 +833,18 @@ class MethodsTest {
         assertFalse(isInstance, "null check");
     }
 
+    @SuppressWarnings("unused")
+    private MethodHandle countCalls(MethodHandle h, AtomicInteger counter) throws NoSuchMethodException, IllegalAccessException {
+        MethodHandle increment = publicLookup().bind(counter, "incrementAndGet", methodType(int.class));
+        increment = increment.asType(methodType(void.class));
+        return MethodHandles.foldArguments(h, increment);
+    }
+
+    private MethodHandle printInput(MethodHandle h)throws NoSuchMethodException, IllegalAccessException {
+        MethodHandle out = publicLookup().bind(System.out, "println", methodType(void.class, h.type().parameterType(0)));
+        return MethodHandles.foldArguments(h, out);
+    }
+
     @Test
     void testMethodTypesEqual() {
         MethodType prototype = methodType(Date.class, CharSequence.class, int.class);
@@ -1110,6 +1118,213 @@ class MethodsTest {
         fail("Should not be here");
     }
 
+    @SuppressWarnings("unused")
+    private static void add(AtomicInteger counter, Integer summand) {
+        counter.addAndGet(summand);
+    }
+
+    @SuppressWarnings("unused")
+    private static void add(AtomicInteger counter, int summand) {
+        counter.addAndGet(summand);
+    }
+
+    private static class ContractBreakingIterable<T> implements Iterable<T> {
+        private final Iterable<T> iterable;
+        private final UnaryOperator<T> operator;
+
+        ContractBreakingIterable(Iterable<T> iterable, UnaryOperator<T> operator) {
+            this.iterable = iterable;
+            this.operator = operator;
+        }
+
+        @Override
+        public Iterator<T> iterator() {
+            return iterable.iterator();
+        }
+
+        @Override
+        public void forEach(Consumer<? super T> action) {
+            iterable.forEach(x -> action.accept(operator.apply(x)));
+        }
+    }
+
+    @Test
+    void testIteratorWithForEachCall() throws Throwable {
+        AtomicInteger counter = new AtomicInteger();
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle sum = lookup().findStatic(lookup.lookupClass(), "add", methodType(void.class, AtomicInteger.class, Integer.class));
+        List<Integer> numbers = Arrays.asList(33, 27, 0, -10);
+        Iterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
+        MethodHandle iterator = Methods.iterate(lookup, sum, 1);
+        iterator.invokeExact(iterable, counter);
+        assertEquals(100, counter.get());
+
+        counter = new AtomicInteger();
+        iterator = Methods.iterate(lookup, sum, 1, counter);
+        iterator.invokeExact(iterable);
+        assertEquals(100, counter.get());
+    }
+
+    @Test
+    void testIteratorWithPrimitive() throws Throwable {
+        AtomicInteger counter = new AtomicInteger();
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle sum = lookup().findStatic(lookup.lookupClass(), "add", methodType(void.class, AtomicInteger.class, int.class));
+        List<Integer> numbers = Arrays.asList(33, 27, 0, -10);
+        Iterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
+        MethodHandle iterator = Methods.iterate(lookup, sum, 1);
+        iterator.invokeExact(iterable, counter);
+        assertEquals(50, counter.get());
+
+        counter = new AtomicInteger();
+        iterator = Methods.iterate(lookup, sum, 1, counter);
+        iterator.invokeExact(iterable);
+        assertEquals(50, counter.get());
+    }
+
+    @Test
+    void testIteratorWithIterator() throws Throwable {
+        AtomicInteger counter = new AtomicInteger();
+        MethodHandle sum = publicLookup().findVirtual(AtomicInteger.class, "addAndGet", methodType(int.class, int.class));
+        List<Integer> numbers = Arrays.asList(33, 27, 0, -10);
+        Iterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
+        MethodHandle iterator = Methods.iterate(sum, 1);
+        iterator.invokeExact(iterable, counter);
+        assertEquals(50, counter.get());
+
+        counter = new AtomicInteger();
+        iterator = Methods.iterate(sum, 1, counter);
+        iterator.invokeExact(iterable);
+        assertEquals(50, counter.get());
+    }
+
+    private static class Calculator {
+        int result;
+
+        void sumUp(int v1, String v2, Long v3) {
+            result += v1;
+            result += Integer.parseInt(v2);
+            result += v3;
+        }
+    }
+
+    @Test
+    void testIterateMultipleArguments() throws Throwable {
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle sum = lookup.findVirtual(Calculator.class, "sumUp", methodType(void.class, int.class, String.class, Long.class));
+        List<Long> vals = Arrays.asList(20L, 30L, 40L, 100L, -10L);
+        Iterable<Long> it = new ContractBreakingIterable<>(vals, x -> x + x);
+
+        MethodHandle loop = Methods.iterate(lookup, sum, 3);
+        Calculator c = new Calculator();
+        loop.invokeExact(it, c, 17, "11");
+        assertEquals(28*5 + 40 + 60 + 80 + 200 - 20, c.result);
+        c = new Calculator();
+        c.result = 1000;
+        loop.invokeExact(it, c, 1, "-20");
+        assertEquals(1000 - 19*5 + 40 + 60 + 80 + 200 - 20, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 3, c);
+        loop.invokeExact(it, 5, "9");
+        assertEquals(14*5 + 40 + 60 + 80 + 200 - 20, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 3, c, 18);
+        loop.invokeExact(it, "7");
+        assertEquals(25*5 + 40 + 60 + 80 + 200 - 20, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 3, c, 12, "99");
+        loop.invokeExact(it);
+        assertEquals(111*5 + 40 + 60 + 80 + 200 - 20, c.result);
+
+        // Now we switch to iterator style
+        List<String> vals2 = Arrays.asList("1", "2", "3");
+        Iterable<String> it2 = new ContractBreakingIterable<>(vals2, x -> x + "0");
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 2);
+        loop.invokeExact(it2, c, 11, Long.valueOf(99L));
+        assertEquals(110*3 + 1 + 2 + 3, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 2, c);
+        loop.invokeExact(it2, 11, Long.valueOf(99L));
+        assertEquals(110*3 + 1 + 2 + 3, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 2, c, 5);
+        loop.invokeExact(it2, Long.valueOf(23L));
+        assertEquals(28*3 + 1 + 2 + 3, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 2, c, 237, 46L);
+        loop.invokeExact(it2);
+        assertEquals((237+46)*3 + 1 + 2 + 3, c.result);
+
+        Calculator c1 = new Calculator();
+        Calculator c2 = new Calculator();
+        Calculator c3 = new Calculator();
+        Calculator c4 = new Calculator();
+        c1.result = 10;
+        c2.result = 20;
+        c3.result = 30;
+        c4.result = 40;
+        Iterable<Calculator> vals3 = Arrays.asList(c1, c2, c3, c4);
+
+        loop = Methods.iterate(lookup, sum, 0);
+        loop.invokeExact(vals3, -18, "44", Long.valueOf(77));
+        assertEquals(10 - 18 + 44 + 77, c1.result);
+        assertEquals(20 - 18 + 44 + 77, c2.result);
+        assertEquals(30 - 18 + 44 + 77, c3.result);
+        assertEquals(40 - 18 + 44 + 77, c4.result);
+
+        c1.result = 10;
+        c2.result = 20;
+        c3.result = 30;
+        c4.result = 40;
+        loop = Methods.iterate(lookup, sum, 0, -171);
+        loop.invokeExact(vals3, "-543", Long.valueOf(2828));
+        assertEquals(10 - 171 - 543 + 2828, c1.result);
+        assertEquals(20 - 171 - 543 + 2828, c2.result);
+        assertEquals(30 - 171 - 543 + 2828, c3.result);
+        assertEquals(40 - 171 - 543 + 2828, c4.result);
+
+        c1.result = 10;
+        c2.result = 20;
+        c3.result = 30;
+        c4.result = 40;
+        loop = Methods.iterate(lookup, sum, 0, -11, "2046");
+        loop.invokeExact(vals3, Long.valueOf(1183));
+        assertEquals(10 - 11 + 2046 + 1183, c1.result);
+        assertEquals(20 - 11 + 2046 + 1183, c2.result);
+        assertEquals(30 - 11 + 2046 + 1183, c3.result);
+        assertEquals(40 - 11 + 2046 + 1183, c4.result);
+
+        c1.result = 10;
+        c2.result = 20;
+        c3.result = 30;
+        c4.result = 40;
+        loop = Methods.iterate(lookup, sum, 0, 199, "1284", 3333L);
+        loop.invokeExact(vals3);
+        assertEquals(10 + 199 + 1284 + 3333, c1.result);
+        assertEquals(20 + 199 + 1284 + 3333, c2.result);
+        assertEquals(30 + 199 + 1284 + 3333, c3.result);
+        assertEquals(40 + 199 + 1284 + 3333, c4.result);
+    }
+
+    @Test
+    void testIterateWithFailedChecks() {
+        MethodHandle oneArgument = MethodHandles.identity(Object.class);
+        assertThrows(IllegalArgumentException.class,
+                () -> Methods.iterate(oneArgument, -1)); // Index too low
+        assertThrows(IllegalArgumentException.class,
+                () -> Methods.iterate(oneArgument, 1)); // Index too high
+        assertThrows(IllegalArgumentException.class,
+                () -> Methods.iterate(oneArgument, 0, new Object())); // Too many leading arguments
+    }
+
     @Test
     void testLambdaFactory() throws Throwable {
         MethodHandle mult = publicLookup().findStatic(Math.class, "multiplyExact", methodType(int.class, int.class, int.class));
@@ -1141,17 +1356,17 @@ class MethodsTest {
     }
 
     @SuppressWarnings("unused")
-    private static String sumUp(Integer a, Object b) {
-        return String.valueOf(a + Integer.parseInt(b.toString()));
+    private static String sumUp(int a, Integer b) {
+        return String.valueOf(a + b);
     }
 
     interface SumToString {
-        Object sumUpNonsense(int a, Integer b);
+        Object sumUpNonsense(int a, Object b);
     }
 
     @Test
     void testLambdaFactoryWithConversion() throws Throwable {
-        MethodHandle sum = LOOKUP.findStatic(LOOKUP.lookupClass(), "sumUp", methodType(String.class, Integer.class, Object.class));
+        MethodHandle sum = LOOKUP.findStatic(LOOKUP.lookupClass(), "sumUp", methodType(String.class, int.class, Integer.class));
         MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, sum, SumToString.class);
         assertNotNull(lambdaFactory);
 
@@ -1164,7 +1379,7 @@ class MethodsTest {
 
     @Test
     void testLambdaFactoryNotDirect() throws NoSuchMethodException, IllegalAccessException {
-        MethodHandle sum = LOOKUP.findStatic(LOOKUP.lookupClass(), "sumUp", methodType(String.class, Integer.class, Object.class));
+        MethodHandle sum = LOOKUP.findStatic(LOOKUP.lookupClass(), "sumUp", methodType(String.class, int.class, Integer.class));
         MethodHandle modified = MethodHandles.dropArguments(sum, 1, String.class);
         MethodHandle lambdaFactory = Methods.createLambdaFactory(LOOKUP, modified, SumToString.class);
         assertNull(lambdaFactory);

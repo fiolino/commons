@@ -5,7 +5,10 @@ import org.junit.jupiter.api.Test;
 import javax.annotation.concurrent.ThreadSafe;
 import java.awt.event.ActionListener;
 import java.io.FileNotFoundException;
-import java.lang.invoke.*;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandleProxies;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 import java.sql.Timestamp;
 import java.util.*;
@@ -20,7 +23,6 @@ import java.util.function.UnaryOperator;
 
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
-import static java.lang.invoke.MethodHandles.whileLoop;
 import static java.lang.invoke.MethodType.methodType;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -1115,6 +1117,62 @@ class MethodsTest {
             return;
         }
         fail("Should not be here");
+    }
+
+    private static String manyArguments(int a1, String a2, Object a3, boolean[] a4, float a5, TimeUnit a6) {
+        return a1 + a2 + a3 + a4[0] + a5 + a6;
+    }
+
+    @Test
+    void testShiftUnchanged() throws Throwable {
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle h = lookup.findStatic(lookup.lookupClass(), "manyArguments", methodType(String.class, int.class, String.class, Object.class, boolean[].class, float.class, TimeUnit.class));
+        for (int i=0; i < h.type().parameterCount(); i++) {
+            MethodHandle shifted = Methods.shiftArgument(h, i, i);
+            assertEquals(h, shifted);
+        }
+    }
+
+    @Test
+    void testShiftLeft() throws Throwable {
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle h = lookup.findStatic(lookup.lookupClass(), "manyArguments", methodType(String.class, int.class, String.class, Object.class, boolean[].class, float.class, TimeUnit.class));
+
+        MethodHandle shifted = Methods.shiftArgument(h, 1, 0);
+        assertEquals(methodType(String.class, String.class, int.class, Object.class, boolean[].class, float.class, TimeUnit.class), shifted.type());
+        String result = (String) shifted.invokeExact("b", 17, (Object)'!', new boolean[] { true }, 0.8f, TimeUnit.MICROSECONDS);
+        assertEquals("17b!true0.8MICROSECONDS", result);
+
+        shifted = Methods.shiftArgument(h, 4, 2);
+        assertEquals(methodType(String.class, int.class, String.class, float.class, Object.class, boolean[].class, TimeUnit.class), shifted.type());
+        result = (String) shifted.invokeExact(17, "b", 0.8f, (Object)'!', new boolean[] { true }, TimeUnit.MICROSECONDS);
+        assertEquals("17b!true0.8MICROSECONDS", result);
+
+        shifted = Methods.shiftArgument(h, 5, 4);
+        assertEquals(methodType(String.class, int.class, String.class, Object.class, boolean[].class, TimeUnit.class, float.class), shifted.type());
+        result = (String) shifted.invokeExact(17, "b", (Object)'!', new boolean[] { true }, TimeUnit.MICROSECONDS, 0.8f);
+        assertEquals("17b!true0.8MICROSECONDS", result);
+    }
+
+    @Test
+    void testShiftRight() throws Throwable {
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle h = lookup.findStatic(lookup.lookupClass(), "manyArguments", methodType(String.class, int.class, String.class, Object.class, boolean[].class, float.class, TimeUnit.class));
+
+        MethodHandle shifted = Methods.shiftArgument(h, 0, 1);
+        assertEquals(methodType(String.class, String.class, int.class, Object.class, boolean[].class, float.class, TimeUnit.class), shifted.type());
+        String result = (String) shifted.invokeExact("b", 17, (Object)'!', new boolean[] { true }, 0.8f, TimeUnit.MICROSECONDS);
+        assertEquals("17b!true0.8MICROSECONDS", result);
+
+        shifted = Methods.shiftArgument(h, 2, 4);
+        assertEquals(methodType(String.class, int.class, String.class, boolean[].class, float.class, Object.class, TimeUnit.class), shifted.type());
+        result = (String) shifted.invokeExact(17, "b", new boolean[] { true }, 0.8f, (Object)'!', TimeUnit.MICROSECONDS);
+        assertEquals("17b!true0.8MICROSECONDS", result);
+
+        shifted = Methods.shiftArgument(h, 4, 5);
+        assertEquals(methodType(String.class, int.class, String.class, Object.class, boolean[].class, TimeUnit.class, float.class), shifted.type());
+        result = (String) shifted.invokeExact(17, "b", (Object)'!', new boolean[] { true }, TimeUnit.MICROSECONDS, 0.8f);
+        assertEquals("17b!true0.8MICROSECONDS", result);
     }
 
     @SuppressWarnings("unused")

@@ -2124,30 +2124,19 @@ public class Methods {
         // Not possible to create Consumer interface, use standard iterator pattern
         target = target.asType(targetType.changeReturnType(void.class));
         if (parameterIndex < numberOfLeadingArguments) {
+            // Index is between leading attributes
             target = MethodHandles.insertArguments(target, 0, Arrays.copyOf(leadingArguments, parameterIndex));
             Object[] remainingLeadingArguments = new Object[numberOfLeadingArguments - parameterIndex];
             System.arraycopy(leadingArguments, parameterIndex, remainingLeadingArguments, 0, numberOfLeadingArguments - parameterIndex);
             target = MethodHandles.insertArguments(target, 1, remainingLeadingArguments);
             parameterIndex = 0;
         } else {
+            // Leading attributes can be added directly
             target = MethodHandles.insertArguments(target, 0, leadingArguments);
             parameterIndex -= numberOfLeadingArguments;
         }
-        parameterCount -= numberOfLeadingArguments;
         if (parameterIndex > 0) {
-            Class<?>[] parameterArray = target.type().parameterArray();
-            Class<?>[] newArguments = new Class<?>[parameterCount];
-            newArguments[0] = iteratedType;
-            System.arraycopy(parameterArray, 0, newArguments, 1, parameterIndex);
-            System.arraycopy(parameterArray, parameterIndex + 1, newArguments, parameterIndex + 1, parameterCount - parameterIndex - 1);
-            int[] permutations = new int[parameterCount];
-            for (int i=0; i < parameterIndex; i++) {
-                permutations[i] = i + 1;
-            }
-            for (int i = parameterIndex + 1; i < parameterCount; i++) {
-                permutations[i] = i;
-            }
-            target = MethodHandles.permuteArguments(target, methodType(void.class, newArguments), permutations);
+            target = shiftArgument(target, parameterIndex, 0);
         }
 
         MethodHandle getIterator = findUsing(Iterable.class, Iterable::iterator);
@@ -2157,6 +2146,48 @@ public class Methods {
         MethodHandle invokeOnIterator = MethodHandles.filterArguments(target, 0, getNext);
         MethodHandle whileLoop = MethodHandles.whileLoop(null, hasNext, invokeOnIterator);
         return MethodHandles.filterArguments(whileLoop, 0, getIterator);
+    }
+
+    /**
+     * Shifts an argument of the given target to a new position and returns the resulting handle.
+     *
+     * One individual argument can be shifted to any new position. The argument between the old and the new position
+     * will shift by one, while the argument before and after remain unchanged.
+     *
+     * @param target The handle to call
+     * @param fromIndex Move this argument...
+     * @param toIndex ... to that position
+     * @return A handle with the exact same type but with a shifted argument list
+     */
+    public static MethodHandle shiftArgument(MethodHandle target, int fromIndex, int toIndex) {
+        MethodType type = target.type();
+        checkArgumentLength(type, fromIndex);
+        checkArgumentLength(type, toIndex);
+        if (fromIndex == toIndex) return target;
+
+        int parameterCount = type.parameterCount();
+        Class<?>[] parameterArray = type.parameterArray();
+        Class<?>[] newArguments = new Class<?>[parameterCount];
+        int[] permutations = new int[parameterCount];
+        System.arraycopy(parameterArray, 0, newArguments, 0, Math.min(fromIndex, toIndex));
+        newArguments[toIndex] = parameterArray[fromIndex];
+
+        if (fromIndex < toIndex) {
+            System.arraycopy(parameterArray, fromIndex + 1, newArguments, fromIndex, toIndex - fromIndex);
+            System.arraycopy(parameterArray, toIndex + 1, newArguments, toIndex + 1, parameterCount - toIndex - 1);
+            for (int i = 0; i < parameterCount; i++) {
+                permutations[i] = i > fromIndex && i <= toIndex ? i - 1 : i;
+            }
+        } else {
+            System.arraycopy(parameterArray, toIndex, newArguments, toIndex + 1, fromIndex - toIndex);
+            System.arraycopy(parameterArray, fromIndex + 1, newArguments, fromIndex + 1, parameterCount - fromIndex - 1);
+            for (int i = 0; i < parameterCount; i++) {
+                permutations[i] = i >= toIndex && i < fromIndex ? i + 1 : i;
+            }
+        }
+
+        permutations[fromIndex] = toIndex;
+        return MethodHandles.permuteArguments(target, methodType(type.returnType(), newArguments), permutations);
     }
 
     private static Method findSingleMethodIn(Lookup lookup, Class<?> type, MethodType reference) {

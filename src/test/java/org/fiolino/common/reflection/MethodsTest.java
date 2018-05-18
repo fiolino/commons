@@ -1119,6 +1119,7 @@ class MethodsTest {
         fail("Should not be here");
     }
 
+    @SuppressWarnings("unused")
     private static String manyArguments(int a1, String a2, Object a3, boolean[] a4, float a5, TimeUnit a6) {
         return a1 + a2 + a3 + a4[0] + a5 + a6;
     }
@@ -1213,7 +1214,7 @@ class MethodsTest {
         List<Integer> numbers = Arrays.asList(33, 27, 0, -10);
         Iterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
         MethodHandle iterator = Methods.iterate(lookup, sum, 1);
-        iterator.invokeExact(iterable, counter);
+        iterator.invokeExact(counter, iterable);
         assertEquals(100, counter.get());
 
         counter = new AtomicInteger();
@@ -1230,7 +1231,7 @@ class MethodsTest {
         List<Integer> numbers = Arrays.asList(33, 27, 0, -10);
         Iterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
         MethodHandle iterator = Methods.iterate(lookup, sum, 1);
-        iterator.invokeExact(iterable, counter);
+        iterator.invokeExact(counter, iterable);
         assertEquals(50, counter.get());
 
         counter = new AtomicInteger();
@@ -1246,7 +1247,7 @@ class MethodsTest {
         List<Integer> numbers = Arrays.asList(33, 27, 0, -10);
         Iterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
         MethodHandle iterator = Methods.iterate(sum, 1);
-        iterator.invokeExact(iterable, counter);
+        iterator.invokeExact(counter, iterable);
         assertEquals(50, counter.get());
 
         counter = new AtomicInteger();
@@ -1274,21 +1275,21 @@ class MethodsTest {
 
         MethodHandle loop = Methods.iterate(lookup, sum, 3);
         Calculator c = new Calculator();
-        loop.invokeExact(it, c, 17, "11");
+        loop.invokeExact(c, 17, "11", it);
         assertEquals(28*5 + 40 + 60 + 80 + 200 - 20, c.result);
         c = new Calculator();
         c.result = 1000;
-        loop.invokeExact(it, c, 1, "-20");
+        loop.invokeExact(c, 1, "-20", it);
         assertEquals(1000 - 19*5 + 40 + 60 + 80 + 200 - 20, c.result);
 
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 3, c);
-        loop.invokeExact(it, 5, "9");
+        loop.invokeExact(5, "9", it);
         assertEquals(14*5 + 40 + 60 + 80 + 200 - 20, c.result);
 
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 3, c, 18);
-        loop.invokeExact(it, "7");
+        loop.invokeExact("7", it);
         assertEquals(25*5 + 40 + 60 + 80 + 200 - 20, c.result);
 
         c = new Calculator();
@@ -1302,12 +1303,12 @@ class MethodsTest {
 
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 2);
-        loop.invokeExact(it2, c, 11, Long.valueOf(99L));
+        loop.invokeExact(c, 11, it2, Long.valueOf(99L));
         assertEquals(110*3 + 1 + 2 + 3, c.result);
 
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 2, c);
-        loop.invokeExact(it2, 11, Long.valueOf(99L));
+        loop.invokeExact(11, it2, Long.valueOf(99L));
         assertEquals(110*3 + 1 + 2 + 3, c.result);
 
         c = new Calculator();

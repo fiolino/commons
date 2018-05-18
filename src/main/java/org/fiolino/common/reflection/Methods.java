@@ -2014,23 +2014,32 @@ public class Methods {
     }
 
     /**
-     * Creates a handle that iterates over some {@link Iterable} instance, which is being passed as the first parameter.
+     * Creates a handle that iterates over some {@link Iterable} instance instead of the original parameter at the given index.
      * Only stateless iterations are supported, and no value is returned.
      *
      * The given target handle will be called for each element in the given Iterable instance. If the target returns
      * some values, it will be ignored.
      *
-     * Let (l1, ... lN, a1, ... aP, aP+1, aP+2, ... aO)R be the target type, where N is the number of leading arguments,
-     * P is the parameter index of the iterated value, O is the number of arguments minus the leading ones,
+     * Let (l1, ... lN, aN+1, ... aP, aP+1, aP+2, ... aM)R be the target type, where N is the number of leading arguments,
+     * P is the parameter index of the iterated value, M is the number of all target's arguments,
      * and R is the return type.
      *
-     * Then the resulting handle will be of type (Iterable, a1, ... aP, aP+2, ... aO)void.
-     *
-     * This means, the resulting handle will always accept an Iterable as the first arguments, then all arguments
-     * from the target type except the leading values and the one at position parameterIndex, which is the iterated element.
+     * Then the resulting handle will be of type (a1, ... aP-N, Iterable, aP-N+2, ... aM)void.
      *
      * The given parameter index may be smaller than the number of leading arguments. In this case, the index still refers
-     * to the target's argument index, and the remaining leading arguments are filled thereafter.
+     * to the target's argument index, and the remaining leading arguments are filled thereafter. The iterable will be
+     * at the first position of the resulting handle then.
+     *
+     * Implementation note:
+     * The resulting handle will prefer calling forEach() when the target handle can be directly converted to a lambda.
+     * This is the case when
+     * <ol>
+     *     <li>the target is a direct method handle,</li>
+     *     <li>it originally returns void,</li>
+     *     <li>the iterated value is the target's last parameter,</li>
+     *     <li>and it is non-primitive.</li>
+     * </ol>
+     * In any other case, the default iterator pattern is used.
      *
      * @param target This will be called
      * @param parameterIndex The index of the target's iterated element parameter, starting from 0, not counting the
@@ -2043,7 +2052,7 @@ public class Methods {
     }
 
     /**
-     * Creates a handle that iterates over some {@link Iterable} instance, which is being passed as the first parameter.
+     * Creates a handle that iterates over some {@link Iterable} instance instead of the original parameter at the given index.
      * Only stateless iterations are supported, and no value is returned.
      *
      * The given target handle will be called for each element in the given Iterable instance. If the target returns
@@ -2053,13 +2062,11 @@ public class Methods {
      * P is the parameter index of the iterated value, M is the number of all target's arguments,
      * and R is the return type.
      *
-     * Then the resulting handle will be of type (Iterable, a1, ... aP-N, aP-N+2, ... aM)void.
-     *
-     * This means, the resulting handle will always accept an Iterable as the first arguments, then all arguments
-     * from the target type except the leading values and the one at position parameterIndex, which is the iterated element.
+     * Then the resulting handle will be of type (a1, ... aP-N, Iterable, aP-N+2, ... aM)void.
      *
      * The given parameter index may be smaller than the number of leading arguments. In this case, the index still refers
-     * to the target's argument index, and the remaining leading arguments are filled thereafter.
+     * to the target's argument index, and the remaining leading arguments are filled thereafter. The iterable will be
+     * at the first position of the resulting handle then.
      *
      * Implementation note:
      * The resulting handle will prefer calling forEach() when the target handle can be directly converted to a lambda.
@@ -2102,6 +2109,7 @@ public class Methods {
                 @SuppressWarnings({ "unchecked", "rawTypes" })
                 MethodHandle forEach = findUsing(Iterable.class, i -> i.forEach(null));
                 if (parameterIndex == numberOfLeadingArguments) {
+                    // Can directly insert action, resulting handle will only accept the iterable
                     Object action;
                     try {
                         action = lambdaFactory.invokeWithArguments(leadingArguments);
@@ -2112,11 +2120,12 @@ public class Methods {
                     }
                     return MethodHandles.insertArguments(forEach, 1, action);
                 } else {
-                    // has leading arguments
+                    // result has leading arguments, needs to create lambda on the fly
                     Class<?>[] leadingTypes = Arrays.copyOf(targetType.parameterArray(), parameterCount - 1);
                     MethodHandle factory = MethodHandles.exactInvoker(methodType(Consumer.class, leadingTypes)).bindTo(lambdaFactory);
                     factory = MethodHandles.insertArguments(factory, 0, leadingArguments);
-                    return MethodHandles.collectArguments(forEach, 1, factory);
+                    MethodHandle result = MethodHandles.collectArguments(forEach, 1, factory);
+                    return shiftArgument(result, 0, parameterIndex - numberOfLeadingArguments);
                 }
             }
         }
@@ -2135,17 +2144,18 @@ public class Methods {
             target = MethodHandles.insertArguments(target, 0, leadingArguments);
             parameterIndex -= numberOfLeadingArguments;
         }
-        if (parameterIndex > 0) {
-            target = shiftArgument(target, parameterIndex, 0);
-        }
 
         MethodHandle getIterator = findUsing(Iterable.class, Iterable::iterator);
         MethodHandle hasNext = findUsing(Iterator.class, Iterator::hasNext);
         MethodHandle getNext = findUsing(Iterator.class, Iterator::next).asType(methodType(iteratedType, Iterator.class));
+        if (parameterIndex > 0) {
+            Class<?>[] argumentsBefore = Arrays.copyOf(target.type().parameterArray(), parameterIndex);
+            hasNext = MethodHandles.dropArguments(hasNext, 0, argumentsBefore);
+        }
 
-        MethodHandle invokeOnIterator = MethodHandles.filterArguments(target, 0, getNext);
+        MethodHandle invokeOnIterator = MethodHandles.filterArguments(target, parameterIndex, getNext);
         MethodHandle whileLoop = MethodHandles.whileLoop(null, hasNext, invokeOnIterator);
-        return MethodHandles.filterArguments(whileLoop, 0, getIterator);
+        return MethodHandles.filterArguments(whileLoop, parameterIndex, getIterator);
     }
 
     /**

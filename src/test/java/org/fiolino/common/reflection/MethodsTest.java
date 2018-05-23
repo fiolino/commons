@@ -1406,78 +1406,28 @@ class MethodsTest {
     }
 
     @Test
-    void testIterateMultipleArgumentsWithArray() throws Throwable {
+    void testIterateArray() throws Throwable {
         MethodHandles.Lookup lookup = lookup();
         MethodHandle sum = lookup.findVirtual(Calculator.class, "sumUp", methodType(void.class, int.class, String.class, Long.class));
 
         MethodHandle loop = Methods.iterateArray(sum, 3);
         Calculator c = new Calculator();
-        loop.invoke(c, 17, "11", (Long) 20L, (Long) 30L, (Long) 40L, (Long) 100L, (Long) (-10L));
+        loop.invoke(c, 17, "11", 20L, 30L, 40L, 100L, -10L);
         assertEquals((17+11)*5 + 20 + 30 + 40 + 100 - 10, c.result);
         c = new Calculator();
         c.result = 1000;
-        loop.invoke(c, 1, "-20", (Long) 20L, (Long) 30L, (Long) 40L, (Long) 100L, (Long) (-10L));
+        loop.invoke(c, 1, "-20", 20L, 30L, 40L, 100L, -10L);
         assertEquals(1000 - 19*5 + 20 + 30 + 40 + 100 - 10, c.result);
 
         c = new Calculator();
-        loop = Methods.iterateArray(sum, 3, c);
-        loop.invoke(5, "9", (Long) 20L, (Long) 30L, (Long) 40L, (Long) 100L, (Long) (-10L));
-        assertEquals((5+9)*5 + 20 + 30 + 40 + 100 - 10, c.result);
-
-        c = new Calculator();
-        loop = Methods.iterateArray(sum, 3, c, 18);
-        loop.invoke("7", (Long) 20L, (Long) 30L, (Long) 40L, (Long) 100L, (Long) (-10L));
-        assertEquals((7+18)*5 + 20 + 30 + 40 + 100 - 10, c.result);
-
-        c = new Calculator();
-        loop = Methods.iterateArray(sum, 3, c, 12, "99");
-        loop.invoke((Long) 20L, (Long) 30L, (Long) 40L, (Long) 100L, (Long) (-10L));
-        assertEquals((12+99)*5 + 20 + 30 + 40 + 100 - 10, c.result);
-
-        // Now we switch to iterator style
-        String[] vals2 = {"1", "2", "3"};
-
-        c = new Calculator();
         loop = Methods.iterateArray(sum, 2);
-        loop.invokeExact(c, 11, vals2, Long.valueOf(99L));
+        loop.invokeExact(c, 11, new String[] {"1", "2", "3"}, Long.valueOf(99L));
         assertEquals((11+99)*3 + 1 + 2 + 3, c.result);
-
-        c = new Calculator();
-        loop = Methods.iterateArray(sum, 2, c);
-        loop.invokeExact(11, vals2, Long.valueOf(99L));
-        assertEquals((11+99)*3 + 1 + 2 + 3, c.result);
-
-        c = new Calculator();
-        loop = Methods.iterateArray(sum, 2, c, 5);
-        loop.invokeExact(vals2, Long.valueOf(23L));
-        assertEquals((23+5)*3 + 1 + 2 + 3, c.result);
-
-        c = new Calculator();
-        loop = Methods.iterateArray(sum, 2, c, 237, 46L);
-        loop.invokeExact(vals2);
-        assertEquals((237+46)*3 + 1 + 2 + 3, c.result);
-
-        int[] vals3 = {11, 22, 33, 44};
 
         c = new Calculator();
         loop = Methods.iterateArray(sum, 1);
-        loop.invokeExact(c, vals3, "98", Long.valueOf(703L));
+        loop.invokeExact(c, new int[] {11, 22, 33, 44}, "98", Long.valueOf(703L));
         assertEquals((98+703)*4 + 11 + 22 + 33 + 44, c.result);
-
-        c = new Calculator();
-        loop = Methods.iterateArray(sum, 1, c);
-        loop.invokeExact(vals3, "315", Long.valueOf(65841L));
-        assertEquals((315+65841)*4 + 11 + 22 + 33 + 44, c.result);
-
-        c = new Calculator();
-        loop = Methods.iterateArray(sum, 1, c, "344");
-        loop.invokeExact(vals3, Long.valueOf(16L));
-        assertEquals((344+16)*4 + 11 + 22 + 33 + 44, c.result);
-
-        c = new Calculator();
-        loop = Methods.iterateArray(sum, 1, c, "2", 30L);
-        loop.invokeExact(vals3);
-        assertEquals((30+2)*4 + 11 + 22 + 33 + 44, c.result);
 
         Calculator c1 = new Calculator();
         Calculator c2 = new Calculator();
@@ -1495,39 +1445,34 @@ class MethodsTest {
         assertEquals(20 - 18 + 44 + 77, c2.result);
         assertEquals(30 - 18 + 44 + 77, c3.result);
         assertEquals(40 - 18 + 44 + 77, c4.result);
+    }
 
-        c1.result = 10;
-        c2.result = 20;
-        c3.result = 30;
-        c4.result = 40;
-        loop = Methods.iterateArray(sum, 0, -171);
-        loop.invokeExact(vals4, "-543", Long.valueOf(2828));
-        assertEquals(10 - 171 - 543 + 2828, c1.result);
-        assertEquals(20 - 171 - 543 + 2828, c2.result);
-        assertEquals(30 - 171 - 543 + 2828, c3.result);
-        assertEquals(40 - 171 - 543 + 2828, c4.result);
+    @Test
+    void testCollectStringArray() throws Throwable {
+        MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
+        MethodHandle concatAll = Methods.collectArray(concat, 1);
+        assertTrue(concatAll.isVarargsCollector());
+        String[] result = (String[]) concatAll.invoke("Hello ", "World", "Fred", "Melissa", "Luisa");
+        assertArrayEquals(new String[] {"Hello World", "Hello Fred", "Hello Melissa", "Hello Luisa"}, result);
 
-        c1.result = 10;
-        c2.result = 20;
-        c3.result = 30;
-        c4.result = 40;
-        loop = Methods.iterateArray(sum, 0, -11, "2046");
-        loop.invokeExact(vals4, Long.valueOf(1183));
-        assertEquals(10 - 11 + 2046 + 1183, c1.result);
-        assertEquals(20 - 11 + 2046 + 1183, c2.result);
-        assertEquals(30 - 11 + 2046 + 1183, c3.result);
-        assertEquals(40 - 11 + 2046 + 1183, c4.result);
+        concatAll = Methods.collectArray(concat, 0);
+        assertFalse(concatAll.isVarargsCollector());
+        result = (String[]) concatAll.invokeExact(new String[] {"Hello", "Hi", "Ciao"}, " Melissa");
+        assertArrayEquals(new String[] {"Hello Melissa", "Hi Melissa", "Ciao Melissa"}, result);
+    }
 
-        c1.result = 10;
-        c2.result = 20;
-        c3.result = 30;
-        c4.result = 40;
-        loop = Methods.iterateArray(sum, 0, 199, "1284", 3333L);
-        loop.invokeExact(vals4);
-        assertEquals(10 + 199 + 1284 + 3333, c1.result);
-        assertEquals(20 + 199 + 1284 + 3333, c2.result);
-        assertEquals(30 + 199 + 1284 + 3333, c3.result);
-        assertEquals(40 + 199 + 1284 + 3333, c4.result);
+    @Test
+    void testCollectLongArray() throws Throwable {
+        MethodHandle concat = publicLookup().findStatic(Math.class, "addExact", methodType(long.class, long.class, long.class));
+        MethodHandle concatAll = Methods.collectArray(concat, 1);
+        assertTrue(concatAll.isVarargsCollector());
+        long[] result = (long[]) concatAll.invoke(100, 10, 20, 30);
+        assertArrayEquals(new long[] {110, 120, 130}, result);
+
+        concatAll = Methods.collectArray(concat, 0);
+        assertFalse(concatAll.isVarargsCollector());
+        result = (long[]) concatAll.invokeExact(new long[] {5, 9, -222, 2046}, 1103L);
+        assertArrayEquals(new long[] {1108, 1112, 1103-222, 1103+2046}, result);
     }
 
     @Test

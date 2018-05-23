@@ -1203,7 +1203,7 @@ public class Methods {
     }
 
     private static void checkArgumentLength(int min, int max, int actual) {
-        if (actual < 0) {
+        if (actual < min) {
             throw new IllegalArgumentException(actual + " is less than " + min);
         }
         if (actual >= max) {
@@ -2114,7 +2114,7 @@ public class Methods {
     }
 
     private static void checkArgumentCounts(MethodHandle target, int numberOfLeadingArguments, int parameterIndex) {
-        checkArgumentLength(target.type(), numberOfLeadingArguments, parameterIndex);
+        checkArgumentLength(target.type(), parameterIndex);
         if (numberOfLeadingArguments >= target.type().parameterCount()) {
             throw new IllegalArgumentException(target + " cannot accept " + numberOfLeadingArguments + " leading arguments");
         }
@@ -2142,32 +2142,127 @@ public class Methods {
      * The given target handle will be called for each element in the given array. The array's component type will be
      * the same as the original argument type. If the target returns some values, it will be ignored.
      *
-     * Let (l1, ... lN, aN+1, ... aP, aP+1, aP+2, ... aM)R be the target type, where N is the number of leading arguments,
-     * P is the parameter index of the iterated value, M is the number of all target's arguments,
-     * and R is the return type.
+     * Let (a0, ... aP, aP+1, ... aM-1)R be the target type, where P is the parameter index of the iterated value,
+     * M is the number of the target's arguments, and R is the return type.
      *
-     * Then the resulting handle will be of type (a1, ... aP-N, aP-1[], aP-N+2, ... aM)void.
-     *
-     * The given parameter index may be smaller than the number of leading arguments. In this case, the index still refers
-     * to the target's argument index, and the remaining leading arguments are filled thereafter. The array will be
-     * at the first position of the resulting handle then.
+     * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aM-1)void.
      *
      * @param target This will be called
      * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
      *                       leading arguments
-     * @param leadingArguments These will be passed to every call of the target as the first arguments
      * @return A handle that iterates over all elements of the given array
      */
-    public static MethodHandle iterateArray(MethodHandle target,  int parameterIndex, Object... leadingArguments) {
+    public static MethodHandle iterateArray(MethodHandle target,  int parameterIndex) {
         MethodType targetType = target.type().changeReturnType(void.class);
         MethodHandle h = target.asType(targetType);
-        int numberOfLeadingArguments = leadingArguments.length;
-        checkArgumentCounts(target, numberOfLeadingArguments, parameterIndex);
+        checkArgumentLength(targetType, parameterIndex);
+
+        Class<?> iteratedType = targetType.parameterType(parameterIndex);
+        Class<?> arrayType = toArrayType(iteratedType);
+        h = shiftArgument(h, parameterIndex, 0);
+        targetType = h.type();
+        Class<?>[] parameterArray = targetType.parameterArray();
+        parameterArray[0] = arrayType;
+
+        MethodHandle getValue = MethodHandles.arrayElementGetter(arrayType);
+        MethodHandle start = MethodHandles.constant(int.class, 0);
+        MethodHandle end = MethodHandles.arrayLength(arrayType);
+        MethodHandle body = MethodHandles.collectArguments(h, 0, getValue);
+        body = shiftArgument(body, 1, 0);
+
+        MethodHandle loop = MethodHandles.countedLoop(start, end, null, body);
+        loop = shiftArgument(loop, 0, parameterIndex);
+        if (parameterIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
+            return loop.asVarargsCollector(loop.type().parameterType(parameterIndex));
+        }
+
+        return loop;
+    }
+
+    /**
+     * Creates a handle that iterates over some array instance instead of the original parameter at the given index.
+     * The return values of each iteration is collected into an array of the exact same length as the input array.
+     *
+     * The given target handle will be called for each element in the given array. The array's component type will be
+     * the same as the original argument type. The return type is the same array type.
+     *
+     * Let (a0, ... aP, aP+1, ... aM-1)R be the target type, where P is the parameter index of the iterated value,
+     * M is the number of the target's arguments, and R is the return type.
+     *
+     * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aM-1)aP[].
+     *
+     * If the target's return type is void, then the resulting handle is also void as the return type.
+     *
+     * @param target This will be called
+     * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
+     *                       leading arguments
+     * @return A handle that iterates over all elements of the given array and returns the results
+     */
+    public static MethodHandle collectArray(MethodHandle target,  int parameterIndex) {
+        MethodType targetType = target.type();
+        if (targetType.returnType() == void.class) {
+            return iterateArray(target, parameterIndex);
+        }
+        checkArgumentLength(targetType, parameterIndex);
+
+        Class<?> iteratedType = targetType.parameterType(parameterIndex);
+        Class<?> arrayType = toArrayType(iteratedType);
+
+        MethodHandle getValue = MethodHandles.arrayElementGetter(arrayType);
+        MethodHandle start = MethodHandles.constant(int.class, 0);
+        MethodHandle end = MethodHandles.arrayLength(arrayType);
+        end = MethodHandles.dropArguments(end, 0, Arrays.copyOf(targetType.parameterArray(), parameterIndex));
+        MethodHandle init = MethodHandles.filterReturnValue(end, MethodHandles.arrayConstructor(arrayType));
+        MethodHandle body = MethodHandles.collectArguments(target, parameterIndex, getValue);
+        MethodHandle setter = returnArgument(MethodHandles.arrayElementSetter(arrayType), 0);
+        body = MethodHandles.collectArguments(setter, 2, body); // (V,index,0..n,array,index,n+2..m)V
+        // Expected: (V,index,0..n,array,n+2..m)V
+        int p = parameterIndex + 3;
+        MethodType type = body.type();
+        int pCount = type.parameterCount();
+        type = type.dropParameterTypes(p, p+1);
+        int[] indexes = new int[pCount];
+        for (int i=0; i < pCount; i++) {
+            indexes[i] = i < p ? i : (i == p ? 1 : i-1);
+        }
+        body = MethodHandles.permuteArguments(body, type, indexes);
+
+        MethodHandle loop = MethodHandles.countedLoop(start, end, init, body);
+        if (parameterIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
+            return loop.asVarargsCollector(arrayType);
+        }
+
+        return loop;
+    }
+
+    private static Class<?> toArrayType(Class<?> componentType) {
+        return Array.newInstance(componentType, 0).getClass();
+    }
+
+    /**
+     * Creates a handle that iterates over some array instance instead of the original parameter at the given index.
+     * Only stateless iterations are supported, and no value is returned.
+     *
+     * The given target handle will be called for each element in the given array. The array's component type will be
+     * the same as the original argument type. If the target returns some values, it will be ignored.
+     *
+     * Let (a0, ... aP, aP+1, ... aM-1)R be the target type, where P is the parameter index of the iterated value,
+     * M is the number of the target's arguments, and R is the return type.
+     *
+     * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aM-1)void.
+     *
+     * @param target This will be called
+     * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
+     *                       leading arguments
+     * @return A handle that iterates over all elements of the given array
+     */
+    public static MethodHandle collectArray(MethodHandle target,  int parameterIndex, int invariantIndex, Object initialValue) {
+        MethodType targetType = target.type().changeReturnType(void.class);
+        MethodHandle h = target.asType(targetType);
+        checkArgumentLength(targetType, parameterIndex);
+
         Class<?> iteratedType = targetType.parameterType(parameterIndex);
         Class<?> arrayType = Array.newInstance(iteratedType, 0).getClass();
-        h = insertLeadingArguments(h, parameterIndex, leadingArguments);
-        parameterIndex -= numberOfLeadingArguments;
-        if (parameterIndex < 0) parameterIndex = 0;
         h = shiftArgument(h, parameterIndex, 0);
         targetType = h.type();
         Class<?>[] parameterArray = targetType.parameterArray();

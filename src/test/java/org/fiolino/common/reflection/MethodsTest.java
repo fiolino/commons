@@ -1276,7 +1276,7 @@ class MethodsTest {
         MethodHandle loop = Methods.iterate(lookup, sum, 3);
         Calculator c = new Calculator();
         loop.invokeExact(c, 17, "11", it);
-        assertEquals(28*5 + 40 + 60 + 80 + 200 - 20, c.result);
+        assertEquals((17+11)*5 + 40 + 60 + 80 + 200 - 20, c.result);
         c = new Calculator();
         c.result = 1000;
         loop.invokeExact(c, 1, "-20", it);
@@ -1285,17 +1285,17 @@ class MethodsTest {
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 3, c);
         loop.invokeExact(5, "9", it);
-        assertEquals(14*5 + 40 + 60 + 80 + 200 - 20, c.result);
+        assertEquals((5+9)*5 + 40 + 60 + 80 + 200 - 20, c.result);
 
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 3, c, 18);
         loop.invokeExact("7", it);
-        assertEquals(25*5 + 40 + 60 + 80 + 200 - 20, c.result);
+        assertEquals((7+18)*5 + 40 + 60 + 80 + 200 - 20, c.result);
 
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 3, c, 12, "99");
         loop.invokeExact(it);
-        assertEquals(111*5 + 40 + 60 + 80 + 200 - 20, c.result);
+        assertEquals((12+99)*5 + 40 + 60 + 80 + 200 - 20, c.result);
 
         // Now we switch to iterator style
         List<String> vals2 = Arrays.asList("1", "2", "3");
@@ -1304,22 +1304,44 @@ class MethodsTest {
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 2);
         loop.invokeExact(c, 11, it2, Long.valueOf(99L));
-        assertEquals(110*3 + 1 + 2 + 3, c.result);
+        assertEquals((11+99)*3 + 1 + 2 + 3, c.result);
 
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 2, c);
         loop.invokeExact(11, it2, Long.valueOf(99L));
-        assertEquals(110*3 + 1 + 2 + 3, c.result);
+        assertEquals((11+99)*3 + 1 + 2 + 3, c.result);
 
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 2, c, 5);
         loop.invokeExact(it2, Long.valueOf(23L));
-        assertEquals(28*3 + 1 + 2 + 3, c.result);
+        assertEquals((23+5)*3 + 1 + 2 + 3, c.result);
 
         c = new Calculator();
         loop = Methods.iterate(lookup, sum, 2, c, 237, 46L);
         loop.invokeExact(it2);
         assertEquals((237+46)*3 + 1 + 2 + 3, c.result);
+
+        Iterable<Integer> vals3 = Arrays.asList(11, 22, 33, 44);
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 1);
+        loop.invokeExact(c, vals3, "98", Long.valueOf(703L));
+        assertEquals((98+703)*4 + 11 + 22 + 33 + 44, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 1, c);
+        loop.invokeExact(vals3, "315", Long.valueOf(65841L));
+        assertEquals((315+65841)*4 + 11 + 22 + 33 + 44, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 1, c, "344");
+        loop.invokeExact(vals3, Long.valueOf(16L));
+        assertEquals((344+16)*4 + 11 + 22 + 33 + 44, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterate(lookup, sum, 1, c, "2", 30L);
+        loop.invokeExact(vals3);
+        assertEquals((30+2)*4 + 11 + 22 + 33 + 44, c.result);
 
         Calculator c1 = new Calculator();
         Calculator c2 = new Calculator();
@@ -1329,10 +1351,10 @@ class MethodsTest {
         c2.result = 20;
         c3.result = 30;
         c4.result = 40;
-        Iterable<Calculator> vals3 = Arrays.asList(c1, c2, c3, c4);
+        Iterable<Calculator> vals4 = Arrays.asList(c1, c2, c3, c4);
 
         loop = Methods.iterate(lookup, sum, 0);
-        loop.invokeExact(vals3, -18, "44", Long.valueOf(77));
+        loop.invokeExact(vals4, -18, "44", Long.valueOf(77));
         assertEquals(10 - 18 + 44 + 77, c1.result);
         assertEquals(20 - 18 + 44 + 77, c2.result);
         assertEquals(30 - 18 + 44 + 77, c3.result);
@@ -1343,7 +1365,7 @@ class MethodsTest {
         c3.result = 30;
         c4.result = 40;
         loop = Methods.iterate(lookup, sum, 0, -171);
-        loop.invokeExact(vals3, "-543", Long.valueOf(2828));
+        loop.invokeExact(vals4, "-543", Long.valueOf(2828));
         assertEquals(10 - 171 - 543 + 2828, c1.result);
         assertEquals(20 - 171 - 543 + 2828, c2.result);
         assertEquals(30 - 171 - 543 + 2828, c3.result);
@@ -1354,7 +1376,7 @@ class MethodsTest {
         c3.result = 30;
         c4.result = 40;
         loop = Methods.iterate(lookup, sum, 0, -11, "2046");
-        loop.invokeExact(vals3, Long.valueOf(1183));
+        loop.invokeExact(vals4, Long.valueOf(1183));
         assertEquals(10 - 11 + 2046 + 1183, c1.result);
         assertEquals(20 - 11 + 2046 + 1183, c2.result);
         assertEquals(30 - 11 + 2046 + 1183, c3.result);
@@ -1365,7 +1387,7 @@ class MethodsTest {
         c3.result = 30;
         c4.result = 40;
         loop = Methods.iterate(lookup, sum, 0, 199, "1284", 3333L);
-        loop.invokeExact(vals3);
+        loop.invokeExact(vals4);
         assertEquals(10 + 199 + 1284 + 3333, c1.result);
         assertEquals(20 + 199 + 1284 + 3333, c2.result);
         assertEquals(30 + 199 + 1284 + 3333, c3.result);
@@ -1381,6 +1403,131 @@ class MethodsTest {
                 () -> Methods.iterate(oneArgument, 1)); // Index too high
         assertThrows(IllegalArgumentException.class,
                 () -> Methods.iterate(oneArgument, 0, new Object())); // Too many leading arguments
+    }
+
+    @Test
+    void testIterateMultipleArgumentsWithArray() throws Throwable {
+        MethodHandles.Lookup lookup = lookup();
+        MethodHandle sum = lookup.findVirtual(Calculator.class, "sumUp", methodType(void.class, int.class, String.class, Long.class));
+
+        MethodHandle loop = Methods.iterateArray(sum, 3);
+        Calculator c = new Calculator();
+        loop.invoke(c, 17, "11", (Long) 20L, (Long) 30L, (Long) 40L, (Long) 100L, (Long) (-10L));
+        assertEquals((17+11)*5 + 20 + 30 + 40 + 100 - 10, c.result);
+        c = new Calculator();
+        c.result = 1000;
+        loop.invoke(c, 1, "-20", (Long) 20L, (Long) 30L, (Long) 40L, (Long) 100L, (Long) (-10L));
+        assertEquals(1000 - 19*5 + 20 + 30 + 40 + 100 - 10, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 3, c);
+        loop.invoke(5, "9", (Long) 20L, (Long) 30L, (Long) 40L, (Long) 100L, (Long) (-10L));
+        assertEquals((5+9)*5 + 20 + 30 + 40 + 100 - 10, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 3, c, 18);
+        loop.invoke("7", (Long) 20L, (Long) 30L, (Long) 40L, (Long) 100L, (Long) (-10L));
+        assertEquals((7+18)*5 + 20 + 30 + 40 + 100 - 10, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 3, c, 12, "99");
+        loop.invoke((Long) 20L, (Long) 30L, (Long) 40L, (Long) 100L, (Long) (-10L));
+        assertEquals((12+99)*5 + 20 + 30 + 40 + 100 - 10, c.result);
+
+        // Now we switch to iterator style
+        String[] vals2 = {"1", "2", "3"};
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 2);
+        loop.invokeExact(c, 11, vals2, Long.valueOf(99L));
+        assertEquals((11+99)*3 + 1 + 2 + 3, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 2, c);
+        loop.invokeExact(11, vals2, Long.valueOf(99L));
+        assertEquals((11+99)*3 + 1 + 2 + 3, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 2, c, 5);
+        loop.invokeExact(vals2, Long.valueOf(23L));
+        assertEquals((23+5)*3 + 1 + 2 + 3, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 2, c, 237, 46L);
+        loop.invokeExact(vals2);
+        assertEquals((237+46)*3 + 1 + 2 + 3, c.result);
+
+        int[] vals3 = {11, 22, 33, 44};
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 1);
+        loop.invokeExact(c, vals3, "98", Long.valueOf(703L));
+        assertEquals((98+703)*4 + 11 + 22 + 33 + 44, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 1, c);
+        loop.invokeExact(vals3, "315", Long.valueOf(65841L));
+        assertEquals((315+65841)*4 + 11 + 22 + 33 + 44, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 1, c, "344");
+        loop.invokeExact(vals3, Long.valueOf(16L));
+        assertEquals((344+16)*4 + 11 + 22 + 33 + 44, c.result);
+
+        c = new Calculator();
+        loop = Methods.iterateArray(sum, 1, c, "2", 30L);
+        loop.invokeExact(vals3);
+        assertEquals((30+2)*4 + 11 + 22 + 33 + 44, c.result);
+
+        Calculator c1 = new Calculator();
+        Calculator c2 = new Calculator();
+        Calculator c3 = new Calculator();
+        Calculator c4 = new Calculator();
+        c1.result = 10;
+        c2.result = 20;
+        c3.result = 30;
+        c4.result = 40;
+        Calculator[] vals4 = {c1, c2, c3, c4};
+
+        loop = Methods.iterateArray(sum, 0);
+        loop.invokeExact(vals4, -18, "44", Long.valueOf(77));
+        assertEquals(10 - 18 + 44 + 77, c1.result);
+        assertEquals(20 - 18 + 44 + 77, c2.result);
+        assertEquals(30 - 18 + 44 + 77, c3.result);
+        assertEquals(40 - 18 + 44 + 77, c4.result);
+
+        c1.result = 10;
+        c2.result = 20;
+        c3.result = 30;
+        c4.result = 40;
+        loop = Methods.iterateArray(sum, 0, -171);
+        loop.invokeExact(vals4, "-543", Long.valueOf(2828));
+        assertEquals(10 - 171 - 543 + 2828, c1.result);
+        assertEquals(20 - 171 - 543 + 2828, c2.result);
+        assertEquals(30 - 171 - 543 + 2828, c3.result);
+        assertEquals(40 - 171 - 543 + 2828, c4.result);
+
+        c1.result = 10;
+        c2.result = 20;
+        c3.result = 30;
+        c4.result = 40;
+        loop = Methods.iterateArray(sum, 0, -11, "2046");
+        loop.invokeExact(vals4, Long.valueOf(1183));
+        assertEquals(10 - 11 + 2046 + 1183, c1.result);
+        assertEquals(20 - 11 + 2046 + 1183, c2.result);
+        assertEquals(30 - 11 + 2046 + 1183, c3.result);
+        assertEquals(40 - 11 + 2046 + 1183, c4.result);
+
+        c1.result = 10;
+        c2.result = 20;
+        c3.result = 30;
+        c4.result = 40;
+        loop = Methods.iterateArray(sum, 0, 199, "1284", 3333L);
+        loop.invokeExact(vals4);
+        assertEquals(10 + 199 + 1284 + 3333, c1.result);
+        assertEquals(20 + 199 + 1284 + 3333, c2.result);
+        assertEquals(30 + 199 + 1284 + 3333, c3.result);
+        assertEquals(40 + 199 + 1284 + 3333, c4.result);
     }
 
     @Test

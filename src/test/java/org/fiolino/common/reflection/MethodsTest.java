@@ -1463,16 +1463,46 @@ class MethodsTest {
 
     @Test
     void testCollectLongArray() throws Throwable {
-        MethodHandle concat = publicLookup().findStatic(Math.class, "addExact", methodType(long.class, long.class, long.class));
-        MethodHandle concatAll = Methods.collectArray(concat, 1);
-        assertTrue(concatAll.isVarargsCollector());
-        long[] result = (long[]) concatAll.invoke(100, 10, 20, 30);
+        MethodHandle addExact = publicLookup().findStatic(Math.class, "addExact", methodType(long.class, long.class, long.class));
+        MethodHandle addAll = Methods.collectArray(addExact, 1);
+        assertTrue(addAll.isVarargsCollector());
+        long[] result = (long[]) addAll.invoke(100, 10, 20, 30);
         assertArrayEquals(new long[] {110, 120, 130}, result);
 
-        concatAll = Methods.collectArray(concat, 0);
-        assertFalse(concatAll.isVarargsCollector());
-        result = (long[]) concatAll.invokeExact(new long[] {5, 9, -222, 2046}, 1103L);
+        addAll = Methods.collectArray(addExact, 0);
+        assertFalse(addAll.isVarargsCollector());
+        result = (long[]) addAll.invokeExact(new long[] {5, 9, -222, 2046}, 1103L);
         assertArrayEquals(new long[] {1108, 1112, 1103-222, 1103+2046}, result);
+    }
+
+    @Test
+    void testCollectIntArray() throws Throwable {
+        MethodHandle length = publicLookup().findVirtual(String.class, "length", methodType(int.class));
+        MethodHandle lengthAll = Methods.collectArray(length, 0);
+        assertTrue(lengthAll.isVarargsCollector());
+        int[] lengths = (int[]) lengthAll.invoke("123", "", "123456789012345");
+        assertArrayEquals(new int[] {3, 0, 15}, lengths);
+
+        MethodHandle addExact = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
+        addExact = addExact.asSpreader(int[].class, 2);
+        addExact = MethodHandles.filterArguments(addExact, 0, lengthAll);
+
+        String[] fiveAndFour = {"12345", "1234"};
+        int sumOfLengths = (int) addExact.invokeExact(fiveAndFour);
+        assertEquals(9, sumOfLengths);
+    }
+
+    @Test
+    void testIterateEmptyArray() throws Throwable {
+        MethodHandle fail = MethodHandles.throwException(boolean.class, AssertionError.class);
+        fail = MethodHandles.filterArguments(fail, 0, publicLookup().findConstructor(AssertionError.class, methodType(void.class, Object.class)));
+        fail = MethodHandles.dropArguments(fail, 1, int.class);
+        MethodHandle failAll = Methods.iterateArray(fail, 1);
+        failAll.invokeExact((Object) "Should not get called!", new int[0]);
+
+        failAll = Methods.collectArray(fail, 1);
+        boolean[] noresults = (boolean[]) failAll.invokeExact((Object) "Should not get called!", new int[0]);
+        assertEquals(0, noresults.length);
     }
 
     @Test

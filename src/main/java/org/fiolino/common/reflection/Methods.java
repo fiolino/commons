@@ -1995,6 +1995,9 @@ public class Methods {
      * to the target's argument index, and the remaining leading arguments are filled thereafter. The iterable will be
      * at the first position of the resulting handle then.
      *
+     * The result will be of variable arity if the original target was already of variable arity, and the iterated
+     * parameter is not the last one.
+     *
      * Implementation note:
      * The resulting handle will prefer calling forEach() when the target handle can be directly converted to a lambda.
      * This is the case when
@@ -2032,6 +2035,9 @@ public class Methods {
      * The given parameter index may be smaller than the number of leading arguments. In this case, the index still refers
      * to the target's argument index, and the remaining leading arguments are filled thereafter. The iterable will be
      * at the first position of the resulting handle then.
+     *
+     * The result will be of variable arity if the original target was already of variable arity, and the iterated
+     * parameter is not the last one.
      *
      * Implementation note:
      * The resulting handle will prefer calling forEach() when the target handle can be directly converted to a lambda.
@@ -2147,6 +2153,9 @@ public class Methods {
      *
      * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aM-1)void.
      *
+     * The result will be of variable arity if the arrayed parameter is the last one, or if the original target
+     * was already of variable arity.
+     *
      * @param target This will be called
      * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
      *                       leading arguments
@@ -2193,6 +2202,9 @@ public class Methods {
      *
      * If the target's return type is void, then the resulting handle is also void as the return type.
      *
+     * The result will be of variable arity if the arrayed parameter is the last one, or if the original target
+     * was already of variable arity.
+     *
      * @param target This will be called
      * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
      *                       leading arguments
@@ -2200,21 +2212,23 @@ public class Methods {
      */
     public static MethodHandle collectArray(MethodHandle target,  int parameterIndex) {
         MethodType targetType = target.type();
-        if (targetType.returnType() == void.class) {
+        Class<?> returnType = targetType.returnType();
+        if (returnType == void.class) {
             return iterateArray(target, parameterIndex);
         }
         checkArgumentLength(targetType, parameterIndex);
 
         Class<?> iteratedType = targetType.parameterType(parameterIndex);
         Class<?> arrayType = toArrayType(iteratedType);
+        Class<?> returnedArrayType = toArrayType(returnType);
 
         MethodHandle getValue = MethodHandles.arrayElementGetter(arrayType);
         MethodHandle start = MethodHandles.constant(int.class, 0);
         MethodHandle end = MethodHandles.arrayLength(arrayType);
         end = MethodHandles.dropArguments(end, 0, Arrays.copyOf(targetType.parameterArray(), parameterIndex));
-        MethodHandle init = MethodHandles.filterReturnValue(end, MethodHandles.arrayConstructor(arrayType));
+        MethodHandle init = MethodHandles.filterReturnValue(end, MethodHandles.arrayConstructor(returnedArrayType));
         MethodHandle body = MethodHandles.collectArguments(target, parameterIndex, getValue);
-        MethodHandle setter = returnArgument(MethodHandles.arrayElementSetter(arrayType), 0);
+        MethodHandle setter = returnArgument(MethodHandles.arrayElementSetter(returnedArrayType), 0);
         body = MethodHandles.collectArguments(setter, 2, body); // (V,index,0..n,array,index,n+2..m)V
         // Expected: (V,index,0..n,array,n+2..m)V
         int p = parameterIndex + 3;

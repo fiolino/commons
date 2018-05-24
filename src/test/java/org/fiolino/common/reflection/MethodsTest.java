@@ -1486,9 +1486,10 @@ class MethodsTest {
         MethodHandle addExact = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
         addExact = addExact.asSpreader(int[].class, 2);
         addExact = MethodHandles.filterArguments(addExact, 0, lengthAll);
+        addExact = addExact.asCollector(String[].class, 2);
+        // Note: In real world, it doesn't make sense to use an array transformation here. You'd better just filter both arguments.
 
-        String[] fiveAndFour = {"12345", "1234"};
-        int sumOfLengths = (int) addExact.invokeExact(fiveAndFour);
+        int sumOfLengths = (int) addExact.invokeExact("12345", "1234");
         assertEquals(9, sumOfLengths);
     }
 

@@ -1452,12 +1452,12 @@ class MethodsTest {
         MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
         MethodHandle concatAll = Methods.collectArray(concat, 1);
         assertTrue(concatAll.isVarargsCollector());
-        String[] result = (String[]) concatAll.invoke("Hello ", "World", "Fred", "Melissa", "Luisa");
+        String[] result = (String[]) concatAll.invokeExact("Hello ", "World,Fred,Melissa,Luisa".split(","));
         assertArrayEquals(new String[] {"Hello World", "Hello Fred", "Hello Melissa", "Hello Luisa"}, result);
 
         concatAll = Methods.collectArray(concat, 0);
         assertFalse(concatAll.isVarargsCollector());
-        result = (String[]) concatAll.invokeExact(new String[] {"Hello", "Hi", "Ciao"}, " Melissa");
+        result = (String[]) concatAll.invokeExact("Hello,Hi,Ciao".split(","), " Melissa");
         assertArrayEquals(new String[] {"Hello Melissa", "Hi Melissa", "Ciao Melissa"}, result);
     }
 
@@ -1504,6 +1504,116 @@ class MethodsTest {
         failAll = Methods.collectArray(fail, 1);
         boolean[] noresults = (boolean[]) failAll.invokeExact((Object) "Should not get called!", new int[0]);
         assertEquals(0, noresults.length);
+    }
+
+    @Test
+    void testReduceValue() throws Throwable {
+        MethodHandle addExact = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
+        MethodHandle addCollect = Methods.reduceArray(addExact, 1, 0);
+        assertTrue(addCollect.isVarargsCollector());
+        addCollect = makeHandleAcceptCommaSeparatedString(addCollect, 1);
+        int multiSum = (int) addCollect.invokeExact(10, "18,99,-17,-1055");
+        assertEquals(10+18+99-17-1055, multiSum);
+
+        addCollect = Methods.reduceArray(addExact, 0, 1);
+        assertFalse(addCollect.isVarargsCollector());
+        addCollect = makeHandleAcceptCommaSeparatedString(addCollect, 0);
+        multiSum = (int) addCollect.invokeExact("7,45,1103", 55);
+        assertEquals(7+45+1103+55, multiSum);
+
+        MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
+        MethodHandle concatAll = Methods.reduceArray(concat, 1, 0);
+        String statement = (String) concatAll.invokeExact("", "I ,love ,Java".split(","));
+        assertEquals("I love Java", statement);
+    }
+
+    @Test
+    void testReduceValueWithDifferentTypes() throws Throwable {
+        MethodHandle handle = lookup().bind(this, "doSomething", methodType(int.class, Object.class, Integer.class, String.class, int.class));
+        MethodHandle multi = Methods.reduceArray(handle, 0, 1);
+        assertEquals(methodType(int.class, Object[].class, Integer.class, String.class, int.class), multi.type());
+        int result = (int) multi.invokeExact(new Object[] {1, 2, 3}, (Integer) 4, "5", 6);
+        int expected = 1+2*4+3*5+4*6;
+        expected = 2+2*expected+3*5+4*6;
+        expected = 3+2*expected+3*5+4*6;
+        assertEquals(expected, result);
+
+        multi = Methods.reduceArray(handle, 0, 3);
+        assertEquals(methodType(int.class, Object[].class, Integer.class, String.class, int.class), multi.type());
+        result = (int) multi.invokeExact(new Object[] {1, 2, 3}, (Integer) 4, "5", 6);
+        expected = 1+2*4+3*5+4*6;
+        expected = 2+2*4+3*5+4*expected;
+        expected = 3+2*4+3*5+4*expected;
+        assertEquals(expected, result);
+
+        multi = Methods.reduceArray(handle, 1, 0);
+        assertEquals(methodType(int.class, Object.class, Integer[].class, String.class, int.class), multi.type());
+        result = (int) multi.invokeExact((Object) 1, new Integer[] {2, 3, 4}, "5", 6);
+        expected = 1+2*2+3*5+4*6;
+        expected = expected+2*3+3*5+4*6;
+        expected = expected+2*4+3*5+4*6;
+        assertEquals(expected, result);
+
+        multi = Methods.reduceArray(handle, 1, 3);
+        assertEquals(methodType(int.class, Object.class, Integer[].class, String.class, int.class), multi.type());
+        result = (int) multi.invokeExact((Object) 1, new Integer[] {2, 3, 4}, "5", 6);
+        expected = 1+2*2+3*5+4*6;
+        expected = 1+2*3+3*5+4*expected;
+        expected = 1+2*4+3*5+4*expected;
+        assertEquals(expected, result);
+
+        multi = Methods.reduceArray(handle, 2, 0);
+        assertEquals(methodType(int.class, Object.class, Integer.class, String[].class, int.class), multi.type());
+        result = (int) multi.invokeExact((Object) 1, (Integer) 2, "3,4,5".split(","), 6);
+        expected = 1+2*2+3*3+4*6;
+        expected = expected+2*2+3*4+4*6;
+        expected = expected+2*2+3*5+4*6;
+        assertEquals(expected, result);
+
+        multi = Methods.reduceArray(handle, 2, 1);
+        assertEquals(methodType(int.class, Object.class, Integer.class, String[].class, int.class), multi.type());
+        result = (int) multi.invokeExact((Object) 1, (Integer) 2, "3,4,5".split(","), 6);
+        expected = 1+2*2+3*3+4*6;
+        expected = 1+2*expected+3*4+4*6;
+        expected = 1+2*expected+3*5+4*6;
+        assertEquals(expected, result);
+
+        multi = Methods.reduceArray(handle, 2, 3);
+        assertEquals(methodType(int.class, Object.class, Integer.class, String[].class, int.class), multi.type());
+        result = (int) multi.invokeExact((Object) 1, (Integer) 2, "3,4,5".split(","), 6);
+        expected = 1+2*2+3*3+4*6;
+        expected = 1+2*2+3*4+4*expected;
+        expected = 1+2*2+3*5+4*expected;
+        assertEquals(expected, result);
+
+        multi = Methods.reduceArray(handle, 3, 0);
+        assertEquals(methodType(int.class, Object.class, Integer.class, String.class, int[].class), multi.type());
+        result = (int) multi.invokeExact((Object) 1, (Integer) 2, "3", new int[] {4, 5, 6});
+        expected = 1+2*2+3*3+4*4;
+        expected = expected+2*2+3*3+4*5;
+        expected = expected+2*2+3*3+4*6;
+        assertEquals(expected, result);
+
+        multi = Methods.reduceArray(handle, 3, 1);
+        assertEquals(methodType(int.class, Object.class, Integer.class, String.class, int[].class), multi.type());
+        result = (int) multi.invokeExact((Object) 1, (Integer) 2, "3", new int[] {4, 5, 6});
+        expected = 1+2*2+3*3+4*4;
+        expected = 1+2*expected+3*3+4*5;
+        expected = 1+2*expected+3*3+4*6;
+        assertEquals(expected, result);
+    }
+
+    private int doSomething(Object object, Integer integer, String string, int xint) {
+        return ((Integer)object) + integer*2 + Integer.parseInt(string)*3 + xint*4;
+    }
+
+    private static MethodHandle makeHandleAcceptCommaSeparatedString(MethodHandle target, int index) throws NoSuchMethodException, IllegalAccessException {
+        MethodHandle stringToInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        MethodHandle split = publicLookup().findVirtual(String.class, "split", methodType(String[].class, String.class));
+        split = MethodHandles.insertArguments(split, 1, ",");
+        MethodHandle stringsToInts = Methods.collectArray(stringToInt, 0);
+        stringsToInts = MethodHandles.filterArguments(stringsToInts, 0, split);
+        return MethodHandles.filterArguments(target, index, stringsToInts);
     }
 
     @Test

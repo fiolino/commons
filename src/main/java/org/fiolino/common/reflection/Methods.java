@@ -1584,10 +1584,7 @@ public class Methods {
 
     private static MethodHandle argumentGuard(MethodHandle guard, MethodType targetType, int argumentNumber) {
         MethodHandle argumentGuard = guard.asType(guard.type().changeParameterType(0, targetType.parameterType(argumentNumber)));
-        if (argumentNumber > 0) {
-            argumentGuard = MethodHandles.dropArguments(argumentGuard, 0, Arrays.copyOf(targetType.parameterArray(), argumentNumber));
-        }
-        return argumentGuard;
+        return moveSingleArgumentTo(argumentGuard, targetType, argumentNumber);
     }
 
     /**
@@ -2003,6 +2000,7 @@ public class Methods {
      * This is the case when
      * <ol>
      *     <li>the target is a direct method handle,</li>
+     *     <li>it has a public visibility,</li>
      *     <li>it originally returns void,</li>
      *     <li>the iterated value is the target's last parameter,</li>
      *     <li>and it is non-primitive.</li>
@@ -2044,6 +2042,7 @@ public class Methods {
      * This is the case when
      * <ol>
      *     <li>the target is a direct method handle,</li>
+     *     <li>it is visible from the given Lookup instance,</li>
      *     <li>it originally returns void,</li>
      *     <li>the iterated value is the target's last parameter,</li>
      *     <li>and it is non-primitive.</li>
@@ -2065,58 +2064,62 @@ public class Methods {
         if (targetType.returnType() == void.class && targetType.parameterCount() == parameterIndex + 1
                 && !iteratedType.isPrimitive()) {
             // Try forEach() with direct lambda
-            MethodHandle lambdaFactory;
-            try {
-                lambdaFactory = createLambdaFactory(lookup, target, Consumer.class);
-            } catch (IllegalArgumentException ex) {
-                // Lookup not available or iterated type is primitive
-                lambdaFactory = null;
-            }
-            if (lambdaFactory != null) {
-                @SuppressWarnings({ "unchecked", "rawTypes" })
-                MethodHandle forEach = findUsing(Iterable.class, i -> i.forEach(null));
-                if (parameterIndex == numberOfLeadingArguments) {
-                    // Can directly insert action, resulting handle will only accept the iterable
-                    Object action;
-                    try {
-                        action = lambdaFactory.invokeWithArguments(leadingArguments);
-                    } catch (RuntimeException | Error e) {
-                        throw e;
-                    } catch (Throwable t) {
-                        throw new UndeclaredThrowableException(t);
-                    }
-                    return MethodHandles.insertArguments(forEach, 1, action);
-                } else {
-                    // result has leading arguments, needs to create lambda on the fly
-                    Class<?>[] leadingTypes = Arrays.copyOf(targetType.parameterArray(), targetType.parameterCount() - 1);
-                    MethodHandle factory = MethodHandles.exactInvoker(methodType(Consumer.class, leadingTypes)).bindTo(lambdaFactory);
-                    factory = MethodHandles.insertArguments(factory, 0, leadingArguments);
-                    MethodHandle result = MethodHandles.collectArguments(forEach, 1, factory);
-                    return shiftArgument(result, 0, parameterIndex - numberOfLeadingArguments);
-                }
-            }
+            MethodHandle h = iterateDirectHandle(lookup, target, parameterIndex, leadingArguments);
+            if (h != null) return h;
         }
 
         // Not possible to create Consumer interface, use standard iterator pattern
         MethodHandle h = target.asType(targetType.changeReturnType(void.class));
         h = insertLeadingArguments(h, parameterIndex, leadingArguments);
-        targetType = h.type();
         parameterIndex -= numberOfLeadingArguments;
-        if (parameterIndex < 0) parameterIndex = 0;
-
-        MethodHandle getIterator = findUsing(Iterable.class, Iterable::iterator);
-        MethodHandle hasNext = findUsing(Iterator.class, Iterator::hasNext);
-        MethodHandle getNext = findUsing(Iterator.class, Iterator::next).asType(methodType(iteratedType, Iterator.class));
-        if (parameterIndex > 0) {
-            Class<?>[] argumentsBefore = Arrays.copyOf(targetType.parameterArray(), parameterIndex);
-            hasNext = MethodHandles.dropArguments(hasNext, 0, argumentsBefore);
+        if (parameterIndex <= 0) {
+            parameterIndex = 0;
+        } else {
+            h = shiftArgument(h, parameterIndex, 0);
         }
 
-        MethodHandle invokeOnIterator = MethodHandles.filterArguments(h, parameterIndex, getNext);
-        MethodHandle whileLoop = MethodHandles.whileLoop(null, hasNext, invokeOnIterator);
-        h = MethodHandles.filterArguments(whileLoop, parameterIndex, getIterator);
+        h = MethodHandles.dropArguments(h, 1, Iterable.class);
+        h = MethodHandles.iteratedLoop(null, null, h);
+        h = shiftArgument(h, 0, parameterIndex);
+        targetType = h.type();
         return target.isVarargsCollector() && parameterIndex < targetType.parameterCount() - 1 ?
                 h.asVarargsCollector(targetType.parameterType(targetType.parameterCount() - 1)) : h;
+    }
+
+    private static MethodHandle iterateDirectHandle(Lookup lookup, MethodHandle target, int parameterIndex, Object[] leadingArguments) {
+        MethodHandle lambdaFactory;
+        try {
+            lambdaFactory = createLambdaFactory(lookup, target, Consumer.class);
+        } catch (IllegalArgumentException ex) {
+            // Lookup not available or iterated type is primitive
+            lambdaFactory = null;
+        }
+        if (lambdaFactory == null) {
+            return null;
+        }
+        int numberOfLeadingArguments = leadingArguments.length;
+        @SuppressWarnings({"unchecked", "rawTypes"})
+        MethodHandle forEach = findUsing(Iterable.class, i -> i.forEach(null));
+        if (parameterIndex == numberOfLeadingArguments) {
+            // Can directly insert action, resulting handle will only accept the iterable
+            Object action;
+            try {
+                action = lambdaFactory.invokeWithArguments(leadingArguments);
+            } catch (RuntimeException | Error e) {
+                throw e;
+            } catch (Throwable t) {
+                throw new UndeclaredThrowableException(t);
+            }
+            return MethodHandles.insertArguments(forEach, 1, action);
+        } else {
+            // result has leading arguments, needs to create lambda on the fly
+            MethodType targetType = target.type();
+            Class<?>[] leadingTypes = Arrays.copyOf(targetType.parameterArray(), targetType.parameterCount() - 1);
+            MethodHandle factory = MethodHandles.exactInvoker(methodType(Consumer.class, leadingTypes)).bindTo(lambdaFactory);
+            factory = MethodHandles.insertArguments(factory, 0, leadingArguments);
+            MethodHandle result = MethodHandles.collectArguments(forEach, 1, factory);
+            return shiftArgument(result, 0, parameterIndex - numberOfLeadingArguments);
+        }
     }
 
     private static void checkArgumentCounts(MethodHandle target, int numberOfLeadingArguments, int parameterIndex) {
@@ -2157,35 +2160,11 @@ public class Methods {
      * was already of variable arity.
      *
      * @param target This will be called
-     * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
-     *                       leading arguments
+     * @param parameterIndex The index of the target's iterated element parameter, starting from 0
      * @return A handle that iterates over all elements of the given array
      */
     public static MethodHandle iterateArray(MethodHandle target,  int parameterIndex) {
-        MethodType targetType = target.type().changeReturnType(void.class);
-        MethodHandle h = target.asType(targetType);
-        checkArgumentLength(targetType, parameterIndex);
-
-        Class<?> iteratedType = targetType.parameterType(parameterIndex);
-        Class<?> arrayType = toArrayType(iteratedType);
-        h = shiftArgument(h, parameterIndex, 0);
-        targetType = h.type();
-        Class<?>[] parameterArray = targetType.parameterArray();
-        parameterArray[0] = arrayType;
-
-        MethodHandle getValue = MethodHandles.arrayElementGetter(arrayType);
-        MethodHandle start = MethodHandles.constant(int.class, 0);
-        MethodHandle end = MethodHandles.arrayLength(arrayType);
-        MethodHandle body = MethodHandles.collectArguments(h, 0, getValue);
-        body = shiftArgument(body, 1, 0);
-
-        MethodHandle loop = MethodHandles.countedLoop(start, end, null, body);
-        loop = shiftArgument(loop, 0, parameterIndex);
-        if (parameterIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
-            return loop.asVarargsCollector(loop.type().parameterType(parameterIndex));
-        }
-
-        return loop;
+        return collectArray(target.asType(target.type().changeReturnType(void.class)), parameterIndex);
     }
 
     /**
@@ -2198,55 +2177,73 @@ public class Methods {
      * Let (a0, ... aP, aP+1, ... aM-1)R be the target type, where P is the parameter index of the iterated value,
      * M is the number of the target's arguments, and R is the return type.
      *
-     * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aM-1)aP[].
+     * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aM-1)R[].
      *
-     * If the target's return type is void, then the resulting handle is also void as the return type.
+     * If the target's return type is void, then the resulting handle's return type is also void.
      *
      * The result will be of variable arity if the arrayed parameter is the last one, or if the original target
      * was already of variable arity.
      *
      * @param target This will be called
-     * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
-     *                       leading arguments
+     * @param parameterIndex The index of the target's iterated element parameter
      * @return A handle that iterates over all elements of the given array and returns the results
      */
     public static MethodHandle collectArray(MethodHandle target,  int parameterIndex) {
         MethodType targetType = target.type();
-        Class<?> returnType = targetType.returnType();
-        if (returnType == void.class) {
-            return iterateArray(target, parameterIndex);
-        }
         checkArgumentLength(targetType, parameterIndex);
 
-        Class<?> iteratedType = targetType.parameterType(parameterIndex);
-        Class<?> arrayType = toArrayType(iteratedType);
-        Class<?> returnedArrayType = toArrayType(returnType);
+        Class<?> returnType = targetType.returnType();
+        Class<?> arrayType = toArrayType(targetType.parameterType(parameterIndex));
 
         MethodHandle getValue = MethodHandles.arrayElementGetter(arrayType);
-        MethodHandle start = MethodHandles.constant(int.class, 0);
-        MethodHandle end = MethodHandles.arrayLength(arrayType);
-        end = MethodHandles.dropArguments(end, 0, Arrays.copyOf(targetType.parameterArray(), parameterIndex));
-        MethodHandle init = MethodHandles.filterReturnValue(end, MethodHandles.arrayConstructor(returnedArrayType));
+        MethodHandle end = createArrayLengthGetter(arrayType, targetType, parameterIndex);
         MethodHandle body = MethodHandles.collectArguments(target, parameterIndex, getValue);
-        MethodHandle setter = returnArgument(MethodHandles.arrayElementSetter(returnedArrayType), 0);
-        body = MethodHandles.collectArguments(setter, 2, body); // (V,index,0..n,array,index,n+2..m)V
-        // Expected: (V,index,0..n,array,n+2..m)V
-        int p = parameterIndex + 3;
-        MethodType type = body.type();
-        int pCount = type.parameterCount();
-        type = type.dropParameterTypes(p, p+1);
-        int[] indexes = new int[pCount];
-        for (int i=0; i < pCount; i++) {
-            indexes[i] = i < p ? i : (i == p ? 1 : i-1);
-        }
-        body = MethodHandles.permuteArguments(body, type, indexes);
 
-        MethodHandle loop = MethodHandles.countedLoop(start, end, init, body);
+        MethodType bodyType;
+        MethodHandle init;
+        int startIndex, indexPosition;
+        if (returnType == void.class) {
+            init = null;
+            // body = (0..n-1,array,index,n+1..m)void
+            // Expected: (index,0..n,array,n+2..m)void
+            startIndex = 1;
+            indexPosition = 0;
+            bodyType = body.type().insertParameterTypes(0, int.class);
+        } else {
+            Class<?> returnedArrayType = toArrayType(returnType);
+            init = MethodHandles.filterReturnValue(end, MethodHandles.arrayConstructor(returnedArrayType));
+            MethodHandle setter = returnArgument(MethodHandles.arrayElementSetter(returnedArrayType), 0);
+            body = MethodHandles.collectArguments(setter, 2, body); // (V,index,0..n-1,array,index,n+1..m)V
+            // Expected: (V,index,0..n-1,array,n+1..m)V
+            startIndex = 0;
+            indexPosition = 1;
+            bodyType = body.type();
+        }
+
+        int additionalIndexPosition = parameterIndex + 2 + indexPosition;
+        int pCount = bodyType.parameterCount();
+        bodyType = bodyType.dropParameterTypes(additionalIndexPosition, additionalIndexPosition+1);
+        int[] indexes = new int[pCount-startIndex];
+        for (int i=startIndex; i < pCount; i++) {
+            indexes[i-startIndex] = i < additionalIndexPosition ? i : (i == additionalIndexPosition ? indexPosition : i-1);
+        }
+        body = MethodHandles.permuteArguments(body, bodyType, indexes);
+
+        MethodHandle loop = MethodHandles.countedLoop(start(), end, init, body);
         if (parameterIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
-            return loop.asVarargsCollector(arrayType);
+            return loop.asVarargsCollector(loop.type().parameterType(loop.type().parameterCount() - 1));
         }
 
         return loop;
+    }
+
+    private static MethodHandle createArrayLengthGetter(Class<?> arrayType, MethodType type, int parameterIndex) {
+        MethodHandle getter = MethodHandles.arrayLength(arrayType);
+        return moveSingleArgumentTo(getter, type, parameterIndex);
+    }
+
+    private static MethodHandle moveSingleArgumentTo(MethodHandle target, MethodType type, int index) {
+        return MethodHandles.dropArguments(target, 0, Arrays.copyOf(type.parameterArray(), index));
     }
 
     private static Class<?> toArrayType(Class<?> componentType) {
@@ -2255,46 +2252,86 @@ public class Methods {
 
     /**
      * Creates a handle that iterates over some array instance instead of the original parameter at the given index.
-     * Only stateless iterations are supported, and no value is returned.
+     * The original target's result value (which must not be void) will be injected as a parameter value
+     * in every successive call after the first one.
      *
      * The given target handle will be called for each element in the given array. The array's component type will be
-     * the same as the original argument type. If the target returns some values, it will be ignored.
+     * the same as the original argument type.
      *
-     * Let (a0, ... aP, aP+1, ... aM-1)R be the target type, where P is the parameter index of the iterated value,
+     * Let (a0, ... aP, aP+1, ... aM-1)R be the target type, where P is the array index of the iterated value,
      * M is the number of the target's arguments, and R is the return type.
      *
-     * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aM-1)void.
+     * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aM-1)R. The parameter type of the invariant
+     * index remains unchanged.
+     *
+     * You have to specify two parameter indexes: the first one specifies the argument which shall be converted to an
+     * array, and the second one specifies the argument which receives the result value of previous loop iterations.
+     *
+     * As a consequence, the original target will be called with identical parameter values except the one at the
+     * array index, which is filled with the array values, and the one at the invariant index, which will get the
+     * parameter of the loop call in the first iteration, and the result value of the previous iteration on every
+     * successive execution.
      *
      * @param target This will be called
-     * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
-     *                       leading arguments
+     * @param arrayIndex The index of the target's iterated element parameter, starting from 0
+     * @param invariantIndex The index of the invariant value
      * @return A handle that iterates over all elements of the given array
      */
-    public static MethodHandle collectArray(MethodHandle target,  int parameterIndex, int invariantIndex, Object initialValue) {
-        MethodType targetType = target.type().changeReturnType(void.class);
-        MethodHandle h = target.asType(targetType);
-        checkArgumentLength(targetType, parameterIndex);
+    public static MethodHandle reduceArray(MethodHandle target, int arrayIndex, int invariantIndex) {
+        MethodType targetType = target.type();
+        checkArgumentLength(targetType, arrayIndex);
+        checkArgumentLength(targetType, invariantIndex);
+        if (arrayIndex == invariantIndex) {
+            throw new IllegalArgumentException("Same index " + arrayIndex + " for array and invariant type");
+        }
 
-        Class<?> iteratedType = targetType.parameterType(parameterIndex);
-        Class<?> arrayType = Array.newInstance(iteratedType, 0).getClass();
-        h = shiftArgument(h, parameterIndex, 0);
-        targetType = h.type();
-        Class<?>[] parameterArray = targetType.parameterArray();
-        parameterArray[0] = arrayType;
+        Class<?> arrayType = toArrayType(targetType.parameterType(arrayIndex));
+        Class<?> returnType = targetType.returnType();
+        if (returnType == void.class) {
+            throw new IllegalArgumentException(target + " must return some value");
+        }
+        Class<?> invariantType = targetType.parameterType(invariantIndex);
+        MethodHandle h = target.asType(targetType.changeReturnType(invariantType));
 
         MethodHandle getValue = MethodHandles.arrayElementGetter(arrayType);
-        MethodHandle start = MethodHandles.constant(int.class, 0);
-        MethodHandle end = MethodHandles.arrayLength(arrayType);
-        MethodHandle body = MethodHandles.collectArguments(h, 0, getValue);
-        body = shiftArgument(body, 1, 0);
+        MethodHandle body = MethodHandles.collectArguments(h, arrayIndex, getValue);
+        // Actual: (0..n-1,array,index,n+1..m-1,V,m+1...o)V
+        // Expected: (V,index,0..n-1,array,n+1..m)V
 
-        MethodHandle loop = MethodHandles.countedLoop(start, end, null, body);
-        loop = shiftArgument(loop, 0, parameterIndex);
-        if (parameterIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
-            return loop.asVarargsCollector(loop.type().parameterType(parameterIndex));
+        MethodType innerType = body.type().dropParameterTypes(arrayIndex + 1, arrayIndex + 2);
+        MethodType bodyType = innerType.insertParameterTypes(0, invariantType, int.class);
+        int pCount = bodyType.parameterCount() - 1;
+        int[] indexes = new int[pCount];
+        int summand = 2;
+        int newInvariantIndex = invariantIndex;
+        for (int i=0; i < pCount; i++) {
+            if (i == newInvariantIndex) {
+                indexes[i] = 0;
+                continue;
+            }
+            indexes[i] = i + summand;
+            if (i == arrayIndex) {
+                indexes[++i] = 1;
+                summand--;
+                newInvariantIndex++;
+            }
+        }
+        body = MethodHandles.permuteArguments(body, bodyType, indexes);
+
+        MethodHandle end = moveSingleArgumentTo(MethodHandles.arrayLength(arrayType), innerType, arrayIndex);
+        MethodHandle init = moveSingleArgumentTo(MethodHandles.identity(invariantType), innerType, invariantIndex);
+        MethodHandle loop = MethodHandles.countedLoop(start(), end, init, body);
+        MethodType outerType = loop.type().changeReturnType(returnType);
+        loop = loop.asType(outerType);
+        if (arrayIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
+            loop = loop.asVarargsCollector(outerType.parameterType(outerType.parameterCount() - 1));
         }
 
         return loop;
+    }
+
+    private static MethodHandle start() {
+        return MethodHandles.constant(int.class, 0);
     }
 
     /**

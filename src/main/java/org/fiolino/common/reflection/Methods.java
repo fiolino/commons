@@ -2278,9 +2278,8 @@ public class Methods {
      * @return A handle that iterates over all elements of the given array
      */
     public static MethodHandle reduceArray(MethodHandle target, int arrayIndex, int invariantIndex) {
-        MethodHandle identity = MethodHandles.identity(target.type().parameterType(invariantIndex));
         return reduceArray0(target, arrayIndex, invariantIndex,
-                t -> moveSingleArgumentTo(identity, t, invariantIndex), true);
+                (t, i) -> moveSingleArgumentTo(MethodHandles.identity(i), t, invariantIndex), true);
     }
 
 
@@ -2316,11 +2315,11 @@ public class Methods {
      */
     public static MethodHandle reduceArray(MethodHandle target, int arrayIndex, int invariantIndex, @Nullable Object initialValue) {
         return reduceArray0(target, arrayIndex, invariantIndex,
-                t -> initialValue == null ? null : MethodHandles.constant(target.type().parameterType(invariantIndex), initialValue), false);
+                (t, i) -> initialValue == null ? null : MethodHandles.constant(i, initialValue), false);
     }
 
     private static MethodHandle reduceArray0(MethodHandle target, int arrayIndex, int invariantIndex,
-                                             Function<MethodType, MethodHandle> initFactory, boolean keepInvariantParameter) {
+                                             BiFunction<MethodType, Class<?>, MethodHandle> initFactory, boolean keepInvariantParameter) {
         MethodType targetType = target.type();
         checkArgumentLength(targetType, arrayIndex);
         checkArgumentLength(targetType, invariantIndex);
@@ -2374,7 +2373,7 @@ public class Methods {
         body = MethodHandles.permuteArguments(body, bodyType, indexes);
 
         MethodHandle end = moveSingleArgumentTo(MethodHandles.arrayLength(arrayType), outerType, outerArrayPos);
-        MethodHandle init = initFactory.apply(outerType);
+        MethodHandle init = initFactory.apply(outerType, invariantType);
         MethodHandle loop = MethodHandles.countedLoop(start(), end, init, body);
         outerType = outerType.changeReturnType(returnType);
         loop = loop.asType(outerType);

@@ -2196,7 +2196,7 @@ public class Methods {
         Class<?> arrayType = toArrayType(targetType.parameterType(parameterIndex));
 
         MethodHandle getValue = MethodHandles.arrayElementGetter(arrayType);
-        MethodHandle end = createArrayLengthGetter(arrayType, targetType, parameterIndex);
+        MethodHandle arrayLength = createArrayLengthGetter(arrayType, targetType, parameterIndex);
         MethodHandle body = MethodHandles.collectArguments(target, parameterIndex, getValue);
 
         MethodType bodyType;
@@ -2211,7 +2211,7 @@ public class Methods {
             bodyType = body.type().insertParameterTypes(0, int.class);
         } else {
             Class<?> returnedArrayType = toArrayType(returnType);
-            init = MethodHandles.filterReturnValue(end, MethodHandles.arrayConstructor(returnedArrayType));
+            init = MethodHandles.filterReturnValue(arrayLength, MethodHandles.arrayConstructor(returnedArrayType));
             MethodHandle setter = returnArgument(MethodHandles.arrayElementSetter(returnedArrayType), 0);
             body = MethodHandles.collectArguments(setter, 2, body); // (V,index,0..n-1,array,index,n+1..m)V
             // Expected: (V,index,0..n-1,array,n+1..m)V
@@ -2229,7 +2229,7 @@ public class Methods {
         }
         body = MethodHandles.permuteArguments(body, bodyType, indexes);
 
-        MethodHandle loop = MethodHandles.countedLoop(start(), end, init, body);
+        MethodHandle loop = MethodHandles.countedLoop(start(), arrayLength, init, body);
         if (parameterIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
             return loop.asVarargsCollector(loop.type().parameterType(loop.type().parameterCount() - 1));
         }
@@ -2258,12 +2258,6 @@ public class Methods {
      * The given target handle will be called for each element in the given array. The array's component type will be
      * the same as the original argument type.
      *
-     * Let (a0, ... aP, aP+1, ... aM-1)R be the target type, where P is the array index of the iterated value,
-     * M is the number of the target's arguments, and R is the return type.
-     *
-     * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aM-1)R. The parameter type of the invariant
-     * index remains unchanged.
-     *
      * You have to specify two parameter indexes: the first one specifies the argument which shall be converted to an
      * array, and the second one specifies the argument which receives the result value of previous loop iterations.
      *
@@ -2272,12 +2266,61 @@ public class Methods {
      * parameter of the loop call in the first iteration, and the result value of the previous iteration on every
      * successive execution.
      *
+     * Let (a0, ... aP, aP+1, ... aM-1)R be the target type, where P is the array index of the iterated value,
+     * M is the number of the target's arguments, and R is the return type.
+     *
+     * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aM-1)R. The parameter type of the invariant
+     * index remains unchanged.
+     *
      * @param target This will be called
      * @param arrayIndex The index of the target's iterated element parameter, starting from 0
      * @param invariantIndex The index of the invariant value
      * @return A handle that iterates over all elements of the given array
      */
     public static MethodHandle reduceArray(MethodHandle target, int arrayIndex, int invariantIndex) {
+        MethodHandle identity = MethodHandles.identity(target.type().parameterType(invariantIndex));
+        return reduceArray0(target, arrayIndex, invariantIndex,
+                t -> moveSingleArgumentTo(identity, t, invariantIndex), true);
+    }
+
+
+    /**
+     * Creates a handle that iterates over some array instance instead of the original parameter at the given index.
+     * In the first iteration, the target will be called with the initial value in place of the invariant argument,
+     * and in every successive iteration, the previous result value (which must not be void) will be used.
+     *
+     * The given target handle will be called for each element in the given array. The array's component type will be
+     * the same as the original argument type. The initial value will usually be the neutral element of the called operation.
+     *
+     * You have to specify two parameter indexes: the first one specifies the argument which shall be converted to an
+     * array, and the second one specifies the argument which receives the result value of previous loop iterations.
+     *
+     * As a consequence, the original target will be called with identical parameter values except the one at the
+     * array index, which is filled with the array values, and the one at the invariant index, which will get the
+     * initial value in the first iteration, and the result value of the previous iteration on every
+     * successive execution.
+     *
+     * Let (a0, ... aP, aP+1, ... aI, aI+1, ... aM-1)R be the target type, where P is the array index of the iterated
+     * value, I is the invariant index (which may also be lower than P),  M is the number of the target's arguments,
+     * and R is the return type.
+     *
+     * Then the resulting handle will be of type (a0, ..., aP[], aP+1, ... aI-1, aI+1, ... aM-1)R.
+     * The parameter of the invariant index is removed.
+     *
+     * @param target This will be called
+     * @param arrayIndex The index of the target's iterated element parameter, starting from 0
+     * @param invariantIndex The index of the invariant value
+     * @param initialValue This is injected as the starting value for the first iteration. This may be null, even for
+     *                     primitive invariant types; in this case, a zero-like value is used
+     * @return A handle that iterates over all elements of the given array
+     */
+    public static MethodHandle reduceArray(MethodHandle target, int arrayIndex, int invariantIndex, @Nullable Object initialValue) {
+        return reduceArray0(target, arrayIndex, invariantIndex,
+                t -> initialValue == null ? null : MethodHandles.constant(target.type().parameterType(invariantIndex), initialValue), false);
+    }
+
+    private static MethodHandle reduceArray0(MethodHandle target, int arrayIndex, int invariantIndex,
+                                             Function<MethodType, MethodHandle> initFactory, boolean keepInvariantParameter) {
         MethodType targetType = target.type();
         checkArgumentLength(targetType, arrayIndex);
         checkArgumentLength(targetType, invariantIndex);
@@ -2298,30 +2341,42 @@ public class Methods {
         // Actual: (0..n-1,array,index,n+1..m-1,V,m+1...o)V
         // Expected: (V,index,0..n-1,array,n+1..m)V
 
-        MethodType innerType = body.type().dropParameterTypes(arrayIndex + 1, arrayIndex + 2);
-        MethodType bodyType = innerType.insertParameterTypes(0, invariantType, int.class);
-        int pCount = bodyType.parameterCount() - 1;
+        MethodType outerType = body.type();
+        int pCount = outerType.parameterCount();
+        outerType =  outerType.dropParameterTypes(arrayIndex + 1, arrayIndex + 2);
+
+        int outerArrayPos;
+        if (keepInvariantParameter) {
+            outerArrayPos = arrayIndex;
+        } else {
+            outerType = outerType.dropParameterTypes(invariantIndex, invariantIndex + 1);
+            outerArrayPos = invariantIndex < arrayIndex ? arrayIndex - 1 : arrayIndex;
+        }
+        MethodType bodyType = outerType.insertParameterTypes(0, invariantType, int.class);
         int[] indexes = new int[pCount];
-        int summand = 2;
+        int addend = 2; // For invariant value and index
         int newInvariantIndex = invariantIndex;
         for (int i=0; i < pCount; i++) {
             if (i == newInvariantIndex) {
                 indexes[i] = 0;
+                if (!keepInvariantParameter) {
+                    addend--;
+                }
                 continue;
             }
-            indexes[i] = i + summand;
+            indexes[i] = i + addend;
             if (i == arrayIndex) {
                 indexes[++i] = 1;
-                summand--;
+                addend--;
                 newInvariantIndex++;
             }
         }
         body = MethodHandles.permuteArguments(body, bodyType, indexes);
 
-        MethodHandle end = moveSingleArgumentTo(MethodHandles.arrayLength(arrayType), innerType, arrayIndex);
-        MethodHandle init = moveSingleArgumentTo(MethodHandles.identity(invariantType), innerType, invariantIndex);
+        MethodHandle end = moveSingleArgumentTo(MethodHandles.arrayLength(arrayType), outerType, outerArrayPos);
+        MethodHandle init = initFactory.apply(outerType);
         MethodHandle loop = MethodHandles.countedLoop(start(), end, init, body);
-        MethodType outerType = loop.type().changeReturnType(returnType);
+        outerType = outerType.changeReturnType(returnType);
         loop = loop.asType(outerType);
         if (arrayIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
             loop = loop.asVarargsCollector(outerType.parameterType(outerType.parameterCount() - 1));

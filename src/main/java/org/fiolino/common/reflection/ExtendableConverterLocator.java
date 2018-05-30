@@ -206,8 +206,8 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
      * @return A new locator with the registered converters
      */
     public ExtendableConverterLocator register(MethodHandles.Lookup lookup, Object converterMethods) {
-        return Methods.visitMethodsWithStaticContext(lookup, converterMethods, this,
-                (loc, m, handleSupplier) -> {
+        return MethodLocator.visitMethodsWithStaticContext(lookup, converterMethods, this,
+                (loc, l, m, handleSupplier) -> {
 
                     if (!m.isAnnotationPresent(ConvertValue.class)) {
                         return loc;

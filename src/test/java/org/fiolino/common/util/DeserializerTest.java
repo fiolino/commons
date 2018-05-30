@@ -1,7 +1,7 @@
 package org.fiolino.common.util;
 
 import org.fiolino.common.ioc.Instantiator;
-import org.fiolino.common.reflection.Methods;
+import org.fiolino.common.reflection.MethodLocator;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -39,7 +39,7 @@ class DeserializerTest {
                 } catch (NoSuchFieldException ex) {
                     field = type.getSuperclass().getDeclaredField(f);
                 }
-                MethodHandle setter = Methods.findSetter(lookup(), field);
+                MethodHandle setter = MethodLocator.findSetter(lookup(), field);
                 d.setField(setter, field.getGenericType(), index++, field::getName);
             }
         }
@@ -166,7 +166,7 @@ class DeserializerTest {
         addFieldsTo(forA, A.class, "intValue", "string");
         Deserializer forC = new Deserializer(Instantiator.getDefault().findProviderHandle(C.class));
         addFieldsTo(forC, C.class, "name", "text");
-        forC.setEmbeddedField(Methods.findSetter(lookup(), C.class, "a", A.class), forA.createDeserializer(), 2, () -> "a");
+        forC.setEmbeddedField(MethodLocator.forLocal(lookup(), C.class).findSetter("a", A.class), forA.createDeserializer(), 2, () -> "a");
         MethodHandle factory = forC.createDeserializer();
 
         C c = (C) factory.invokeExact("My name:\"some text\":(425:\"Hello ::: World!\")");
@@ -184,7 +184,7 @@ class DeserializerTest {
         addFieldsTo(forA, A.class, "intValue", "string");
         Deserializer forC = new Deserializer(Instantiator.getDefault().findProviderHandle(C.class));
         addFieldsTo(forC, C.class, "name", "text");
-        forC.setEmbeddedField(Methods.findSetter(lookup(), C.class, "a", A.class), forA.createDeserializer(), 2, () -> "a");
+        forC.setEmbeddedField(MethodLocator.forLocal(lookup(), C.class).findSetter("a", A.class), forA.createDeserializer(), 2, () -> "a");
         MethodHandle factory = forC.createDeserializer();
 
         C c = (C) factory.invokeExact("My (name):\"(some text)\":(425:\"With (some) \\\"parenthesises\\\"\")");

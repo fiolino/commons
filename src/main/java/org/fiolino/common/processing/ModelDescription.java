@@ -2,6 +2,7 @@ package org.fiolino.common.processing;
 
 import org.fiolino.common.analyzing.ModelInconsistencyException;
 import org.fiolino.common.container.Container;
+import org.fiolino.common.reflection.MethodLocator;
 import org.fiolino.common.reflection.Methods;
 import org.fiolino.common.util.Strings;
 import org.fiolino.common.util.Types;
@@ -198,13 +199,13 @@ public class ModelDescription extends AbstractConfigurationContainer {
         @Nullable
         @Override
         public MethodHandle createGetter(Class<?>... additionalTypes) {
-            return Methods.findGetter(lookup, field, additionalTypes);
+            return MethodLocator.findGetter(lookup, field, additionalTypes);
         }
 
         @Nullable
         @Override
         public MethodHandle createSetter(Class<?>... additionalTypes) {
-            return Methods.findSetter(lookup, field, additionalTypes);
+            return MethodLocator.findSetter(lookup, field, additionalTypes);
         }
 
         @Override

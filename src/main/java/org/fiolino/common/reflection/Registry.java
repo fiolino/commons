@@ -195,8 +195,9 @@ public interface Registry extends Resettable {
      * @return A container of the lambda that will be called only once per argument values
      */
     static <T> LambdaRegistry<T> buildForFunctionalType(T function) {
-        LambdaRegistry<T> registry = Methods.doInClassHierarchy(function.getClass(), c -> {
-            for (Class<?> i : function.getClass().getInterfaces()) {
+        Class<?> functionClass = function.getClass();
+        LambdaRegistry<T> registry = MethodLocator.forPublic(functionClass).doInClassHierarchy(c -> {
+            for (Class<?> i : functionClass.getInterfaces()) {
                 if (Methods.findLambdaMethod(i).isPresent()) {
                     @SuppressWarnings("unchecked")
                     Class<T> castedInterface = (Class<T>) i;

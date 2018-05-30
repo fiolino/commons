@@ -46,7 +46,7 @@ public class SerializerBuilder {
             if (fieldAnno == null && embedAnno == null) {
                 return;
             }
-            MethodHandle getter = Methods.findGetter(lookup, f);
+            MethodHandle getter = MethodLocator.findGetter(lookup, f);
             if (getter == null) {
                 logger.log(Level.WARNING, () -> "No getter for " + f);
                 return;
@@ -111,8 +111,8 @@ public class SerializerBuilder {
     }
 
     private static <T extends Collection<MethodHandle>> T addAppendersFrom(MethodHandles.Lookup lookup, T appenders, Object appenderContainer) {
-        return Methods.visitMethodsWithStaticContext(lookup, appenderContainer, appenders,
-                (list, m, supp) -> {
+        return MethodLocator.visitMethodsWithStaticContext(lookup, appenderContainer, appenders,
+                (list, l, m, supp) -> {
                     if (isAppender(m)) {
                         list.add(supp.get());
                     }

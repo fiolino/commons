@@ -1,6 +1,7 @@
 package org.fiolino.common.beans;
 
 import org.fiolino.common.analyzing.ClassWalker;
+import org.fiolino.common.reflection.MethodLocator;
 import org.fiolino.common.reflection.Methods;
 import org.fiolino.common.util.Types;
 
@@ -60,12 +61,12 @@ public final class BeanCopier<S, T> {
         }
 
         void copyFromTo(Field source, Field target) {
-            MethodHandle getter = Methods.findGetter(sourceLookup, source);
+            MethodHandle getter = MethodLocator.findGetter(sourceLookup, source);
             if (getter == null) {
                 logger.log(Level.WARNING, () -> "No getter for " + source);
                 return;
             }
-            MethodHandle setter = Methods.findSetter(targetLookup, target);
+            MethodHandle setter = MethodLocator.findSetter(targetLookup, target);
             if (setter == null) {
                 logger.log(Level.WARNING, () -> "No setter for " + target);
                 return;

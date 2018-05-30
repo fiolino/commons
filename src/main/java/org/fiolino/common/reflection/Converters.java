@@ -247,7 +247,7 @@ public final class Converters {
             @ConvertValue
             @SuppressWarnings("unused")
             private String booleanToString(boolean value) {
-                return value ? "t" : "f";
+                return value ? "true" : "false";
             }
         });
         loc = loc.register(getFirstChar); // String to char

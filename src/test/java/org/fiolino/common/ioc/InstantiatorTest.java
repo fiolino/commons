@@ -406,7 +406,7 @@ class InstantiatorTest {
     }
 
     static class HasConstructor {
-        HasConstructor(String unused, int unused2) {}
+        HasConstructor(String unused, Integer unused2) {}
     }
 
     @Test
@@ -433,7 +433,7 @@ class InstantiatorTest {
         assertNull(sb2); // Because GenericFactory is not @Nullable
 
         @SuppressWarnings("unchecked")
-        BiFunction<String, Integer, HasConstructor> func4 = i.createProviderFor(BiFunction.class, HasConstructor.class, String.class, int.class);
+        BiFunction<String, Integer, HasConstructor> func4 = i.createProviderFor(BiFunction.class, HasConstructor.class, String.class, Integer.class);
         checkIsLambda(func4);
         HasConstructor x = func4.apply("x", 6);
         assertNotNull(x);

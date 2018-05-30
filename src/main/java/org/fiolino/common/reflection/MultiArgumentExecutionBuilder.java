@@ -170,6 +170,7 @@ final class MultiArgumentExecutionBuilder implements Registry {
             throw new IllegalArgumentException(method + " not accessible.", ex);
         }
 
+        // TODO Function does not always work!
         return new MultiArgumentExecutionBuilder(map, createFunction(handle, instance), handle.bindTo(instance));
     }
 

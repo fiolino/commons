@@ -9,7 +9,6 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.Field;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.Semaphore;
@@ -32,229 +31,6 @@ import static org.junit.jupiter.api.Assertions.*;
 class MethodsTest {
 
     private static final MethodHandles.Lookup LOOKUP = lookup();
-
-    @SuppressWarnings("unused")
-    private static class Bean {
-        int value;
-
-        int getValue() {
-            return value / 10;
-        }
-
-        void setValue(int value) {
-            this.value = value * 10;
-        }
-
-        int getValue(int plus) {
-            return value + plus;
-        }
-
-        void setValue(int value, int multi) {
-            this.value = value * multi;
-        }
-    }
-
-    @Test
-    void testFindGetter() throws Throwable {
-        Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findGetter(LOOKUP, field);
-        assertNotNull(handle);
-
-        Bean bean = new Bean();
-        bean.value = 1230;
-        int result = (int) handle.invokeExact(bean);
-        assertEquals(123, result);
-    }
-
-    @Test
-    void testFindSetter() throws Throwable {
-        Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findSetter(LOOKUP, field);
-        assertNotNull(handle);
-
-        Bean bean = new Bean();
-        handle.invokeExact(bean, 588);
-        assertEquals(5880, bean.value);
-    }
-
-    @Test
-    void testFindGetterWithInt() throws Throwable {
-        Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findGetter(LOOKUP, field, int.class);
-        assertNotNull(handle);
-
-        Bean bean = new Bean();
-        bean.value = 1230;
-        int result = (int) handle.invokeExact(bean, 70);
-        assertEquals(1300, result);
-    }
-
-    @Test
-    void testFindSetterWithIntAndString() throws Throwable {
-        Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findSetter(LOOKUP, field, int.class, String.class); // String is ignored
-        assertNotNull(handle);
-
-        Bean bean = new Bean();
-        handle.invokeExact(bean, 13, 2);
-        assertEquals(26, bean.value);
-    }
-
-    @Test
-    void testFindGetterWithIntAndDate() throws Throwable {
-        Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findGetter(LOOKUP, field, int.class, Date.class); // Date is ignored
-        assertNotNull(handle);
-
-        Bean bean = new Bean();
-        bean.value = 55;
-        int result = (int) handle.invokeExact(bean, 15);
-        assertEquals(70, result);
-    }
-
-    @Test
-    void testFindSetterWithInt() throws Throwable {
-        Field field = Bean.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findSetter(LOOKUP, field, int.class);
-        assertNotNull(handle);
-
-        Bean bean = new Bean();
-        handle.invokeExact(bean, 588, -1);
-        assertEquals(-588, bean.value);
-    }
-
-    private static class BeanWithoutMethods {
-        int value;
-    }
-
-    @Test
-    void testFindGetterWithoutMethods() throws Throwable {
-        Field field = BeanWithoutMethods.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findGetter(LOOKUP, field);
-        assertNotNull(handle);
-
-        BeanWithoutMethods bean = new BeanWithoutMethods();
-        bean.value = 1103;
-        int result = (int) handle.invokeExact(bean);
-        assertEquals(1103, result);
-    }
-
-    @Test
-    void testFindSetterWithoutMethods() throws Throwable {
-        Field field = BeanWithoutMethods.class.getDeclaredField("value");
-        MethodHandle handle = Methods.findSetter(LOOKUP, field);
-        assertNotNull(handle);
-
-        BeanWithoutMethods bean = new BeanWithoutMethods();
-        handle.invokeExact(bean, 2046);
-        assertEquals(2046, bean.value);
-    }
-
-    @SuppressWarnings("unused")
-    private static class BeanWithBooleanValues {
-        boolean isWithIsInGetterAndSetter;
-        boolean isWithoutIsInGetterAndSetter;
-
-        boolean getIsWithIsInGetterAndSetter() {
-            return isWithIsInGetterAndSetter;
-        }
-
-        void setIsWithIsInGetterAndSetter(boolean withIsInGetterAndSetter) {
-            isWithIsInGetterAndSetter = withIsInGetterAndSetter;
-        }
-
-        boolean isWithoutIsInGetterAndSetter() {
-            return isWithoutIsInGetterAndSetter;
-        }
-
-        void setWithoutIsInGetterAndSetter(boolean withoutIsInGetterAndSetter) {
-            isWithoutIsInGetterAndSetter = withoutIsInGetterAndSetter;
-        }
-    }
-
-    @Test
-    void testFindBooleanWithGetAndIs() throws Throwable {
-        Field field = BeanWithBooleanValues.class.getDeclaredField("isWithIsInGetterAndSetter");
-        MethodHandle getter = Methods.findGetter(LOOKUP, field);
-        assertNotNull(getter);
-        MethodHandle setter = Methods.findSetter(LOOKUP, field);
-        assertNotNull(setter);
-
-        BeanWithBooleanValues bean = new BeanWithBooleanValues();
-        setter.invokeExact(bean, true);
-        assertTrue((boolean) getter.invokeExact(bean));
-        assertFalse(bean.isWithoutIsInGetterAndSetter());
-    }
-
-    @Test
-    void testFindBooleanWithoutGetAndIs() throws Throwable {
-        Field field = BeanWithBooleanValues.class.getDeclaredField("isWithoutIsInGetterAndSetter");
-        MethodHandle getter = Methods.findGetter(LOOKUP, field);
-        assertNotNull(getter);
-        MethodHandle setter = Methods.findSetter(LOOKUP, field);
-        assertNotNull(setter);
-
-        BeanWithBooleanValues bean = new BeanWithBooleanValues();
-        setter.invokeExact(bean, true);
-        assertTrue((boolean) getter.invokeExact(bean));
-        assertFalse(bean.getIsWithIsInGetterAndSetter());
-    }
-
-    @Test
-    void testFindViaConsumer() throws Throwable {
-        @SuppressWarnings("unchecked")
-        MethodHandle handle = Methods.findUsing(LOOKUP, List.class, l -> l.add(null));
-        assertNotNull(handle);
-        List<String> testList = new ArrayList<>();
-        boolean added = (boolean) handle.invokeExact(testList, (Object) "Hello World");
-        assertTrue(added);
-        assertEquals(1, testList.size());
-        assertEquals("Hello World", testList.get(0));
-    }
-
-    @Test
-    void testBindUsing() throws Throwable {
-        List<String> testList = new ArrayList<>();
-        MethodHandle handle = Methods.bindUsing(LOOKUP, testList, l -> l.add(null));
-        boolean added = (boolean) handle.invokeExact((Object) "Hello World");
-        assertTrue(added);
-        assertEquals(1, testList.size());
-        assertEquals("Hello World", testList.get(0));
-    }
-
-    private static class Prototype {
-        @MethodFinder
-        @SuppressWarnings("unused")
-        int createAddHandle(List<Object> someList) {
-            someList.add(new Object());
-            fail("Should never reach here!");
-            return 0;
-        }
-
-        @ExecuteDirect
-        @SuppressWarnings("unused")
-        int getDoubledSize(List<?> someList) {
-            return someList.size() * 2;
-        }
-    }
-
-    @Test
-    void testFindUsingPrototype() throws Throwable {
-        final MethodHandle[] handles = new MethodHandle[2];
-        Methods.findUsing(LOOKUP, new Prototype(), null, (v, m, handleSupplier) -> {
-            handles[m.getName().equals("createAddHandle") ? 0 : 1] = handleSupplier.get();
-            return null;
-        });
-        assertNotNull(handles[0]);
-        assertNotNull(handles[1]);
-        List<String> testList = new ArrayList<>();
-        boolean added = (boolean) handles[0].invokeExact(testList, (Object) "Hello World");
-        assertTrue(added);
-        assertEquals(1, testList.size());
-        assertEquals("Hello World", testList.get(0));
-        int doubledSize = (int) handles[1].invokeExact(testList);
-        assertEquals(2, doubledSize);
-    }
 
     @Test
     void testEnumConversion() throws Throwable {
@@ -319,7 +95,7 @@ class MethodsTest {
     private void booom() throws FileNotFoundException {
         throw new FileNotFoundException("Booom!");
     }
-    
+
     @Test
     void testRethrowExceptionNoArguments() throws Throwable {
         MethodHandle booom = LOOKUP.bind(this, "booom", methodType(void.class));
@@ -723,7 +499,7 @@ class MethodsTest {
     @Test
     void testSecureArgument() throws Throwable {
         @SuppressWarnings({"unchecked", "rawTypes"})
-        MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
+        MethodHandle addToList = MethodLocator.findUsing(List.class, p -> p.add(null));
         MethodHandle check = LOOKUP.findVirtual(String.class, "startsWith", methodType(boolean.class, String.class));
         check = MethodHandles.insertArguments(check, 1, "Foo");
         MethodHandle dontAddFoo = Methods.rejectIfArgument(addToList, 1, check);
@@ -745,7 +521,7 @@ class MethodsTest {
     @Test
     void testAssertNotNull() throws Throwable {
         @SuppressWarnings({"unchecked", "rawTypes"})
-        MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
+        MethodHandle addToList = MethodLocator.findUsing(List.class, p -> p.add(null));
         addToList = Methods.assertNotNull(addToList, 1, "blubber");
         List<Object> list = new ArrayList<>();
 
@@ -763,11 +539,11 @@ class MethodsTest {
     @Test
     void testAssertNotNullOwnException() {
         @SuppressWarnings({"unchecked", "rawTypes"})
-        MethodHandle addToList = Methods.findUsing(List.class, p -> p.add(null));
+        MethodHandle addToList = MethodLocator.findUsing(List.class, p -> p.add(null));
         MethodHandle nullChecked = Methods.assertNotNull(addToList, FileNotFoundException.class, "This was a test");
         List<Object> list = new ArrayList<>();
 
-        assertThrows(FileNotFoundException.class, 
+        assertThrows(FileNotFoundException.class,
                 () -> assertTrue((boolean) nullChecked.invokeExact(list, (Object) null)));
     }
 
@@ -839,11 +615,6 @@ class MethodsTest {
         MethodHandle increment = publicLookup().bind(counter, "incrementAndGet", methodType(int.class));
         increment = increment.asType(methodType(void.class));
         return MethodHandles.foldArguments(h, increment);
-    }
-
-    private MethodHandle printInput(MethodHandle h)throws NoSuchMethodException, IllegalAccessException {
-        MethodHandle out = publicLookup().bind(System.out, "println", methodType(void.class, h.type().parameterType(0)));
-        return MethodHandles.foldArguments(h, out);
     }
 
     @Test

@@ -4,6 +4,7 @@ import org.fiolino.annotations.PostCreate;
 import org.fiolino.annotations.PostProcessor;
 import org.fiolino.annotations.Provider;
 import org.fiolino.annotations.Requested;
+import org.fiolino.common.reflection.MethodLocator;
 import org.fiolino.common.reflection.Methods;
 
 import javax.annotation.Nullable;
@@ -199,7 +200,7 @@ public final class Instantiator {
 
     private <T> void register(Class<T> providerClass) {
         Supplier<T> metaFactory = createSupplierFor(providerClass);
-        Methods.visitMethodsWithStaticContext(lookup, providerClass, metaFactory, null, (v, m, supp) -> {
+        MethodLocator.forLocal(lookup, providerClass).visitMethodsWithStaticContext(metaFactory, null, (v, l, m, supp) -> {
             Provider annotation = m.getAnnotation(Provider.class);
             if (annotation == null) return null;
 
@@ -213,7 +214,7 @@ public final class Instantiator {
     }
 
     private <T> void register(Object providerInstance) {
-        Methods.visitMethodsWithStaticContext(lookup, providerInstance, null, (v, m, supp) -> {
+        MethodLocator.visitMethodsWithStaticContext(lookup, providerInstance, null, (v, l, m, supp) -> {
             Provider annotation = m.getAnnotation(Provider.class);
             if (annotation == null) return null;
 
@@ -405,7 +406,7 @@ public final class Instantiator {
             fullConstructor = handle;
         }
 
-        return Methods.visitMethodsWithInstanceContext(lookup, type, fullConstructor, (h, m, supp) -> {
+        return MethodLocator.forLocal(lookup, type).visitMethodsWithInstanceContext(fullConstructor, (h, l, m, supp) -> {
             if (!m.isAnnotationPresent(PostCreate.class)) return h;
             MethodHandle postProcessor = supp.get();
             MethodType t = postProcessor.type();

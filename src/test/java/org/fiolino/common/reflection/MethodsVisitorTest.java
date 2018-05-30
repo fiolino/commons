@@ -20,8 +20,10 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class MethodsVisitorTest {
     private void validate(MethodHandles.Lookup lookup, Class<?> type, String... expectedVisibleMethods) {
-        final Set<String> exp = new HashSet<>(Arrays.asList(expectedVisibleMethods));
-        Methods.visitAllMethods(lookup, type, null, (v, m, handleSupplier) -> {
+        Set<String> exp = new HashSet<>(Arrays.asList(expectedVisibleMethods));
+        MethodLocator methodLocator = MethodLocator.forLocal(lookup, type);
+
+        methodLocator.visitAllMethods(null, (v, l, m, handleSupplier) -> {
             if (methodIsIgnored(m)) {
                 return null;
             }
@@ -110,7 +112,7 @@ class MethodsVisitorTest {
     }
 
     private static class PrivateClass {
-        void publicMethod() {
+        public void publicMethod() {
         }
 
         void packageMethod() {
@@ -196,7 +198,7 @@ class MethodsVisitorTest {
     void testOverriddenMethodOnlyOnce() {
         final AtomicReference<Method> foundAnother = new AtomicReference<>();
 
-        Method foundMethod = Methods.visitAllMethods(MethodHandles.lookup(), B.class, null, (v, m, handleSupplier) -> {
+        Method foundMethod = MethodLocator.forLocal(MethodHandles.lookup(), B.class).visitAllMethods(null, (v, l, m, handleSupplier) -> {
             if (m.getName().equals("method")) {
                 assertNull(v);
                 return m;
@@ -231,8 +233,8 @@ class MethodsVisitorTest {
 
     @Test
     void testStaticMethods() throws Throwable {
-        MethodHandle h = Methods.visitMethodsWithStaticContext(
-                MethodHandles.lookup(), Uninstantiable.class, Uninstantiable::new, null, (v, m, handleSupplier) -> {
+        MethodHandle h = MethodLocator.forLocal(MethodHandles.lookup(), Uninstantiable.class).visitMethodsWithStaticContext(
+                Uninstantiable::new, null, (v, l, m, handleSupplier) -> {
                     if (m.getName().equals("staticMethod")) {
                         return handleSupplier.get();
                     }
@@ -267,7 +269,7 @@ class MethodsVisitorTest {
 
         Instantiable i = new Instantiable();
         wasInstantiated.set(false);
-        Methods.visitMethodsWithStaticContext(MethodHandles.lookup(), i, null, (v, m, handleSupplier) -> {
+        MethodLocator.visitMethodsWithStaticContext(MethodHandles.lookup(), i, null, (v, l, m, handleSupplier) -> {
             if (m.getName().equals("staticMethod")) {
                 staticRef.set(handleSupplier.get());
             }
@@ -290,7 +292,7 @@ class MethodsVisitorTest {
         // Now check with given class
         instanceRef.set(null);
         staticRef.set(null);
-        Methods.visitMethodsWithStaticContext(MethodHandles.lookup(), Instantiable.class, Instantiable::new, null, (v, m, handleSupplier) -> {
+        MethodLocator.forLocal(MethodHandles.lookup(), Instantiable.class).visitMethodsWithStaticContext(Instantiable::new, null, (v, l, m, handleSupplier) -> {
             if (m.getName().equals("staticMethod")) {
                 staticRef.set(handleSupplier.get());
             }
@@ -317,7 +319,7 @@ class MethodsVisitorTest {
         final AtomicReference<MethodHandle> instanceRef = new AtomicReference<>();
 
         wasInstantiated.set(false);
-        Methods.visitMethodsWithInstanceContext(MethodHandles.lookup(), Instantiable.class, null, (v, m, handleSupplier) -> {
+        MethodLocator.forLocal(MethodHandles.lookup(), Instantiable.class).visitMethodsWithInstanceContext(null, (v, l, m, handleSupplier) -> {
             if (m.getName().equals("staticMethod")) {
                 staticRef.set(handleSupplier.get());
             }

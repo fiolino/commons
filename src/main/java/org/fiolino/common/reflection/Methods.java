@@ -86,7 +86,7 @@ public class Methods {
     }
 
     private static MethodHandle getIdentityComparator(Class<?> primitiveOrEnum) {
-        MethodHandles.Lookup lookup = lookup();
+        Lookup lookup = lookup();
         try {
             return lookup.findStatic(lookup.lookupClass(), "isIdentical", methodType(boolean.class, primitiveOrEnum, primitiveOrEnum));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
@@ -355,7 +355,7 @@ public class Methods {
         handlerHandle = changeNullSafeReturnType(handlerHandle, targetType.returnType());
         handlerHandle = handlerHandle.asType(targetType.insertParameterTypes(0, catchedExceptionType));
 
-        return MethodHandles.catchException(target, catchedExceptionType, handlerHandle);
+        return catchException(target, catchedExceptionType, handlerHandle);
     }
 
     private static MethodHandle insertArgumentsOrSuppliers(MethodHandle handle, int pos, Object[] injections) {
@@ -364,7 +364,7 @@ public class Methods {
                 return insertSuppliers(handle, pos, injections);
             }
         }
-        return MethodHandles.insertArguments(handle, pos, injections);
+        return insertArguments(handle, pos, injections);
     }
 
     private static MethodHandle insertSuppliers(MethodHandle handle, int pos, Object[] injections) {
@@ -372,9 +372,9 @@ public class Methods {
         for (Object i : injections) {
             if (i instanceof Supplier) {
                 MethodHandle get = MethodLocator.findUsing(Supplier.class, Supplier::get).bindTo(i);
-                h = MethodHandles.collectArguments(h, pos, get);
+                h = collectArguments(h, pos, get);
             } else {
-                h = MethodHandles.insertArguments(h, pos, i);
+                h = insertArguments(h, pos, i);
             }
         }
 
@@ -421,11 +421,11 @@ public class Methods {
             return target.asType(targetType.changeReturnType(returnType));
         }
 
-        MethodHandle caseNull = MethodHandles.empty(methodType(returnType, existingType));
-        MethodHandle caseNotNull = MethodHandles.identity(existingType).asType(methodType(returnType, existingType));
-        MethodHandle checkReturnValueForNull = MethodHandles.guardWithTest(nullCheck(existingType), caseNull, caseNotNull);
+        MethodHandle caseNull = empty(methodType(returnType, existingType));
+        MethodHandle caseNotNull = identity(existingType).asType(methodType(returnType, existingType));
+        MethodHandle checkReturnValueForNull = guardWithTest(nullCheck(existingType), caseNull, caseNotNull);
 
-        return MethodHandles.filterReturnValue(target, checkReturnValueForNull);
+        return filterReturnValue(target, checkReturnValueForNull);
     }
 
     /**
@@ -444,7 +444,7 @@ public class Methods {
         MethodType resultType = methodType(target.type().returnType(), expectedParameterTypes);
         int k = expectedParameterTypes.length;
         if (n == k) {
-            return MethodHandles.explicitCastArguments(target, resultType);
+            return explicitCastArguments(target, resultType);
         }
         if (n > k) {
             throw new IllegalArgumentException(target + " has less parameters than " + Arrays.toString(expectedParameterTypes));
@@ -456,7 +456,7 @@ public class Methods {
             parameterTypes = new Class<?>[k - n];
             System.arraycopy(expectedParameterTypes, n, parameterTypes, 0, parameterTypes.length);
         }
-        return MethodHandles.explicitCastArguments(MethodHandles.dropArguments(target, n, parameterTypes), resultType);
+        return explicitCastArguments(dropArguments(target, n, parameterTypes), resultType);
     }
 
     /**
@@ -471,8 +471,8 @@ public class Methods {
             return target.asType(target.type().changeReturnType(void.class));
         }
         Class<?> r = target.type().returnType();
-        MethodHandle returnHandle = MethodHandles.empty(r == void.class ? methodType(returnType) : methodType(returnType, r));
-        return MethodHandles.filterReturnValue(target, returnHandle);
+        MethodHandle returnHandle = r == void.class ? zero(returnType) : empty(methodType(returnType, r));
+        return filterReturnValue(target, returnHandle);
     }
 
     /**
@@ -483,7 +483,7 @@ public class Methods {
      */
     public static MethodHandle instanceCheck(Class<?> check) {
         if (check.isPrimitive()) {
-            return MethodHandles.dropArguments(FALSE, 0, Object.class);
+            return dropArguments(FALSE, 0, Object.class);
         }
         if (Object.class.equals(check)) {
             return notNullCheck;
@@ -496,8 +496,8 @@ public class Methods {
 
     }
 
-    public static final MethodHandle FALSE = MethodHandles.constant(boolean.class, false);
-    public static final MethodHandle TRUE = MethodHandles.constant(boolean.class, true);
+    public static final MethodHandle FALSE = constant(boolean.class, false);
+    public static final MethodHandle TRUE = constant(boolean.class, true);
 
     /**
      * Combines a list of conditions by and.
@@ -522,7 +522,7 @@ public class Methods {
             return handles[start];
         }
         MethodHandle remaining = and(handles, start + 1);
-        return MethodHandles.guardWithTest(handles[start], remaining, acceptThese(FALSE, remaining.type().parameterArray()));
+        return guardWithTest(handles[start], remaining, acceptThese(FALSE, remaining.type().parameterArray()));
     }
 
     /**
@@ -548,7 +548,7 @@ public class Methods {
             return handles[start];
         }
         MethodHandle remaining = or(handles, start + 1);
-        return MethodHandles.guardWithTest(handles[start], acceptThese(TRUE, remaining.type().parameterArray()), remaining);
+        return guardWithTest(handles[start], acceptThese(TRUE, remaining.type().parameterArray()), remaining);
     }
 
     /**
@@ -616,10 +616,10 @@ public class Methods {
             throw new IllegalArgumentException(exceptionTypeToThrow.getName() + " should have a public constructor accepting a String", ex);
         }
         exceptionConstructor = exceptionConstructor.bindTo(message);
-        MethodHandle throwException = MethodHandles.throwException(type.returnType(), exceptionTypeToThrow);
-        throwException = MethodHandles.collectArguments(throwException, 0, exceptionConstructor);
-        MethodHandle nullCase  = MethodHandles.dropArguments(throwException, 0, type.parameterArray());
-        return checkForNullValues(target, argumentTester(type, argumentIndexes), (t, g) -> MethodHandles.guardWithTest(g, nullCase, t));
+        MethodHandle throwException = throwException(type.returnType(), exceptionTypeToThrow);
+        throwException = collectArguments(throwException, 0, exceptionConstructor);
+        MethodHandle nullCase  = dropArguments(throwException, 0, type.parameterArray());
+        return checkForNullValues(target, argumentTester(type, argumentIndexes), (t, g) -> guardWithTest(g, nullCase, t));
     }
 
     /**
@@ -659,7 +659,7 @@ public class Methods {
                 continue;
             }
             MethodHandle nullCheck = nullCheck(p);
-            MethodHandle checkArgI = MethodHandles.permuteArguments(nullCheck, nullCheckType, i - 1);
+            MethodHandle checkArgI = permuteArguments(nullCheck, nullCheckType, i - 1);
             checks[checkCount++] = checkArgI;
         }
         if (checkCount == 0) {
@@ -677,7 +677,7 @@ public class Methods {
     /**
      * A handle that accepts nothing, returns nothing, and does nothing.
      */
-    public static final MethodHandle DO_NOTHING = MethodHandles.constant(Void.class, null).asType(methodType(void.class));
+    public static final MethodHandle DO_NOTHING = constant(Void.class, null).asType(methodType(void.class));
 
     /**
      * Creates a method handle that invokes its target only if the guard returns false.
@@ -688,7 +688,7 @@ public class Methods {
      * or a zero-like value if the guard returned false.
      */
     public static MethodHandle rejectIf(MethodHandle target, MethodHandle guard) {
-        return MethodHandles.guardWithTest(guard, MethodHandles.empty(target.type()), target);
+        return guardWithTest(guard, empty(target.type()), target);
     }
 
     /**
@@ -700,7 +700,7 @@ public class Methods {
      * or a zero-like value if the guard returned false.
      */
     public static MethodHandle invokeOnlyIf(MethodHandle target, MethodHandle guard) {
-        return MethodHandles.guardWithTest(guard, target, MethodHandles.empty(target.type()));
+        return guardWithTest(guard, target, empty(target.type()));
     }
 
     /**
@@ -788,11 +788,11 @@ public class Methods {
         checkArgumentLength(targetType, argumentNumber);
         MethodHandle dontReturnAnything = target.asType(targetType.changeReturnType(void.class));
         Class<?> parameterType = targetType.parameterType(argumentNumber);
-        MethodHandle identityOfPos = MethodHandles.identity(parameterType);
+        MethodHandle identityOfPos = identity(parameterType);
         if (targetType.parameterCount() > 1) {
-            identityOfPos = MethodHandles.permuteArguments(identityOfPos, targetType.changeReturnType(parameterType), argumentNumber);
+            identityOfPos = permuteArguments(identityOfPos, targetType.changeReturnType(parameterType), argumentNumber);
         }
-        return MethodHandles.foldArguments(identityOfPos, dontReturnAnything);
+        return foldArguments(identityOfPos, dontReturnAnything);
     }
 
     public static MethodHandle permute(MethodHandle target, MethodType type) {
@@ -808,7 +808,7 @@ public class Methods {
             newParameterTypes[i] = original;
         }
 
-        return MethodHandles.permuteArguments(target.asType(methodType(type.returnType(), newParameterTypes)), type, indexes);
+        return permuteArguments(target.asType(methodType(type.returnType(), newParameterTypes)), type, indexes);
     }
 
     private static int findBestMatchingParameter(MethodType type, Class<?> lookFor, int pos) {
@@ -1107,7 +1107,7 @@ public class Methods {
             throw new InternalError(ex);
         }
         MethodHandle executeAndRelease = doFinally(target, release);
-        MethodHandle synced = MethodHandles.foldArguments(executeAndRelease, acquire);
+        MethodHandle synced = foldArguments(executeAndRelease, acquire);
 
         if (target.isVarargsCollector()) {
             synced = synced.asVarargsCollector(type.parameterType(type.parameterCount() - 1));
@@ -1124,21 +1124,21 @@ public class Methods {
      * </ol>
      *
      * @param target The main block which is guarded by a catch clause
-     * @param finallyBlock The block to execute after target; must not return a value, and may accept the same or less parameters than the target
+     * @param finallyBlock The block to execute after target; will not return a value, and may accept the same or less parameters than the target
      * @return A handle of the exact same type as target
      */
     public static MethodHandle doFinally(MethodHandle target, MethodHandle finallyBlock) {
         MethodHandle cleanup = acceptThese(finallyBlock, target.type().parameterArray());
         Class<?> returnType = target.type().returnType();
         if (returnType == void.class) {
-            cleanup = MethodHandles.dropArguments(cleanup, 0, Throwable.class);
+            cleanup = dropArguments(cleanup, 0, Throwable.class);
             cleanup = cleanup.asType(cleanup.type().changeReturnType(void.class));
         } else {
-            cleanup = MethodHandles.dropArguments(cleanup, 0, Throwable.class, returnType);
+            cleanup = dropArguments(cleanup, 0, Throwable.class, returnType);
             cleanup = returnArgument(cleanup, 1);
         }
 
-        return MethodHandles.tryFinally(target, cleanup);
+        return tryFinally(target, cleanup);
     }
 
     /**
@@ -1244,8 +1244,8 @@ public class Methods {
             h = shiftArgument(h, parameterIndex, 0);
         }
 
-        h = MethodHandles.dropArguments(h, 1, Iterable.class);
-        h = MethodHandles.iteratedLoop(null, null, h);
+        h = dropArguments(h, 1, Iterable.class);
+        h = iteratedLoop(null, null, h);
         h = shiftArgument(h, 0, parameterIndex);
         targetType = h.type();
         return target.isVarargsCollector() && parameterIndex < targetType.parameterCount() - 1 ?
@@ -1276,14 +1276,14 @@ public class Methods {
             } catch (Throwable t) {
                 throw new UndeclaredThrowableException(t);
             }
-            return MethodHandles.insertArguments(forEach, 1, action);
+            return insertArguments(forEach, 1, action);
         } else {
             // result has leading arguments, needs to create lambda on the fly
             MethodType targetType = target.type();
             Class<?>[] leadingTypes = Arrays.copyOf(targetType.parameterArray(), targetType.parameterCount() - 1);
-            MethodHandle factory = MethodHandles.exactInvoker(methodType(Consumer.class, leadingTypes)).bindTo(lambdaFactory);
-            factory = MethodHandles.insertArguments(factory, 0, leadingArguments);
-            MethodHandle result = MethodHandles.collectArguments(forEach, 1, factory);
+            MethodHandle factory = exactInvoker(methodType(Consumer.class, leadingTypes)).bindTo(lambdaFactory);
+            factory = insertArguments(factory, 0, leadingArguments);
+            MethodHandle result = collectArguments(forEach, 1, factory);
             return shiftArgument(result, 0, parameterIndex - numberOfLeadingArguments);
         }
     }
@@ -1299,13 +1299,13 @@ public class Methods {
         int remainingCount = leadingArguments.length - parameterIndex;
         if (remainingCount > 0) {
             // Index is between leading attributes
-            target = MethodHandles.insertArguments(target, 0, Arrays.copyOf(leadingArguments, parameterIndex));
+            target = insertArguments(target, 0, Arrays.copyOf(leadingArguments, parameterIndex));
             Object[] remainingLeadingArguments = new Object[remainingCount];
             System.arraycopy(leadingArguments, parameterIndex, remainingLeadingArguments, 0, remainingCount);
-            target = MethodHandles.insertArguments(target, 1, remainingLeadingArguments);
+            target = insertArguments(target, 1, remainingLeadingArguments);
         } else {
             // Leading attributes can be added directly
-            target = MethodHandles.insertArguments(target, 0, leadingArguments);
+            target = insertArguments(target, 0, leadingArguments);
         }
         return target;
     }
@@ -1361,9 +1361,9 @@ public class Methods {
         Class<?> returnType = targetType.returnType();
         Class<?> arrayType = toArrayType(targetType.parameterType(parameterIndex));
 
-        MethodHandle getValue = MethodHandles.arrayElementGetter(arrayType);
+        MethodHandle getValue = arrayElementGetter(arrayType);
         MethodHandle arrayLength = createArrayLengthGetter(arrayType, targetType, parameterIndex);
-        MethodHandle body = MethodHandles.collectArguments(target, parameterIndex, getValue);
+        MethodHandle body = collectArguments(target, parameterIndex, getValue);
 
         MethodType bodyType;
         MethodHandle init;
@@ -1377,9 +1377,9 @@ public class Methods {
             bodyType = body.type().insertParameterTypes(0, int.class);
         } else {
             Class<?> returnedArrayType = toArrayType(returnType);
-            init = MethodHandles.filterReturnValue(arrayLength, MethodHandles.arrayConstructor(returnedArrayType));
-            MethodHandle setter = returnArgument(MethodHandles.arrayElementSetter(returnedArrayType), 0);
-            body = MethodHandles.collectArguments(setter, 2, body); // (V,index,0..n-1,array,index,n+1..m)V
+            init = filterReturnValue(arrayLength, arrayConstructor(returnedArrayType));
+            MethodHandle setter = returnArgument(arrayElementSetter(returnedArrayType), 0);
+            body = collectArguments(setter, 2, body); // (V,index,0..n-1,array,index,n+1..m)V
             // Expected: (V,index,0..n-1,array,n+1..m)V
             startIndex = 0;
             indexPosition = 1;
@@ -1393,9 +1393,9 @@ public class Methods {
         for (int i=startIndex; i < pCount; i++) {
             indexes[i-startIndex] = i < additionalIndexPosition ? i : (i == additionalIndexPosition ? indexPosition : i-1);
         }
-        body = MethodHandles.permuteArguments(body, bodyType, indexes);
+        body = permuteArguments(body, bodyType, indexes);
 
-        MethodHandle loop = MethodHandles.countedLoop(start(), arrayLength, init, body);
+        MethodHandle loop = countedLoop(start(), arrayLength, init, body);
         if (parameterIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
             return loop.asVarargsCollector(loop.type().parameterType(loop.type().parameterCount() - 1));
         }
@@ -1404,12 +1404,12 @@ public class Methods {
     }
 
     private static MethodHandle createArrayLengthGetter(Class<?> arrayType, MethodType type, int parameterIndex) {
-        MethodHandle getter = MethodHandles.arrayLength(arrayType);
+        MethodHandle getter = arrayLength(arrayType);
         return moveSingleArgumentTo(getter, type, parameterIndex);
     }
 
     private static MethodHandle moveSingleArgumentTo(MethodHandle target, MethodType type, int index) {
-        return MethodHandles.dropArguments(target, 0, Arrays.copyOf(type.parameterArray(), index));
+        return dropArguments(target, 0, Arrays.copyOf(type.parameterArray(), index));
     }
 
     private static Class<?> toArrayType(Class<?> componentType) {
@@ -1445,7 +1445,7 @@ public class Methods {
      */
     public static MethodHandle reduceArray(MethodHandle target, int arrayIndex, int invariantIndex) {
         return reduceArray0(target, arrayIndex, invariantIndex,
-                (t, i) -> moveSingleArgumentTo(MethodHandles.identity(i), t, invariantIndex), true);
+                (t, i) -> moveSingleArgumentTo(identity(i), t, invariantIndex), true);
     }
 
 
@@ -1481,7 +1481,7 @@ public class Methods {
      */
     public static MethodHandle reduceArray(MethodHandle target, int arrayIndex, int invariantIndex, @Nullable Object initialValue) {
         return reduceArray0(target, arrayIndex, invariantIndex,
-                (t, i) -> initialValue == null ? null : MethodHandles.constant(i, initialValue), false);
+                (t, i) -> initialValue == null ? null : constant(i, initialValue), false);
     }
 
     private static MethodHandle reduceArray0(MethodHandle target, int arrayIndex, int invariantIndex,
@@ -1501,8 +1501,8 @@ public class Methods {
         Class<?> invariantType = targetType.parameterType(invariantIndex);
         MethodHandle h = target.asType(targetType.changeReturnType(invariantType));
 
-        MethodHandle getValue = MethodHandles.arrayElementGetter(arrayType);
-        MethodHandle body = MethodHandles.collectArguments(h, arrayIndex, getValue);
+        MethodHandle getValue = arrayElementGetter(arrayType);
+        MethodHandle body = collectArguments(h, arrayIndex, getValue);
         // Actual: (0..n-1,array,index,n+1..m-1,V,m+1...o)V
         // Expected: (V,index,0..n-1,array,n+1..m)V
 
@@ -1536,11 +1536,11 @@ public class Methods {
                 newInvariantIndex++;
             }
         }
-        body = MethodHandles.permuteArguments(body, bodyType, indexes);
+        body = permuteArguments(body, bodyType, indexes);
 
-        MethodHandle end = moveSingleArgumentTo(MethodHandles.arrayLength(arrayType), outerType, outerArrayPos);
+        MethodHandle end = moveSingleArgumentTo(arrayLength(arrayType), outerType, outerArrayPos);
         MethodHandle init = initFactory.apply(outerType, invariantType);
-        MethodHandle loop = MethodHandles.countedLoop(start(), end, init, body);
+        MethodHandle loop = countedLoop(start(), end, init, body);
         outerType = outerType.changeReturnType(returnType);
         loop = loop.asType(outerType);
         if (arrayIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
@@ -1551,7 +1551,7 @@ public class Methods {
     }
 
     private static MethodHandle start() {
-        return MethodHandles.constant(int.class, 0);
+        return constant(int.class, 0);
     }
 
     /**
@@ -1593,7 +1593,7 @@ public class Methods {
         }
 
         permutations[fromIndex] = toIndex;
-        return MethodHandles.permuteArguments(target, methodType(type.returnType(), newArguments), permutations);
+        return permuteArguments(target, methodType(type.returnType(), newArguments), permutations);
     }
 
     private static Method findSingleMethodIn(Lookup lookup, Class<?> type, MethodType reference) {
@@ -1798,7 +1798,7 @@ public class Methods {
             if (initializers.length == 0) {
                 handle = targetMethod;
             } else {
-                handle = MethodHandles.insertArguments(targetMethod, 0, initializers);
+                handle = insertArguments(targetMethod, 0, initializers);
             }
             return MethodHandleProxies.asInterfaceInstance(lambdaType, handle);
         }

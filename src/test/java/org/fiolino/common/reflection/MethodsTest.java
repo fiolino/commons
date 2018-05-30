@@ -9,6 +9,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.concurrent.Semaphore;
@@ -1476,6 +1477,25 @@ class MethodsTest {
         MethodHandle stringsToInts = Methods.collectArray(stringToInt, 0);
         stringsToInts = MethodHandles.filterArguments(stringsToInts, 0, split);
         return MethodHandles.filterArguments(target, index, stringsToInts);
+    }
+
+    @Test
+    void testCalculateMedian() throws Throwable {
+        MethodHandle add = publicLookup().findVirtual(BigDecimal.class, "add", methodType(BigDecimal.class, BigDecimal.class));
+        MethodHandle fromString = publicLookup().findConstructor(BigDecimal.class, methodType(void.class, String.class));
+        add = MethodHandles.filterArguments(add, 1, fromString);
+        MethodHandle sumOfAll = Methods.reduceArray(add, 1, 0, BigDecimal.ZERO);
+        MethodHandle divide = publicLookup().findVirtual(BigDecimal.class, "divide", methodType(BigDecimal.class, BigDecimal.class));
+        MethodHandle fromInt = publicLookup().findStatic(BigDecimal.class, "valueOf", methodType(BigDecimal.class, long.class)).asType(methodType(BigDecimal.class, int.class));
+        divide = MethodHandles.filterArguments(divide, 1, fromInt);
+        divide = MethodHandles.filterArguments(divide, 1, MethodHandles.arrayLength(String[].class));
+        MethodHandle median = MethodHandles.foldArguments(divide, sumOfAll);
+        MethodHandle split = publicLookup().findVirtual(String.class, "split", methodType(String[].class, String.class));
+        split = MethodHandles.insertArguments(split, 1, ",");
+        median = MethodHandles.filterArguments(median, 0, split);
+
+        BigDecimal result = (BigDecimal) median.invokeExact("1,17.4,-11.667,25.11014,3.141598,11.03");
+        assertEquals(new BigDecimal("7.669123"), result);
     }
 
     @Test

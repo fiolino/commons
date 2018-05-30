@@ -1335,7 +1335,7 @@ public class Methods {
 
     /**
      * Creates a handle that iterates over some array instance instead of the original parameter at the given index.
-     * The return values of each iteration is collected into an array of the exact same length as the input array.
+     * The return values of each iteration step is collected into an array of the exact same length as the input array.
      *
      * The given target handle will be called for each element in the given array. The array's component type will be
      * the same as the original argument type. The return type is the same array type.
@@ -1425,11 +1425,11 @@ public class Methods {
      * the same as the original argument type.
      *
      * You have to specify two parameter indexes: the first one specifies the argument which shall be converted to an
-     * array, and the second one specifies the argument which receives the result value of previous loop iterations.
+     * array, and the second one specifies the argument which receives the result value of previous loop iteration steps.
      *
      * As a consequence, the original target will be called with identical parameter values except the one at the
      * array index, which is filled with the array values, and the one at the invariant index, which will get the
-     * parameter of the loop call in the first iteration, and the result value of the previous iteration on every
+     * parameter of the loop call in the first iteration step, and the result value of the previous step on every
      * successive execution.
      *
      * Let (a0, ... aP, aP+1, ... aM-1)R be the target type, where P is the array index of the iterated value,
@@ -1458,11 +1458,11 @@ public class Methods {
      * the same as the original argument type. The initial value will usually be the neutral element of the called operation.
      *
      * You have to specify two parameter indexes: the first one specifies the argument which shall be converted to an
-     * array, and the second one specifies the argument which receives the result value of previous loop iterations.
+     * array, and the second one specifies the argument which receives the result value of previous loop iteration steps.
      *
      * As a consequence, the original target will be called with identical parameter values except the one at the
      * array index, which is filled with the array values, and the one at the invariant index, which will get the
-     * initial value in the first iteration, and the result value of the previous iteration on every
+     * initial value in the first iteration step, and the result value of the previous step on every
      * successive execution.
      *
      * Let (a0, ... aP, aP+1, ... aI, aI+1, ... aM-1)R be the target type, where P is the array index of the iterated

@@ -1481,20 +1481,32 @@ class MethodsTest {
 
     @Test
     void testCalculateMedian() throws Throwable {
+        // Fastest way: Only one iteration
         MethodHandle add = publicLookup().findVirtual(BigDecimal.class, "add", methodType(BigDecimal.class, BigDecimal.class));
         MethodHandle fromString = publicLookup().findConstructor(BigDecimal.class, methodType(void.class, String.class));
-        add = MethodHandles.filterArguments(add, 1, fromString);
-        MethodHandle sumOfAll = Methods.reduceArray(add, 1, 0, BigDecimal.ZERO);
+        MethodHandle addString = MethodHandles.filterArguments(add, 1, fromString);
+        MethodHandle sumOfAll = Methods.reduceArray(addString, 1, 0, BigDecimal.ZERO); // (String[])BigDecimal
         MethodHandle divide = publicLookup().findVirtual(BigDecimal.class, "divide", methodType(BigDecimal.class, BigDecimal.class));
         MethodHandle fromInt = publicLookup().findStatic(BigDecimal.class, "valueOf", methodType(BigDecimal.class, long.class)).asType(methodType(BigDecimal.class, int.class));
         divide = MethodHandles.filterArguments(divide, 1, fromInt);
-        divide = MethodHandles.filterArguments(divide, 1, MethodHandles.arrayLength(String[].class));
-        MethodHandle median = MethodHandles.foldArguments(divide, sumOfAll);
+        MethodHandle divideArrayLength = MethodHandles.filterArguments(divide, 1, MethodHandles.arrayLength(String[].class));
+        MethodHandle median = MethodHandles.foldArguments(divideArrayLength, sumOfAll);
         MethodHandle split = publicLookup().findVirtual(String.class, "split", methodType(String[].class, String.class));
         split = MethodHandles.insertArguments(split, 1, ",");
         median = MethodHandles.filterArguments(median, 0, split);
 
         BigDecimal result = (BigDecimal) median.invokeExact("1,17.4,-11.667,25.11014,3.141598,11.03");
+        assertEquals(new BigDecimal("7.669123"), result);
+
+        // Alternative way: First convert to BigDecimal array, then sum up
+        sumOfAll = Methods.reduceArray(add, 1, 0, BigDecimal.ZERO); // (BigDecimal[])BigDecimal
+        fromString = Methods.collectArray(fromString, 0); // (String[])BigDecimal[]
+        divideArrayLength = MethodHandles.filterArguments(divide, 1, MethodHandles.arrayLength(BigDecimal[].class));
+        median = MethodHandles.foldArguments(divideArrayLength, sumOfAll);
+        median = MethodHandles.filterArguments(median, 0, fromString);
+        median = MethodHandles.filterArguments(median, 0, split);
+
+        result = (BigDecimal) median.invokeExact("1,17.4,-11.667,25.11014,3.141598,11.03");
         assertEquals(new BigDecimal("7.669123"), result);
     }
 

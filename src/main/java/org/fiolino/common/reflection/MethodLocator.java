@@ -7,6 +7,7 @@ import org.fiolino.common.util.Strings;
 import javax.annotation.Nullable;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.*;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
@@ -88,7 +89,7 @@ public final class MethodLocator {
         }
         Class<?> type = field.getType();
         Class<?> owner = field.getDeclaringClass();
-        return forLocal(lookup, owner).findGetter(field.getName(), type, additionalTypes);
+        return forLocal(lookup, owner).findGetter(field.getName(), type, field, additionalTypes);
     }
 
     /**
@@ -108,34 +109,43 @@ public final class MethodLocator {
      */
     @Nullable
     public MethodHandle findGetter(String fieldName, Class<?> type, Class<?>... additionalTypes) {
+        return findGetter(fieldName, type, null, additionalTypes);
+    }
+
+    @Nullable
+    private MethodHandle findGetter(String fieldName, Class<?> fieldType, Field field, Class<?>... additionalTypes) {
         String name = Strings.addLeading(fieldName, "get");
         return attachTo(onTop -> {
             String n = name;
-            MethodHandle h = findGetter0(n, type, onTop);
-            if (h == null && (type == boolean.class || type == Boolean.class)) {
+            MethodHandle h = findGetter0(n, fieldType, onTop);
+            if (h == null && (fieldType == boolean.class || fieldType == Boolean.class)) {
                 n = fieldName;
                 if (!n.startsWith("is") || n.length() > 2 && Character.isLowerCase(n.charAt(2))) {
                     n = Strings.addLeading(fieldName, "is");
                 }
-                h = findGetter0(n, type, onTop);
+                h = findGetter0(n, fieldType, onTop);
             }
             if (h == null) {
                 // Look for a method with the exact same name
-                h = findGetter0(fieldName, type, onTop);
+                h = findGetter0(fieldName, fieldType, onTop);
             }
             return h;
         }, additionalTypes, () -> {
             // Look for the direct field getter
             try {
-                return lookup.findGetter(type, fieldName, type);
-            } catch (NoSuchFieldException | IllegalAccessException ex) {
-                // Then the field's just not accessible, or there is no such field
+                return lookup.findGetter(type, fieldName, fieldType);
+            } catch (NoSuchFieldException ex) {
+                // Then there is no such field
                 return null;
+            } catch (IllegalAccessException ex) {
+                // Try to make it accessible
+                return tryUnreflectField(fieldName, fieldType, field, lookup::unreflectGetter, MethodType::returnType);
             }
         });
     }
 
-    private MethodHandle attachTo(Function<Class<?>[], MethodHandle> handleFactory, Class<?>[] additionalTypes, Supplier<MethodHandle> alternative) {
+    private MethodHandle attachTo(Function<Class<?>[], MethodHandle> handleFactory, Class<?>[] additionalTypes,
+                                  Supplier<MethodHandle> alternative) {
         int missing = 0;
         MethodHandle handle;
         int n = additionalTypes.length;
@@ -199,7 +209,7 @@ public final class MethodLocator {
         types[0] = field.getType();
         System.arraycopy(additionalTypes, 0, types, 1, n);
         Class<?> owner = field.getDeclaringClass();
-        return forLocal(lookup, owner).findSetter(field.getName(), types);
+        return forLocal(lookup, owner).findSetter(field.getName(), field, types);
     }
 
     /**
@@ -220,6 +230,11 @@ public final class MethodLocator {
      */
     @Nullable
     public MethodHandle findSetter(String fieldName, Class<?>... types) {
+        return findSetter(fieldName, null, types);
+    }
+
+    @Nullable
+    private MethodHandle findSetter(String fieldName, Field field, Class<?>... types) {
         String name = Strings.addLeading(fieldName, "set");
         return attachTo(params -> {
             String n = name;
@@ -246,22 +261,58 @@ public final class MethodLocator {
             // Try to find the direct field setter
             try {
                 return lookup.findSetter(type, fieldName, types[0]);
-            } catch (NoSuchFieldException | IllegalAccessException ex) {
-                // Then the field's just not accessible, or there is no such field
+            } catch (NoSuchFieldException ex) {
+                // Then there is no such field
                 return null;
+            } catch (IllegalAccessException ex) {
+                // Try to make it accessible
+                return tryUnreflectField(fieldName, types[0], field, lookup::unreflectSetter, t -> t.parameterType(1));
             }
         });
+    }
+
+    @FunctionalInterface
+    private interface Unreflector {
+        MethodHandle unreflect(Field f) throws IllegalAccessException;
+    }
+
+    private MethodHandle tryUnreflectField(String fieldName, Class<?> fieldType, Field field, Unreflector unreflector, Function<MethodType, Class<?>> typeChecker) {
+        if (field == null) {
+            try {
+                field = type.getDeclaredField(fieldName);
+            } catch (NoSuchFieldException ex) {
+                // Could be if class itself was not accessible
+                return null;
+            }
+        }
+        if (Modifier.isStatic(field.getModifiers())) {
+            return null;
+        }
+        if (makeAccessible(field)) {
+            MethodHandle setter;
+            try {
+                setter = unreflector.unreflect(field);
+            } catch (IllegalAccessException ex) {
+                throw new AssertionError(fieldName + " was made accessible but it's still not", ex);
+            }
+            if (!typeChecker.apply(setter.type()).equals(fieldType)) {
+                // Could be if class itself was not accessible
+                return null;
+            }
+            return setter;
+        }
+
+        Methods.warn(fieldType.getName() + "." + fieldName + " is not accessible");
+        return null; // Couldn't be made accessible
     }
 
     @Nullable
     private MethodHandle findSetter0(String name, Class<?>... types) {
         try {
             return lookup.findVirtual(type, name, methodType(void.class, types));
-        } catch (NoSuchMethodException ex) {
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
             // Then there is none
             return null;
-        } catch (IllegalAccessException ex) {
-            throw new AssertionError("Cannot access setter for " + name, ex);
         }
     }
 
@@ -269,11 +320,20 @@ public final class MethodLocator {
     private MethodHandle findGetter0(String name, Class<?> varType, Class<?>[] additionalTypes) {
         try {
             return lookup.findVirtual(type, name, methodType(varType, additionalTypes));
-        } catch (NoSuchMethodException ex) {
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
             // Then try next
             return null;
-        } catch (IllegalAccessException ex) {
-            throw new AssertionError("Cannot access getter for " + name, ex);
+        }
+    }
+
+    private boolean makeAccessible(Field field) {
+        try {
+            return AccessController.doPrivileged((PrivilegedAction<Boolean>)() -> {
+                field.setAccessible(true);
+                return true;
+            });
+        } catch (SecurityException ex) {
+            return false;
         }
     }
 

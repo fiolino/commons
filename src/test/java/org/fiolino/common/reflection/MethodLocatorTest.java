@@ -4,11 +4,13 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
 import static java.lang.invoke.MethodHandles.lookup;
+import static java.lang.invoke.MethodHandles.privateLookupIn;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -122,5 +124,70 @@ class MethodLocatorTest {
         assertEquals("Hello World", testList.get(0));
         int doubledSize = (int) handles[1].invokeExact(testList);
         assertEquals(2, doubledSize);
+    }
+
+    private static class PrivateClass {
+        private String privateField;
+        private static String staticField;
+    }
+
+    @Test
+    void testPrivateFieldByName() throws Throwable {
+        MethodLocator locator = MethodLocator.forPublic(PrivateClass.class);
+        MethodHandle getter = locator.findGetter("privateField", String.class);
+        assertNotNull(getter);
+        assertEquals(MethodType.methodType(String.class, PrivateClass.class), getter.type());
+        PrivateClass instance = new PrivateClass();
+        instance.privateField = "initial";
+        String value = (String) getter.invokeExact(instance);
+        assertEquals("initial", value);
+
+        MethodHandle setter = locator.findSetter("privateField", String.class);
+        assertNotNull(setter);
+        assertEquals(MethodType.methodType(void.class, PrivateClass.class, String.class), setter.type());
+        setter.invokeExact(instance, "new value");
+        assertEquals("new value", instance.privateField);
+    }
+
+    @Test
+    void testPrivateFieldByField() throws Throwable {
+        Field field = PrivateClass.class.getDeclaredField("privateField");
+        MethodHandle getter = MethodLocator.findGetter(field);
+        assertNotNull(getter);
+        assertEquals(MethodType.methodType(String.class, PrivateClass.class), getter.type());
+        PrivateClass instance = new PrivateClass();
+        instance.privateField = "initial";
+        String value = (String) getter.invokeExact(instance);
+        assertEquals("initial", value);
+
+        MethodHandle setter = MethodLocator.findSetter(field);
+        assertNotNull(setter);
+        assertEquals(MethodType.methodType(void.class, PrivateClass.class, String.class), setter.type());
+        setter.invokeExact(instance, "new value");
+        assertEquals("new value", instance.privateField);
+    }
+
+    @Test
+    void testNoStaticFields() throws NoSuchFieldException {
+        Field staticField = PrivateClass.class.getDeclaredField("staticField");
+        MethodHandle getter = MethodLocator.findGetter(staticField);
+        assertNull(getter);
+
+        getter = MethodLocator.forLocal(LOOKUP, PrivateClass.class).findGetter("staticField", String.class);
+        assertNull(getter);
+    }
+
+    @Test
+    void testNoSuchField() {
+        MethodLocator locator = MethodLocator.forPublic(PrivateClass.class);
+        MethodHandle getter = locator.findGetter("cofeve", String.class);
+        assertNull(getter);
+        MethodHandle setter = locator.findSetter("cofeve", String.class);
+        assertNull(setter);
+
+        getter = locator.findGetter("privateField", Object.class);
+        assertNull(getter);
+        setter = locator.findSetter("privateField", Object.class);
+        assertNull(setter);
     }
 }

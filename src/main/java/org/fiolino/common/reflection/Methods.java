@@ -12,7 +12,6 @@ import java.security.PrivilegedAction;
 import java.util.*;
 import java.util.concurrent.Semaphore;
 import java.util.function.*;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static java.lang.invoke.MethodHandles.*;
@@ -23,9 +22,23 @@ import static java.lang.invoke.MethodType.methodType;
  * <p>
  * Created by Michael Kuhlmann on 14.12.2015.
  */
-public class Methods {
+public final class Methods {
 
-    private static final Logger logger = Logger.getLogger(Methods.class.getName());
+    private static final Logger JDK_LOGGER = Logger.getLogger(Methods.class.getName());
+
+    private static Consumer<String> logger = JDK_LOGGER::warning;
+
+    private Methods() {
+        throw new AssertionError();
+    }
+
+    public static void setLogger(Consumer<String> logger) {
+        Methods.logger = logger;
+    }
+
+    static void warn(String message) {
+        logger.accept(message);
+    }
 
     private static final MethodHandle nullCheck;
     private static final MethodHandle notNullCheck;
@@ -214,7 +227,7 @@ public class Methods {
 
     private static void put(Map<String, Object> map, String key, Object value) {
         if (map.containsKey(key)) {
-            logger.log(Level.WARNING, () -> "Key " + key + " was already defined for " + map.get(key));
+            warn("Key " + key + " was already defined for " + map.get(key));
             return;
         }
         map.put(key, value);
@@ -351,30 +364,30 @@ public class Methods {
                                                         MethodHandle exceptionHandler, Object... injections) {
         MethodType targetType = target.type();
         MethodHandle handlerHandle = exceptionHandler.asCollector(Object[].class, injections.length + targetType.parameterCount());
-        handlerHandle = insertArgumentsOrSuppliers(handlerHandle, 1, injections);
+        handlerHandle = insertArgumentsOrSuppliers(handlerHandle, injections);
         handlerHandle = changeNullSafeReturnType(handlerHandle, targetType.returnType());
         handlerHandle = handlerHandle.asType(targetType.insertParameterTypes(0, catchedExceptionType));
 
         return catchException(target, catchedExceptionType, handlerHandle);
     }
 
-    private static MethodHandle insertArgumentsOrSuppliers(MethodHandle handle, int pos, Object[] injections) {
+    private static MethodHandle insertArgumentsOrSuppliers(MethodHandle handle, Object[] injections) {
         for (Object i : injections) {
             if (i instanceof Supplier) {
-                return insertSuppliers(handle, pos, injections);
+                return insertSuppliers(handle, injections);
             }
         }
-        return insertArguments(handle, pos, injections);
+        return insertArguments(handle, 1, injections);
     }
 
-    private static MethodHandle insertSuppliers(MethodHandle handle, int pos, Object[] injections) {
+    private static MethodHandle insertSuppliers(MethodHandle handle, Object[] injections) {
         MethodHandle h = handle;
         for (Object i : injections) {
             if (i instanceof Supplier) {
                 MethodHandle get = MethodLocator.findUsing(Supplier.class, Supplier::get).bindTo(i);
-                h = collectArguments(h, pos, get);
+                h = collectArguments(h, 1, get);
             } else {
-                h = insertArguments(h, pos, i);
+                h = insertArguments(h, 1, i);
             }
         }
 

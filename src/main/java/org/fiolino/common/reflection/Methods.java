@@ -1292,12 +1292,9 @@ public final class Methods {
             return insertArguments(forEach, 1, action);
         } else {
             // result has leading arguments, needs to create lambda on the fly
-            MethodType targetType = target.type();
-            Class<?>[] leadingTypes = Arrays.copyOf(targetType.parameterArray(), targetType.parameterCount() - 1);
-            MethodHandle factory = exactInvoker(methodType(Consumer.class, leadingTypes)).bindTo(lambdaFactory);
-            factory = insertArguments(factory, 0, leadingArguments);
-            MethodHandle result = collectArguments(forEach, 1, factory);
-            return shiftArgument(result, 0, parameterIndex - numberOfLeadingArguments);
+            MethodHandle result = collectArguments(forEach, 1, lambdaFactory);
+            result = shiftArgument(result, 0, parameterIndex);
+            return insertArguments(result, 0, leadingArguments);
         }
     }
 

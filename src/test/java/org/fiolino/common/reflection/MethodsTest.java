@@ -1212,6 +1212,42 @@ class MethodsTest {
         assertEquals(40 - 18 + 44 + 77, c4.result);
     }
 
+    public static class InitialSizeReturningArrayList<E> extends ArrayList<E> {
+        final int initialSize;
+
+        public InitialSizeReturningArrayList(int initialCapacity) {
+            super(initialCapacity);
+            this.initialSize = initialCapacity;
+        }
+
+        public InitialSizeReturningArrayList() {
+            this.initialSize = -1;
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testCollectIntoArrayList() throws Throwable {
+        // Has constructor with initial size
+        MethodHandle newDecimal = publicLookup().findConstructor(BigDecimal.class, methodType(void.class, String.class));
+        MethodHandle makeDecimalCollection = Methods.collectInto(newDecimal, List.class, 0, InitialSizeReturningArrayList.class);
+        List<String> strings = Arrays.asList("5", "0.1", "-99.9");
+        InitialSizeReturningArrayList<BigDecimal> decimals = (InitialSizeReturningArrayList<BigDecimal>) makeDecimalCollection.invokeExact(strings);
+        assertEquals(Arrays.asList(new BigDecimal("5"), new BigDecimal("0.1"), new BigDecimal("-99.9")), decimals);
+        assertEquals(3, decimals.initialSize);
+
+        // Has no size information
+        makeDecimalCollection = Methods.collectInto(newDecimal, Iterable.class, 0, InitialSizeReturningArrayList.class);
+        decimals = (InitialSizeReturningArrayList<BigDecimal>) makeDecimalCollection.invokeExact((Iterable<String>) strings);
+        assertEquals(Arrays.asList(new BigDecimal("5"), new BigDecimal("0.1"), new BigDecimal("-99.9")), decimals);
+        assertEquals(-1, decimals.initialSize);
+
+        // Has no constructor with initial size
+        makeDecimalCollection = Methods.collectInto(newDecimal, List.class, 0, LinkedList.class);
+        LinkedList<BigDecimal> decimals2 = (LinkedList<BigDecimal>) makeDecimalCollection.invokeExact(strings);
+        assertEquals(Arrays.asList(new BigDecimal("5"), new BigDecimal("0.1"), new BigDecimal("-99.9")), decimals2);
+    }
+
     @Test
     void testCollectStringArray() throws Throwable {
         MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));

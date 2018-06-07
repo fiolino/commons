@@ -24,20 +24,23 @@ import static java.lang.invoke.MethodType.methodType;
  */
 public final class Methods {
 
-    private static final Logger JDK_LOGGER = Logger.getLogger(Methods.class.getName());
+    private static final String IGNORE_MYSELF = Methods.class.getName();
 
-    private static Consumer<String> logger = JDK_LOGGER::warning;
+    private static BiConsumer<String, String> logger = (c, l) -> Logger.getLogger(c).warning(c + ": " + l);
 
     private Methods() {
         throw new AssertionError();
     }
 
-    public static void setLogger(Consumer<String> logger) {
+    public static void setLogger(BiConsumer<String, String> logger) {
         Methods.logger = logger;
     }
 
     static void warn(String message) {
-        logger.accept(message);
+        String callerName = StackWalker.getInstance().walk(s ->
+                        s.map(StackWalker.StackFrame::getClassName).filter(c -> !IGNORE_MYSELF.equals(c)).findFirst()
+                                .orElseThrow(() -> new AssertionError("Small stack trace")));
+        logger.accept(callerName, message);
     }
 
     private static final MethodHandle nullCheck;
@@ -1253,16 +1256,18 @@ public final class Methods {
         parameterIndex -= numberOfLeadingArguments;
         if (parameterIndex <= 0) {
             parameterIndex = 0;
-        } else {
-            h = shiftArgument(h, parameterIndex, 0);
         }
 
-        h = dropArguments(h, 1, Iterable.class);
-        h = iteratedLoop(null, null, h);
-        h = shiftArgument(h, 0, parameterIndex);
+        h = iterate(h, Iterable.class, parameterIndex);
         targetType = h.type();
-        return target.isVarargsCollector() && parameterIndex < targetType.parameterCount() - 1 ?
-                h.asVarargsCollector(targetType.parameterType(targetType.parameterCount() - 1)) : h;
+        return h.withVarargs(target.isVarargsCollector() && parameterIndex < targetType.parameterCount() - 1);
+    }
+
+    private static MethodHandle iterate(MethodHandle target, Class<? extends Iterable> iterableType, int parameterIndex) {
+        target = shiftArgument(target, parameterIndex, 0);
+        target = dropArguments(target, 1, iterableType);
+        target = iteratedLoop(null, null, target);
+        return shiftArgument(target, 0, parameterIndex);
     }
 
     private static MethodHandle iterateDirectHandle(Lookup lookup, MethodHandle target, int parameterIndex, Object[] leadingArguments) {
@@ -1343,6 +1348,52 @@ public final class Methods {
         return collectArray(target.asType(target.type().changeReturnType(void.class)), parameterIndex);
     }
 
+    public static MethodHandle collectInto(MethodHandle target, Class<? extends Iterable> inputType, int inputPosition, Class<?> outputType) {
+        MethodType targetType = target.type();
+        checkArgumentLength(targetType, inputPosition);
+        if (targetType.returnType() == void.class) {
+            throw new IllegalArgumentException(target + " must not return void");
+        }
+        MethodHandle constructor, add;
+        try {
+            MethodHandle size = publicLookup().findVirtual(inputType, "size", methodType(int.class));
+            try {
+                constructor = publicLookup().findConstructor(outputType, methodType(void.class, int.class));
+                constructor = filterArguments(constructor, 0, size);
+                constructor = moveSingleArgumentTo(constructor, targetType, inputPosition);
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                // No constructor with size initialization
+                constructor = findEmptyConstructor(outputType);
+            }
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            // No size method
+            constructor = findEmptyConstructor(outputType);
+        }
+        try {
+            add = publicLookup().findVirtual(outputType, "add", methodType(boolean.class, Object.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            try {
+                add = publicLookup().findVirtual(outputType, "add", methodType(void.class, Object.class));
+            } catch (NoSuchMethodException | IllegalAccessException ex2) {
+                throw new IllegalArgumentException("No add method in " + outputType.getName(), ex);
+            }
+        }
+
+        add = add.asType(methodType(void.class, outputType, targetType.returnType()));
+        MethodHandle executeAndAdd = collectArguments(add, 1, target);
+        executeAndAdd = iterate(executeAndAdd, inputType, inputPosition + 1);
+        executeAndAdd = returnArgument(executeAndAdd, 0);
+        return foldArguments(executeAndAdd, constructor);
+    }
+
+    private static MethodHandle findEmptyConstructor(Class<?> outputType) {
+        try {
+            return publicLookup().findConstructor(outputType, methodType(void.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new IllegalArgumentException("No suitable constructor in " + outputType.getName(), ex);
+        }
+    }
+
     /**
      * Creates a handle that iterates over some array instance instead of the original parameter at the given index.
      * The return values of each iteration step is collected into an array of the exact same length as the input array.
@@ -1406,11 +1457,7 @@ public final class Methods {
         body = permuteArguments(body, bodyType, indexes);
 
         MethodHandle loop = countedLoop(start(), arrayLength, init, body);
-        if (parameterIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
-            return loop.asVarargsCollector(loop.type().parameterType(loop.type().parameterCount() - 1));
-        }
-
-        return loop;
+        return loop.withVarargs(parameterIndex == targetType.parameterCount() - 1 || target.isVarargsCollector());
     }
 
     private static MethodHandle createArrayLengthGetter(Class<?> arrayType, MethodType type, int parameterIndex) {
@@ -1553,11 +1600,7 @@ public final class Methods {
         MethodHandle loop = countedLoop(start(), end, init, body);
         outerType = outerType.changeReturnType(returnType);
         loop = loop.asType(outerType);
-        if (arrayIndex == targetType.parameterCount() - 1 || target.isVarargsCollector()) {
-            loop = loop.asVarargsCollector(outerType.parameterType(outerType.parameterCount() - 1));
-        }
-
-        return loop;
+        return loop.withVarargs(arrayIndex == targetType.parameterCount() - 1 || target.isVarargsCollector());
     }
 
     private static MethodHandle start() {
@@ -1802,14 +1845,10 @@ public final class Methods {
      */
     public static <T> T lambdafy(Lookup lookup, MethodHandle targetMethod, Class<T> lambdaType, Object... initializers) {
         MethodHandle lambdaFactory = createLambdaFactory(lookup, targetMethod, lambdaType);
-        MethodHandle handle;
         if (lambdaFactory == null) {
+            warn(targetMethod + " is not direct, creating a Proxy for " + lambdaType.getName());
             // Not a direct handle - use normal interface creation
-            if (initializers.length == 0) {
-                handle = targetMethod;
-            } else {
-                handle = insertArguments(targetMethod, 0, initializers);
-            }
+            MethodHandle handle = insertArguments(targetMethod, 0, initializers);
             return MethodHandleProxies.asInterfaceInstance(lambdaType, handle);
         }
         try {

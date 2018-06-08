@@ -1365,6 +1365,41 @@ class MethodsTest {
     }
 
     @Test
+    void testCollectMultiCollectionIntoArray() throws Throwable {
+        MethodHandle append = LOOKUP.bind(this, "appendAll", methodType(String.class, String.class, Object.class, int.class, boolean.class, TimeUnit.class));
+        MethodHandle appendAll = Methods.collectInto(append, SimpleIterable.class, 2, String[].class);
+        String[] result = (String[]) appendAll.invokeExact("start", (Object) ChronoUnit.FOREVER, SimpleIterable.of(1, 2, 3, 4), true, TimeUnit.DAYS);
+        assertArrayEquals(new String[] { "startForever1trueDAYS", "startForever2trueDAYS", "startForever3trueDAYS", "startForever4trueDAYS" }, result);
+    }
+
+    @Test
+    void testCollectCollectionIntoPrimitiveArray() throws Throwable {
+        MethodHandle toInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        MethodHandle convertAll = Methods.collectInto(toInt, List.class, 0, int[].class);
+        int[] result = (int[]) convertAll.invokeExact(Arrays.asList("1103", "2046", "8848", "-199"));
+        assertArrayEquals(new int[] { 1103, 2046, 8848, -199 }, result);
+    }
+
+    public static class ListWithWrongSize implements Iterable<String> {
+        public int size() {
+            return 0;
+        }
+
+        @Override @Nonnull
+        public Iterator<String> iterator() {
+            return Arrays.asList("1103", "2046", "8848", "-199").iterator();
+        }
+    }
+
+    @Test
+    void testCollectCollectionIntoGrowingPrimitiveArray() throws Throwable {
+        MethodHandle toInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        MethodHandle convertAll = Methods.collectInto(toInt, ListWithWrongSize.class, 0, int[].class);
+        int[] result = (int[]) convertAll.invokeExact(new ListWithWrongSize());
+        assertArrayEquals(new int[] { 1103, 2046, 8848, -199 }, result);
+    }
+
+    @Test
     void testCollectStringArray() throws Throwable {
         MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
         MethodHandle concatAll = Methods.collectArray(concat, 1);
@@ -1793,5 +1828,45 @@ class MethodsTest {
         UnaryOperator<String> twelveTimes = factory.createWithCount(12);
         result = twelveTimes.apply("xyz");
         assertEquals("xyzxyzxyzxyzxyzxyzxyzxyzxyzxyzxyzxyz", result);
+    }
+
+    @Test
+    void testArrayCopierObject() {
+        ArrayCopier<Object[]> objectCopier = Methods.createCopier(Object[].class);
+        Object[] arr = {"Hello", "Goodbye"};
+        Object[] arr1 = objectCopier.copyOf(arr, 1);
+        assertArrayEquals(new Object[] {"Hello"}, arr1);
+        Object[] arr4 = objectCopier.copyOf(arr, 4);
+        assertArrayEquals(new Object[] {"Hello", "Goodbye", null, null}, arr4);
+    }
+
+    @Test
+    void testArrayCopierString() {
+        ArrayCopier<String[]> objectCopier = Methods.createCopier(String[].class);
+        String[] arr = {"Hello", "Goodbye"};
+        String[] arr1 = objectCopier.copyOf(arr, 1);
+        assertArrayEquals(new String[] {"Hello"}, arr1);
+        String[] arr4 = objectCopier.copyOf(arr, 4);
+        assertArrayEquals(new String[] {"Hello", "Goodbye", null, null}, arr4);
+    }
+
+    @Test
+    void testArrayCopierInt() {
+        ArrayCopier<int[]> objectCopier = Methods.createCopier(int[].class);
+        int[] arr = {1, 2};
+        int[] arr1 = objectCopier.copyOf(arr, 1);
+        assertArrayEquals(new int[] {1}, arr1);
+        int[] arr4 = objectCopier.copyOf(arr, 4);
+        assertArrayEquals(new int[] {1, 2, 0, 0}, arr4);
+    }
+
+    @Test
+    void testArrayCopierBooleanArray() {
+        ArrayCopier<boolean[][]> objectCopier = Methods.createCopier(boolean[][].class);
+        boolean[][] arr = { {false}, {true, false} };
+        boolean[][] arr1 = objectCopier.copyOf(arr, 1);
+        assertArrayEquals(new boolean[][] { {false} }, arr1);
+        boolean[][] arr4 = objectCopier.copyOf(arr, 4);
+        assertArrayEquals(new boolean[][] { {false}, {true, false}, null, null }, arr4);
     }
 }

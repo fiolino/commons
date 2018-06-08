@@ -1351,21 +1351,26 @@ public final class Methods {
     /**
      * Creates a handle that iterates over some {@link Iterable} or {@link Collection} instance instead of the original
      * parameter at the given index.
-     * The return values of each iteration step is collected into a container of type 'inputType', which will be the
+     * The return values of each iteration step is collected into a container of type 'outputType', which will be the
      * return type of the constructed handle.
      *
-     * On every iteration, a new instance of the outputType (which must therefore be a concrete class) is created.
+     * The outputType can be some collection-like concrete class with a public constructor and an add() method,
+     * or it can be an array of any matching type.
+     *
+     * On every iteration, a new instance of the outputType is created.
+     * If the outputType is an array, this array will be filled and will have the same length as the number of
+     * iteration steps.
+     *
      * If the input type has a public size() method, this method will try to instantiate via a public constructor
      * which accepts an int as the only parameter, filling it wil the size() return value.
      * Otherwise, the empty constructor is used.
      *
      * The outputType must not necessarily be some {@link Collection}. It must have an add() method, accepting a
-     * single Object value and return either boolean or void.
+     * single Object value and return either boolean or void -- or it must be an array.
      *
-     * The given target handle will be called for each element in the iterable element.
+     * The given target handle will be called for each element in the input element.
      *
-     * The result will be of variable arity if the arrayed parameter is the last one, or if the original target
-     * was already of variable arity.
+     * The result will be of variable arity if the original target was already of variable arity.
      *
      * @param target This will be called
      * @param inputType The resulting handle will accept this type...
@@ -1381,14 +1386,24 @@ public final class Methods {
         if (targetType.returnType() == void.class) {
             throw new IllegalArgumentException(target + " must not return void");
         }
-        Lookup l = publicLookup().in(outputType);
+        MethodHandle result;
+        if (outputType.isArray()) {
+            result = collectCollectionIntoArray(target, inputType, inputPosition, outputType);
+        } else {
+            result = collectCollectionIntoCollection(target, inputType, inputPosition, outputType);
+        }
+        return result.withVarargs(target.isVarargsCollector());
+    }
+
+    private static MethodHandle collectCollectionIntoCollection(MethodHandle target, Class<? extends Iterable> inputType, int inputPosition, Class<?> outputType) {
         MethodHandle constructor, add;
+        Lookup l = publicLookup().in(outputType);
         try {
             MethodHandle size = publicLookup().in(inputType).findVirtual(inputType, "size", methodType(int.class));
             try {
                 constructor = l.findConstructor(outputType, methodType(void.class, int.class));
                 constructor = filterArguments(constructor, 0, size);
-                constructor = moveSingleArgumentTo(constructor, targetType, inputPosition);
+                constructor = moveSingleArgumentTo(constructor, target.type(), inputPosition);
             } catch (NoSuchMethodException | IllegalAccessException ex) {
                 // No constructor with size initialization
                 constructor = findEmptyConstructor(outputType);
@@ -1406,13 +1421,53 @@ public final class Methods {
                 throw new IllegalArgumentException("No add method in " + outputType.getName(), ex);
             }
         }
+        add = add.asType(methodType(void.class, outputType, target.type().returnType()));
+        return collectInto(target, add, inputType, inputPosition, constructor);
+    }
 
-        add = add.asType(methodType(void.class, outputType, targetType.returnType()));
-        MethodHandle executeAndAdd = collectArguments(add, 1, target);
+    private static MethodHandle collectCollectionIntoArray(MethodHandle target, Class<? extends Iterable> inputType, int inputPosition, Class<?> arrayType) {
+        MethodHandle constructor, arrayGetter, indexGetter;
+        Lookup l = lookup().in(ArrayFiller.class);
+        try {
+            constructor = l.findConstructor(ArrayFiller.class, methodType(void.class, Class.class, int.class));
+            arrayGetter = l.findVirtual(ArrayFiller.class, "array", methodType(Object.class));
+            indexGetter = l.findVirtual(ArrayFiller.class, "next", methodType(int.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new InternalError(ex);
+        }
+
+        try {
+            MethodHandle size = publicLookup().in(inputType).findVirtual(inputType, "size", methodType(int.class));
+            constructor = filterArguments(constructor.bindTo(arrayType), 0, size);
+            constructor = moveSingleArgumentTo(constructor, target.type(), inputPosition);
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            // No size method
+            constructor = insertArguments(constructor, 0, arrayType, 16);
+        }
+
+        Class<?> returnType = target.type().returnType();
+        MethodHandle arraySetter = arrayElementSetter(arrayType);
+        arraySetter = arraySetter.asType(methodType(void.class, Object.class, int.class, returnType));
+        arraySetter = filterArguments(arraySetter, 0, arrayGetter, indexGetter);
+        arraySetter = permuteArguments(arraySetter, methodType(void.class, ArrayFiller.class, returnType), 0, 0, 1);
+
+        MethodHandle executeAndAdd = collectInto(target, arraySetter, inputType, inputPosition, constructor);
+
+        MethodHandle getArray;
+        try {
+            getArray = l.findVirtual(ArrayFiller.class, "values", methodType(Object.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new InternalError(ex);
+        }
+        getArray = getArray.asType(methodType(arrayType, ArrayFiller.class));
+        return MethodHandles.filterReturnValue(executeAndAdd, getArray);
+    }
+
+    private static MethodHandle collectInto(MethodHandle target, MethodHandle adder, Class<? extends Iterable> inputType, int inputPosition, MethodHandle constructor) {
+        MethodHandle executeAndAdd = collectArguments(adder, 1, target);
         executeAndAdd = iterate(executeAndAdd, inputType, inputPosition + 1);
         executeAndAdd = returnArgument(executeAndAdd, 0);
-        MethodHandle result = foldArguments(executeAndAdd, constructor);
-        return result.withVarargs(target.isVarargsCollector());
+        return foldArguments(executeAndAdd, constructor);
     }
 
     private static MethodHandle findEmptyConstructor(Class<?> outputType) {
@@ -1420,6 +1475,52 @@ public final class Methods {
             return publicLookup().in(outputType).findConstructor(outputType, methodType(void.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new IllegalArgumentException("No suitable constructor in " + outputType.getName(), ex);
+        }
+    }
+
+    private static class ArrayFiller<A> {
+        private A values;
+        private int i;
+        private final ArrayCopier<A> copier;
+        private final MethodHandle lengthGetter;
+
+        ArrayFiller(Class<A> arrayType, int initial) {
+            values = arrayType.cast(Array.newInstance(arrayType.getComponentType(), Math.max(initial, 1)));
+            copier = createCopier(arrayType);
+            lengthGetter = MethodHandles.arrayLength(arrayType).asType(methodType(int.class, Object.class));
+        }
+
+        private int l() {
+            try {
+                return (int) lengthGetter.invokeExact(values);
+            } catch (RuntimeException | Error e) {
+                throw e;
+            } catch (Throwable t) {
+                throw new UndeclaredThrowableException(t);
+            }
+        }
+
+        A array() {
+            int l = l();
+            if (i >= l) {
+                values = copy(l * 2);
+            }
+            return values;
+        }
+
+        int next() {
+            return i++;
+        }
+
+        private A copy(int newLength) {
+            return copier.copyOf(values, newLength);
+        }
+
+        Object values() {
+            if (i == l()) {
+                return values;
+            }
+            return copy(i);
         }
     }
 
@@ -1897,5 +1998,31 @@ public final class Methods {
      */
     public static boolean wasLambdafiedDirect(Object instance) {
         return instance instanceof LambdaMarker;
+    }
+
+    /**
+     * Creates an {@link ArrayCopier}.
+     *
+     * Calling the single copyOf() method will create a copy of the given array with the new length.
+     * Internally, Arrays.copyOf() is used, but allows primitive and Object arrays.
+     *
+     * @param arrayType The array type to copy
+     * @return A Copier
+     */
+    public static <A> ArrayCopier<A> createCopier(Class<A> arrayType) {
+        if (!arrayType.isArray()) {
+            throw new IllegalArgumentException(arrayType.getName() + " is expected to be an array!");
+        }
+        Class<?> argument = arrayType.getComponentType().isPrimitive() ? arrayType : Object[].class;
+        MethodHandle copOf;
+        try {
+            copOf = publicLookup().findStatic(Arrays.class, "copyOf", methodType(argument, argument, int.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new IllegalArgumentException(argument.getName() + " is not implemented in Arrays.copyOf", ex);
+        }
+
+        @SuppressWarnings("unchecked")
+        ArrayCopier<A> copier = lambdafy(copOf, ArrayCopier.class);
+        return copier;
     }
 }

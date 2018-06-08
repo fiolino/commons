@@ -1,7 +1,9 @@
 package org.fiolino.common.reflection;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import javax.annotation.Nonnull;
 import javax.annotation.concurrent.ThreadSafe;
 import java.awt.event.ActionListener;
 import java.io.FileNotFoundException;
@@ -11,6 +13,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -32,6 +35,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class MethodsTest {
 
     private static final MethodHandles.Lookup LOOKUP = lookup();
+
+    @BeforeAll
+    static void installLogger() {
+        Methods.setLogger((c, l) -> System.out.println(c + ": " + l));
+    }
 
     @Test
     void testEnumConversion() throws Throwable {
@@ -1212,6 +1220,7 @@ class MethodsTest {
         assertEquals(40 - 18 + 44 + 77, c4.result);
     }
 
+    @SuppressWarnings("unused")
     public static class InitialSizeReturningArrayList<E> extends ArrayList<E> {
         final int initialSize;
 
@@ -1246,6 +1255,89 @@ class MethodsTest {
         makeDecimalCollection = Methods.collectInto(newDecimal, List.class, 0, LinkedList.class);
         LinkedList<BigDecimal> decimals2 = (LinkedList<BigDecimal>) makeDecimalCollection.invokeExact(strings);
         assertEquals(Arrays.asList(new BigDecimal("5"), new BigDecimal("0.1"), new BigDecimal("-99.9")), decimals2);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testCollectPrimitivesInCollection() throws Throwable {
+        MethodHandle add = publicLookup().findStatic(Math.class, "addExact", methodType(int.class, int.class, int.class));
+        Collection<Integer> nums = Arrays.asList(10, 20, 10);
+        MethodHandle addAll = Methods.collectInto(add, Collection.class, 1, ArrayList.class);
+        Collection<Integer> result = (ArrayList<Integer>) addAll.invokeExact(7, nums);
+        assertEquals(Arrays.asList(17, 27, 17), result);
+
+        addAll = Methods.collectInto(add, Collection.class, 1, HashSet.class);
+        result = (HashSet<Integer>) addAll.invokeExact(7, nums);
+        assertEquals(new HashSet<>(Arrays.asList(17, 27)), result);
+    }
+
+    private String appendAll(String a, Object b, int c, boolean d, TimeUnit e) {
+        return a + b + c + d + e;
+    }
+
+    public static class SimpleIterable<T> implements Iterable<T> {
+        private final T[] values;
+
+        private SimpleIterable(T[] values) {
+            this.values = values;
+        }
+
+        @SafeVarargs
+        static <T> Iterable<T> of(T... values) {
+            return new SimpleIterable<>(values);
+        }
+
+        public int size() {
+            return values.length;
+        }
+
+        @Override @Nonnull
+        public Iterator<T> iterator() {
+            return new Iterator<>() {
+                private int i;
+
+                @Override
+                public boolean hasNext() {
+                    return i < values.length;
+                }
+
+                @Override
+                public T next() {
+                    if (hasNext())
+                        return values[i++];
+                    throw new NoSuchElementException();
+                }
+            };
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testCollectMultiCollection() throws Throwable {
+        MethodHandle append = LOOKUP.bind(this, "appendAll", methodType(String.class, String.class, Object.class, int.class, boolean.class, TimeUnit.class));
+        MethodHandle appendAll = Methods.collectInto(append, Iterable.class, 0, ArrayList.class);
+        List<String> result = (ArrayList<String>) appendAll.invokeExact(SimpleIterable.of("a", "b"), (Object) ChronoUnit.FOREVER, 174, true, TimeUnit.DAYS);
+        assertEquals(Arrays.asList("aForever174trueDAYS", "bForever174trueDAYS"), result);
+
+        appendAll = Methods.collectInto(append, List.class, 1, ArrayList.class);
+        result = (ArrayList<String>) appendAll.invokeExact("start", Collections.singletonList("single"), 174, true, TimeUnit.DAYS);
+        assertEquals(Collections.singletonList("startsingle174trueDAYS"), result);
+
+        appendAll = Methods.collectInto(append, Iterable.class, 2, ArrayList.class);
+        result = (ArrayList<String>) appendAll.invokeExact("start", (Object) ChronoUnit.FOREVER, SimpleIterable.of(1, 2, 3, 4), true, TimeUnit.DAYS);
+        assertEquals(Arrays.asList("startForever1trueDAYS", "startForever2trueDAYS", "startForever3trueDAYS", "startForever4trueDAYS"), result);
+
+        appendAll = Methods.collectInto(append, Iterable.class, 3, ArrayList.class);
+        result = (ArrayList<String>) appendAll.invokeExact("start", (Object) ChronoUnit.FOREVER, 174, SimpleIterable.of(false, true, true), TimeUnit.DAYS);
+        assertEquals(Arrays.asList("startForever174falseDAYS", "startForever174trueDAYS", "startForever174trueDAYS"), result);
+
+        appendAll = Methods.collectInto(append, List.class, 4, ArrayList.class);
+        result = (ArrayList<String>) appendAll.invokeExact("start", (Object) ChronoUnit.FOREVER, 174, true, Arrays.asList(TimeUnit.values()));
+        MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
+        concat = MethodHandles.filterArguments(concat, 1, publicLookup().findVirtual(TimeUnit.class, "name", methodType(String.class)));
+        MethodHandle createResultArray = Methods.collectArray(concat, 1);
+        String[] resultArray = (String[]) createResultArray.invokeExact("startForever174true", TimeUnit.values());
+        assertEquals(Arrays.asList(resultArray), result);
     }
 
     @Test

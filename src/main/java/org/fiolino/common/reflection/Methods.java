@@ -1348,6 +1348,33 @@ public final class Methods {
         return collectArray(target.asType(target.type().changeReturnType(void.class)), parameterIndex);
     }
 
+    /**
+     * Creates a handle that iterates over some {@link Iterable} or {@link Collection} instance instead of the original
+     * parameter at the given index.
+     * The return values of each iteration step is collected into a container of type 'inputType', which will be the
+     * return type of the constructed handle.
+     *
+     * On every iteration, a new instance of the outputType (which must therefore be a concrete class) is created.
+     * If the input type has a public size() method, this method will try to instantiate via a public constructor
+     * which accepts an int as the only parameter, filling it wil the size() return value.
+     * Otherwise, the empty constructor is used.
+     *
+     * The outputType must not necessarily be some {@link Collection}. It must have an add() method, accepting a
+     * single Object value and return either boolean or void.
+     *
+     * The given target handle will be called for each element in the iterable element.
+     *
+     * The result will be of variable arity if the arrayed parameter is the last one, or if the original target
+     * was already of variable arity.
+     *
+     * @param target This will be called
+     * @param inputType The resulting handle will accept this type...
+     * @param inputPosition ... at this position. The input element of each iteration step gets filled into this position
+     *                      of the original target handle
+     * @param outputType The result's return type. Must have an empty constructor or of type (int) if the input type has
+     *                   a size, and must have an add(Object) method
+     * @return A handle that iterates over all elements of the given container and returns the results
+     */
     public static MethodHandle collectInto(MethodHandle target, Class<? extends Iterable> inputType, int inputPosition, Class<?> outputType) {
         MethodType targetType = target.type();
         checkArgumentLength(targetType, inputPosition);
@@ -1383,7 +1410,8 @@ public final class Methods {
         MethodHandle executeAndAdd = collectArguments(add, 1, target);
         executeAndAdd = iterate(executeAndAdd, inputType, inputPosition + 1);
         executeAndAdd = returnArgument(executeAndAdd, 0);
-        return foldArguments(executeAndAdd, constructor);
+        MethodHandle result = foldArguments(executeAndAdd, constructor);
+        return result.withVarargs(target.isVarargsCollector());
     }
 
     private static MethodHandle findEmptyConstructor(Class<?> outputType) {

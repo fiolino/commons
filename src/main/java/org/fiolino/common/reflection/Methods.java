@@ -1381,11 +1381,12 @@ public final class Methods {
         if (targetType.returnType() == void.class) {
             throw new IllegalArgumentException(target + " must not return void");
         }
+        Lookup l = publicLookup().in(outputType);
         MethodHandle constructor, add;
         try {
-            MethodHandle size = publicLookup().findVirtual(inputType, "size", methodType(int.class));
+            MethodHandle size = publicLookup().in(inputType).findVirtual(inputType, "size", methodType(int.class));
             try {
-                constructor = publicLookup().findConstructor(outputType, methodType(void.class, int.class));
+                constructor = l.findConstructor(outputType, methodType(void.class, int.class));
                 constructor = filterArguments(constructor, 0, size);
                 constructor = moveSingleArgumentTo(constructor, targetType, inputPosition);
             } catch (NoSuchMethodException | IllegalAccessException ex) {
@@ -1397,10 +1398,10 @@ public final class Methods {
             constructor = findEmptyConstructor(outputType);
         }
         try {
-            add = publicLookup().findVirtual(outputType, "add", methodType(boolean.class, Object.class));
+            add = l.findVirtual(outputType, "add", methodType(boolean.class, Object.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             try {
-                add = publicLookup().findVirtual(outputType, "add", methodType(void.class, Object.class));
+                add = l.findVirtual(outputType, "add", methodType(void.class, Object.class));
             } catch (NoSuchMethodException | IllegalAccessException ex2) {
                 throw new IllegalArgumentException("No add method in " + outputType.getName(), ex);
             }
@@ -1416,7 +1417,7 @@ public final class Methods {
 
     private static MethodHandle findEmptyConstructor(Class<?> outputType) {
         try {
-            return publicLookup().findConstructor(outputType, methodType(void.class));
+            return publicLookup().in(outputType).findConstructor(outputType, methodType(void.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new IllegalArgumentException("No suitable constructor in " + outputType.getName(), ex);
         }

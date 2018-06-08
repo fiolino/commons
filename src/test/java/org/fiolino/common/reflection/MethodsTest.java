@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Created by Michael Kuhlmann on 15.12.2015.
  */
-public class MethodsTest {
+class MethodsTest {
 
     private static final MethodHandles.Lookup LOOKUP = lookup();
 

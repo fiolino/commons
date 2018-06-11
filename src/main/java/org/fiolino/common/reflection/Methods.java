@@ -1,6 +1,5 @@
 package org.fiolino.common.reflection;
 
-import org.fiolino.common.analyzing.AmbiguousTypesException;
 import org.fiolino.common.ioc.Instantiator;
 import org.fiolino.common.util.Types;
 
@@ -811,50 +810,6 @@ public final class Methods {
         return foldArguments(identityOfPos, dontReturnAnything);
     }
 
-    public static MethodHandle permute(MethodHandle target, MethodType type) {
-        MethodType targetType = target.type();
-        int parameterCount = targetType.parameterCount();
-        int[] indexes = new int[parameterCount];
-        Class<?>[] newParameterTypes = new Class<?>[parameterCount];
-        for (int i = 0; i < parameterCount; i++) {
-            Class<?> p = targetType.parameterType(i);
-            int pos = findBestMatchingParameter(type, p, i);
-            indexes[i] = pos;
-            Class<?> original = type.parameterType(pos);
-            newParameterTypes[i] = original;
-        }
-
-        return permuteArguments(target.asType(methodType(type.returnType(), newParameterTypes)), type, indexes);
-    }
-
-    private static int findBestMatchingParameter(MethodType type, Class<?> lookFor, int pos) {
-        int match = -1;
-        int perfectMatch = -1;
-        for (int i = 0; i < type.parameterCount(); i++) {
-            Class<?> p = type.parameterType(i);
-            if (p.equals(lookFor)) {
-                if (i == pos) {
-                    return i;
-                }
-                if (perfectMatch >= 0) {
-                    throw new AmbiguousTypesException("Type " + lookFor.getName() + " is appearing twice in " + type);
-                }
-                perfectMatch = i;
-                match = i;
-            } else if (Types.isAssignableFrom(lookFor, p)) {
-                if (i != pos && match >= 0) {
-                    throw new AmbiguousTypesException("Type " + lookFor.getName() + " is matching twice in " + type);
-                }
-                match = i;
-            }
-        }
-
-        if (match < 0) {
-            throw new IllegalArgumentException(type + " does not contain parameter of type " + lookFor.getName());
-        }
-        return match;
-    }
-
     /**
      * Compares an expected method type (the reference) with some other method type to check.
      *
@@ -1448,8 +1403,8 @@ public final class Methods {
         Class<?> returnType = target.type().returnType();
         MethodHandle arraySetter = arrayElementSetter(arrayType);
         arraySetter = arraySetter.asType(methodType(void.class, Object.class, int.class, returnType));
-        arraySetter = filterArguments(arraySetter, 0, arrayGetter, indexGetter);
-        arraySetter = permuteArguments(arraySetter, methodType(void.class, ArrayFiller.class, returnType), 0, 0, 1);
+        arraySetter = filterArguments(arraySetter, 1, indexGetter);
+        arraySetter = foldArguments(arraySetter, arrayGetter);
 
         MethodHandle executeAndAdd = collectInto(target, arraySetter, inputType, inputPosition, constructor);
 
@@ -1486,21 +1441,15 @@ public final class Methods {
 
         ArrayFiller(Class<A> arrayType, int initial) {
             values = arrayType.cast(Array.newInstance(arrayType.getComponentType(), Math.max(initial, 1)));
-            copier = createCopier(arrayType);
+            copier = ArrayCopier.createFor(arrayType);
             lengthGetter = MethodHandles.arrayLength(arrayType).asType(methodType(int.class, Object.class));
         }
 
-        private int l() {
-            try {
-                return (int) lengthGetter.invokeExact(values);
-            } catch (RuntimeException | Error e) {
-                throw e;
-            } catch (Throwable t) {
-                throw new UndeclaredThrowableException(t);
-            }
+        private int l() throws Throwable {
+            return (int) lengthGetter.invokeExact(values);
         }
 
-        A array() {
+        A array() throws Throwable {
             int l = l();
             if (i >= l) {
                 values = copy(l * 2);
@@ -1516,7 +1465,7 @@ public final class Methods {
             return copier.copyOf(values, newLength);
         }
 
-        Object values() {
+        Object values() throws Throwable {
             if (i == l()) {
                 return values;
             }
@@ -1998,31 +1947,5 @@ public final class Methods {
      */
     public static boolean wasLambdafiedDirect(Object instance) {
         return instance instanceof LambdaMarker;
-    }
-
-    /**
-     * Creates an {@link ArrayCopier}.
-     *
-     * Calling the single copyOf() method will create a copy of the given array with the new length.
-     * Internally, Arrays.copyOf() is used, but allows primitive and Object arrays.
-     *
-     * @param arrayType The array type to copy
-     * @return A Copier
-     */
-    public static <A> ArrayCopier<A> createCopier(Class<A> arrayType) {
-        if (!arrayType.isArray()) {
-            throw new IllegalArgumentException(arrayType.getName() + " is expected to be an array!");
-        }
-        Class<?> argument = arrayType.getComponentType().isPrimitive() ? arrayType : Object[].class;
-        MethodHandle copOf;
-        try {
-            copOf = publicLookup().findStatic(Arrays.class, "copyOf", methodType(argument, argument, int.class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new IllegalArgumentException(argument.getName() + " is not implemented in Arrays.copyOf", ex);
-        }
-
-        @SuppressWarnings("unchecked")
-        ArrayCopier<A> copier = lambdafy(copOf, ArrayCopier.class);
-        return copier;
     }
 }

@@ -1151,7 +1151,7 @@ public final class Methods {
      * @return A handle that iterates over all elements of the given iterable
      */
     public static MethodHandle iterate(MethodHandle target,  int parameterIndex, Object... leadingArguments) {
-        return iterate(publicLookup(), target, parameterIndex, leadingArguments);
+        return iterate(null, target, parameterIndex, leadingArguments);
     }
 
     /**
@@ -1193,7 +1193,7 @@ public final class Methods {
      * @param leadingArguments These will be passed to every call of the target as the first arguments
      * @return A handle that iterates over all elements of the given iterable
      */
-    public static MethodHandle iterate(Lookup lookup, MethodHandle target,  int parameterIndex, Object... leadingArguments) {
+    public static MethodHandle iterate(@Nullable Lookup lookup, MethodHandle target,  int parameterIndex, Object... leadingArguments) {
         MethodType targetType = target.type();
         int numberOfLeadingArguments = leadingArguments.length;
         checkArgumentCounts(target, numberOfLeadingArguments, parameterIndex);
@@ -1300,7 +1300,7 @@ public final class Methods {
      * @return A handle that iterates over all elements of the given array
      */
     public static MethodHandle iterateArray(MethodHandle target,  int parameterIndex) {
-        return collectArray(target.asType(target.type().changeReturnType(void.class)), parameterIndex);
+        return collectArrayIntoArray(target.asType(target.type().changeReturnType(void.class)), parameterIndex);
     }
 
     /**
@@ -1321,9 +1321,11 @@ public final class Methods {
      * Otherwise, the empty constructor is used.
      *
      * The outputType must not necessarily be some {@link Collection}. It must have an add() method, accepting a
-     * single Object value and return either boolean or void -- or it must be an array.
+     * single value of the target's return type or some of its superclasses and return either boolean or void
+     * -- or it must be an array.
      *
-     * The given target handle will be called for each element in the input element.
+     * The given target handle will be called for each element in the input element. It must return some value which
+     * can be added to the outputType.
      *
      * The result will be of variable arity if the original target was already of variable arity.
      *
@@ -1345,59 +1347,107 @@ public final class Methods {
         if (outputType.isArray()) {
             result = collectCollectionIntoArray(target, inputType, inputPosition, outputType);
         } else {
-            result = collectCollectionIntoCollection(target, inputType, inputPosition, outputType);
+            MethodHandle constructor = findConstructorForOutput(outputType, targetType, inputType, inputPosition);
+            MethodHandle add = findAddMethod(outputType, targetType.returnType());
+            result = collectInto(target, add, inputType, inputPosition, constructor);
         }
         return result.withVarargs(target.isVarargsCollector());
     }
 
-    private static MethodHandle collectCollectionIntoCollection(MethodHandle target, Class<? extends Iterable> inputType, int inputPosition, Class<?> outputType) {
-        MethodHandle constructor, add;
+    private static MethodHandle findAddMethod(Class<?> outputType, Class<?> elementType) {
         Lookup l = publicLookup().in(outputType);
+        MethodHandle add = null;
+        Class<?> p = elementType;
+        loop:
+        do {
+            for (Class<?> r : Arrays.asList(void.class, boolean.class)) {
+                try {
+                    add = l.findVirtual(outputType, "add", methodType(r, p));
+                    break loop;
+                } catch (NoSuchMethodException | IllegalAccessException ex) {
+                    // continue
+                }
+            }
+            p = p.isInterface() ? Object.class : (p.isPrimitive() ? Types.toWrapper(p) : p.getSuperclass());
+        } while (p != null);
+
+        if (add == null) {
+            throw new IllegalArgumentException("No add method in " + outputType.getName());
+        }
+        return add.asType(methodType(void.class, outputType, elementType));
+    }
+
+    private static MethodHandle findConstructorForOutput(Class<?> outputType, MethodType targetType, Class<? extends Iterable> inputType, int inputPosition) {
         try {
             MethodHandle size = publicLookup().in(inputType).findVirtual(inputType, "size", methodType(int.class));
             try {
-                constructor = l.findConstructor(outputType, methodType(void.class, int.class));
+                MethodHandle constructor = publicLookup().in(outputType).findConstructor(outputType, methodType(void.class, int.class));
                 constructor = filterArguments(constructor, 0, size);
-                constructor = moveSingleArgumentTo(constructor, target.type(), inputPosition);
+                return moveSingleArgumentTo(constructor, targetType, inputPosition);
             } catch (NoSuchMethodException | IllegalAccessException ex) {
                 // No constructor with size initialization
-                constructor = findEmptyConstructor(outputType);
+                // Empty constructor
             }
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             // No size method
-            constructor = findEmptyConstructor(outputType);
+            // Empty constructor
         }
-        try {
-            add = l.findVirtual(outputType, "add", methodType(boolean.class, Object.class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            try {
-                add = l.findVirtual(outputType, "add", methodType(void.class, Object.class));
-            } catch (NoSuchMethodException | IllegalAccessException ex2) {
-                throw new IllegalArgumentException("No add method in " + outputType.getName(), ex);
-            }
+        return findEmptyConstructor(outputType);
+    }
+
+    /**
+     * Creates a handle that iterates over some {@link Iterable} or {@link Collection} instance instead of the original
+     * parameter at the given index.
+     * The return values of each iteration step is collected into an array whose component type is the return type of
+     * the target handle.
+     *
+     * On every iteration, a new instance of the array is created. It will have the same length as the number of
+     * iteration steps.
+     *
+     * If the input type has a public size() method, this method will instantiate the array with the size value.
+     * Otherwise the array will grow step by step.
+     *
+     * The given target handle will be called for each element in the input element.
+     *
+     * The result will be of variable arity if the original target was already of variable arity.
+     *
+     * @param target This will be called
+     * @param inputType The resulting handle will accept this type...
+     * @param inputPosition ... at this position. The input element of each iteration step gets filled into this position
+     *                      of the original target handle
+     * @return A handle that iterates over all elements of the given container and returns the results as an array
+     */
+    public static MethodHandle collectIntoArray(MethodHandle target, Class<? extends Iterable> inputType, int inputPosition) {
+        Class<?> returnType = target.type().returnType();
+        if (returnType == void.class) {
+            MethodHandle handle = iterate(target, inputPosition);
+            return handle.asType(handle.type().changeParameterType(inputPosition, inputType));
         }
-        add = add.asType(methodType(void.class, outputType, target.type().returnType()));
-        return collectInto(target, add, inputType, inputPosition, constructor);
+        return collectInto(target, inputType, inputPosition, toArrayType(returnType));
     }
 
     private static MethodHandle collectCollectionIntoArray(MethodHandle target, Class<? extends Iterable> inputType, int inputPosition, Class<?> arrayType) {
         MethodHandle constructor, arrayGetter, indexGetter;
         Lookup l = lookup().in(ArrayFiller.class);
         try {
-            constructor = l.findConstructor(ArrayFiller.class, methodType(void.class, Class.class, int.class));
+            constructor = l.findConstructor(ArrayFiller.class, methodType(void.class, Object.class));
             arrayGetter = l.findVirtual(ArrayFiller.class, "array", methodType(Object.class));
             indexGetter = l.findVirtual(ArrayFiller.class, "next", methodType(int.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new InternalError(ex);
         }
 
+        MethodHandle arrayFactory = arrayConstructor(arrayType).asType(methodType(Object.class, int.class));
         try {
             MethodHandle size = publicLookup().in(inputType).findVirtual(inputType, "size", methodType(int.class));
-            constructor = filterArguments(constructor.bindTo(arrayType), 0, size);
+            MethodHandle minimum1 = insertArguments(publicLookup().findStatic(Math.class, "max", methodType(int.class, int.class, int.class)), 0, 1);
+            size = filterReturnValue(size,  minimum1);
+            arrayFactory = filterArguments(arrayFactory, 0, size);
+            constructor = filterArguments(constructor, 0, arrayFactory);
             constructor = moveSingleArgumentTo(constructor, target.type(), inputPosition);
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             // No size method
-            constructor = insertArguments(constructor, 0, arrayType, 16);
+            constructor = foldArguments(constructor, arrayFactory.bindTo(ArrayFiller.DEFAULT_INITIAL_LENGTH));
         }
 
         Class<?> returnType = target.type().returnType();
@@ -1434,13 +1484,17 @@ public final class Methods {
     }
 
     private static class ArrayFiller<A> {
+        static final int DEFAULT_INITIAL_LENGTH = 16;
+
         private A values;
         private int i;
         private final ArrayCopier<A> copier;
         private final MethodHandle lengthGetter;
 
-        ArrayFiller(Class<A> arrayType, int initial) {
-            values = arrayType.cast(Array.newInstance(arrayType.getComponentType(), Math.max(initial, 1)));
+        ArrayFiller(A array) {
+            values = array;
+            @SuppressWarnings("unchecked")
+            Class<A> arrayType = (Class<A>) array.getClass();
             copier = ArrayCopier.createFor(arrayType);
             lengthGetter = MethodHandles.arrayLength(arrayType).asType(methodType(int.class, Object.class));
         }
@@ -1494,7 +1548,7 @@ public final class Methods {
      * @param parameterIndex The index of the target's iterated element parameter
      * @return A handle that iterates over all elements of the given array and returns the results
      */
-    public static MethodHandle collectArray(MethodHandle target,  int parameterIndex) {
+    public static MethodHandle collectArrayIntoArray(MethodHandle target, int parameterIndex) {
         MethodType targetType = target.type();
         checkArgumentLength(targetType, parameterIndex);
 
@@ -1502,7 +1556,8 @@ public final class Methods {
         Class<?> arrayType = toArrayType(targetType.parameterType(parameterIndex));
 
         MethodHandle getValue = arrayElementGetter(arrayType);
-        MethodHandle arrayLength = createArrayLengthGetter(arrayType, targetType, parameterIndex);
+        MethodHandle arrayLength = arrayLength(arrayType);
+        arrayLength = moveSingleArgumentTo(arrayLength, targetType, parameterIndex);
         MethodHandle body = collectArguments(target, parameterIndex, getValue);
 
         MethodType bodyType;
@@ -1537,11 +1592,6 @@ public final class Methods {
 
         MethodHandle loop = countedLoop(start(), arrayLength, init, body);
         return loop.withVarargs(parameterIndex == targetType.parameterCount() - 1 || target.isVarargsCollector());
-    }
-
-    private static MethodHandle createArrayLengthGetter(Class<?> arrayType, MethodType type, int parameterIndex) {
-        MethodHandle getter = arrayLength(arrayType);
-        return moveSingleArgumentTo(getter, type, parameterIndex);
     }
 
     private static MethodHandle moveSingleArgumentTo(MethodHandle target, MethodType type, int index) {
@@ -1735,7 +1785,7 @@ public final class Methods {
             Method bestMatch = null;
             Comparison matchingRank = null;
             boolean ambiguous = false;
-            Method[] methods = MethodLocator.getDeclaredMethodsFrom(c);
+            Method[] methods = getDeclaredMethodsFrom(c);
             loop:
             for (Method m : methods) {
                 if (!locator.wouldBeVisible(m)) {
@@ -1815,6 +1865,10 @@ public final class Methods {
         return Optional.ofNullable(found);
     }
 
+    static Method[] getDeclaredMethodsFrom(Class<?> c) {
+        return AccessController.doPrivileged((PrivilegedAction<Method[]>) c::getDeclaredMethods);
+    }
+
     /**
      * Internal interface to check lambda access.
      */
@@ -1823,7 +1877,8 @@ public final class Methods {
     /**
      * Creates a lambda factory for the given type which will then call the given target method.
      *
-     * @param lookup       Must be the caller's lookup according to LambdaMetaFactory's documentation
+     * @param lookup       Must be the caller's lookup according to LambdaMetaFactory's documentation.
+     *                     Can be null if the called handle is public
      * @param targetMethod This will be called in the created lambda - it must be a direct handle, otherwise this
      *                     method will return null
      * @param lambdaType   The interface that specifies the lambda. The lambda method's argument size n must not exceed
@@ -1833,7 +1888,7 @@ public final class Methods {
      * @return A MethodHandle that accepts the first (t-n) arguments of the target and returns an instance of lambdaType.
      */
     @Nullable
-    public static MethodHandle createLambdaFactory(Lookup lookup, MethodHandle targetMethod, Class<?> lambdaType, Class<?>... markerInterfaces) {
+    public static MethodHandle createLambdaFactory(@Nullable Lookup lookup, MethodHandle targetMethod, Class<?> lambdaType, Class<?>... markerInterfaces) {
 
         Method m = findLambdaMethodOrFail(lambdaType);
         String name = m.getName();
@@ -1858,7 +1913,7 @@ public final class Methods {
         }
 
         for (Class<?> marker : markerInterfaces) {
-            if (!marker.isInterface() || MethodLocator.getDeclaredMethodsFrom(marker).length > 0) {
+            if (!marker.isInterface() || getDeclaredMethodsFrom(marker).length > 0) {
                 throw new IllegalArgumentException(marker.getName() + " must be an empty interface!");
             }
         }
@@ -1871,9 +1926,10 @@ public final class Methods {
         metaArguments[4] = markerInterfaces.length + 1;
         metaArguments[5] = LambdaMarker.class;
         System.arraycopy(markerInterfaces, 0, metaArguments, 6, markerInterfaces.length);
+        Lookup l = lookup == null ? lookup() : lookup;
         CallSite callSite;
         try {
-            callSite = LambdaMetafactory.altMetafactory(lookup, name, factoryType, metaArguments);
+            callSite = LambdaMetafactory.altMetafactory(l, name, factoryType, metaArguments);
         } catch (LambdaConversionException ex) {
             if (ex.getMessage().contains("Unsupported MethodHandle kind")) {
                 // Ugly check, but how to do better?
@@ -1905,7 +1961,7 @@ public final class Methods {
      * @return An instance of the lambda type
      */
     public static <T> T lambdafy(MethodHandle targetMethod, Class<T> lambdaType, Object... initializers) {
-        return lambdafy(lookup(), targetMethod, lambdaType, initializers);
+        return lambdafy(null, targetMethod, lambdaType, initializers);
     }
 
     /**
@@ -1922,7 +1978,7 @@ public final class Methods {
      * @param <T>          The type
      * @return An instance of the lambda type
      */
-    public static <T> T lambdafy(Lookup lookup, MethodHandle targetMethod, Class<T> lambdaType, Object... initializers) {
+    public static <T> T lambdafy(@Nullable Lookup lookup, MethodHandle targetMethod, Class<T> lambdaType, Object... initializers) {
         MethodHandle lambdaFactory = createLambdaFactory(lookup, targetMethod, lambdaType);
         if (lambdaFactory == null) {
             warn(targetMethod + " is not direct, creating a Proxy for " + lambdaType.getName());

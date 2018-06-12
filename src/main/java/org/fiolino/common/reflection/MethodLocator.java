@@ -764,7 +764,7 @@ public final class MethodLocator {
         List<Method> usedMethods = new ArrayList<>();
         V value = initialValue;
         do {
-            Method[] methods = getDeclaredMethodsFrom(c);
+            Method[] methods = Methods.getDeclaredMethodsFrom(c);
             outer:
             for (Method m : methods) {
                 for (Method used : usedMethods) {
@@ -787,10 +787,6 @@ public final class MethodLocator {
         } while ((c = c.getSuperclass()) != null);
 
         return value;
-    }
-
-    static Method[] getDeclaredMethodsFrom(Class<?> c) {
-        return AccessController.doPrivileged((PrivilegedAction<Method[]>) c::getDeclaredMethods);
     }
 
     private static final int INVOKE_STATIC = Modifier.STATIC | Modifier.PRIVATE;

@@ -81,14 +81,13 @@ class Factory {
     static final MethodHandle lambdaFactory;
 
     static {
-        MethodHandles.Lookup lookup = MethodHandles.lookup();
         MethodHandle factory;
         try {
-            factory = lookup.findStatic(Array.class, "newInstance", MethodType.methodType(Object.class, Class.class, int.class));
+            factory = publicLookup().findStatic(Array.class, "newInstance", MethodType.methodType(Object.class, Class.class, int.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new AssertionError(ex);
         }
-        lambdaFactory = createLambdaFactory(lookup, factory, IntFunction.class);
+        lambdaFactory = createLambdaFactory(null, factory, IntFunction.class);
         if (lambdaFactory == null) {
             throw new AssertionError(factory + " should be a direct method handle!");
         }

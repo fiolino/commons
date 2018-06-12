@@ -1312,21 +1312,21 @@ class MethodsTest {
     }
 
     public static class Adder {
-        final Object[] result;
+        final String[] result;
         int pos;
 
         public Adder(int initial) {
-            result = new Object[initial];
+            result = new String[initial];
         }
 
-        public void add(Object input) {
+        public void add(String input) {
             result[pos++] = input;
         }
 
         @Override
         public String toString() {
             StringBuilder sb = new StringBuilder();
-            for (Object o : result) {
+            for (String o : result) {
                 if (sb.length() > 0) sb.append(',');
                 sb.append(o);
             }
@@ -1359,9 +1359,50 @@ class MethodsTest {
         ArrayList<String>result2 = (ArrayList<String>) appendAll.invokeExact("start", (Object) ChronoUnit.FOREVER, 174, true, Arrays.asList(TimeUnit.values()));
         MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
         concat = MethodHandles.filterArguments(concat, 1, publicLookup().findVirtual(TimeUnit.class, "name", methodType(String.class)));
-        MethodHandle createResultArray = Methods.collectArray(concat, 1);
+        MethodHandle createResultArray = Methods.collectArrayIntoArray(concat, 1);
         String[] resultArray = (String[]) createResultArray.invokeExact("startForever174true", TimeUnit.values());
         assertEquals(Arrays.asList(resultArray), result2);
+    }
+
+    public static class AddsPrimitives {
+        int sum;
+
+        public void add(int v) {
+            sum += v;
+        }
+
+        public boolean add(Object v) {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    @Test
+    void testCollectIntoPrimitiveContainer() throws Throwable {
+        MethodHandle toInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        MethodHandle convertAll = Methods.collectInto(toInt, List.class, 0, AddsPrimitives.class);
+        AddsPrimitives result = (AddsPrimitives) convertAll.invokeExact(Arrays.asList("11", "99", "1103"));
+        assertEquals(11 + 99 + 1103, result.sum);
+    }
+
+    public static class AddsNumbers {
+        int sum;
+
+        public boolean add(Number v) {
+            sum += v.intValue();
+            return true;
+        }
+
+        public boolean add(Object v) {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    @Test
+    void testCollectIntoSuperclassContainer() throws Throwable {
+        MethodHandle toInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        MethodHandle convertAll = Methods.collectInto(toInt, List.class, 0, AddsNumbers.class);
+        AddsNumbers result = (AddsNumbers) convertAll.invokeExact(Arrays.asList("11", "99", "1103"));
+        assertEquals(11 + 99 + 1103, result.sum);
     }
 
     @Test
@@ -1376,6 +1417,14 @@ class MethodsTest {
     void testCollectCollectionIntoPrimitiveArray() throws Throwable {
         MethodHandle toInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
         MethodHandle convertAll = Methods.collectInto(toInt, List.class, 0, int[].class);
+        int[] result = (int[]) convertAll.invokeExact(Arrays.asList("1103", "2046", "8848", "-199"));
+        assertArrayEquals(new int[] { 1103, 2046, 8848, -199 }, result);
+    }
+
+    @Test
+    void testCollectCollectionIntoDefaultArray() throws Throwable {
+        MethodHandle toInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        MethodHandle convertAll = Methods.collectIntoArray(toInt, List.class, 0);
         int[] result = (int[]) convertAll.invokeExact(Arrays.asList("1103", "2046", "8848", "-199"));
         assertArrayEquals(new int[] { 1103, 2046, 8848, -199 }, result);
     }
@@ -1423,12 +1472,12 @@ class MethodsTest {
     @Test
     void testCollectStringArray() throws Throwable {
         MethodHandle concat = publicLookup().findVirtual(String.class, "concat", methodType(String.class, String.class));
-        MethodHandle concatAll = Methods.collectArray(concat, 1);
+        MethodHandle concatAll = Methods.collectArrayIntoArray(concat, 1);
         assertTrue(concatAll.isVarargsCollector());
         String[] result = (String[]) concatAll.invokeExact("Hello ", "World,Fred,Melissa,Luisa".split(","));
         assertArrayEquals(new String[] {"Hello World", "Hello Fred", "Hello Melissa", "Hello Luisa"}, result);
 
-        concatAll = Methods.collectArray(concat, 0);
+        concatAll = Methods.collectArrayIntoArray(concat, 0);
         assertFalse(concatAll.isVarargsCollector());
         result = (String[]) concatAll.invokeExact("Hello,Hi,Ciao".split(","), " Melissa");
         assertArrayEquals(new String[] {"Hello Melissa", "Hi Melissa", "Ciao Melissa"}, result);
@@ -1437,12 +1486,12 @@ class MethodsTest {
     @Test
     void testCollectLongArray() throws Throwable {
         MethodHandle addExact = publicLookup().findStatic(Math.class, "addExact", methodType(long.class, long.class, long.class));
-        MethodHandle addAll = Methods.collectArray(addExact, 1);
+        MethodHandle addAll = Methods.collectArrayIntoArray(addExact, 1);
         assertTrue(addAll.isVarargsCollector());
         long[] result = (long[]) addAll.invoke(100, 10, 20, 30);
         assertArrayEquals(new long[] {110, 120, 130}, result);
 
-        addAll = Methods.collectArray(addExact, 0);
+        addAll = Methods.collectArrayIntoArray(addExact, 0);
         assertFalse(addAll.isVarargsCollector());
         result = (long[]) addAll.invokeExact(new long[] {5, 9, -222, 2046}, 1103L);
         assertArrayEquals(new long[] {1108, 1112, 1103-222, 1103+2046}, result);
@@ -1451,7 +1500,7 @@ class MethodsTest {
     @Test
     void testCollectIntArray() throws Throwable {
         MethodHandle length = publicLookup().findVirtual(String.class, "length", methodType(int.class));
-        MethodHandle lengthAll = Methods.collectArray(length, 0);
+        MethodHandle lengthAll = Methods.collectArrayIntoArray(length, 0);
         assertTrue(lengthAll.isVarargsCollector());
         int[] lengths = (int[]) lengthAll.invoke("123", "", "123456789012345");
         assertArrayEquals(new int[] {3, 0, 15}, lengths);
@@ -1474,7 +1523,7 @@ class MethodsTest {
         MethodHandle failAll = Methods.iterateArray(fail, 1);
         failAll.invokeExact((Object) "Should not get called!", new int[0]);
 
-        failAll = Methods.collectArray(fail, 1);
+        failAll = Methods.collectArrayIntoArray(fail, 1);
         boolean[] noresults = (boolean[]) failAll.invokeExact((Object) "Should not get called!", new int[0]);
         assertEquals(0, noresults.length);
     }
@@ -1682,7 +1731,7 @@ class MethodsTest {
         MethodHandle stringToInt = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
         MethodHandle split = publicLookup().findVirtual(String.class, "split", methodType(String[].class, String.class));
         split = MethodHandles.insertArguments(split, 1, ",");
-        MethodHandle stringsToInts = Methods.collectArray(stringToInt, 0);
+        MethodHandle stringsToInts = Methods.collectArrayIntoArray(stringToInt, 0);
         stringsToInts = MethodHandles.filterArguments(stringsToInts, 0, split);
         return MethodHandles.filterArguments(target, index, stringsToInts);
     }
@@ -1708,7 +1757,7 @@ class MethodsTest {
 
         // Alternative way: First convert to BigDecimal array, then sum up
         sumOfAll = Methods.reduceArray(add, 1, 0, BigDecimal.ZERO); // (BigDecimal[])BigDecimal
-        fromString = Methods.collectArray(fromString, 0); // (String[])BigDecimal[]
+        fromString = Methods.collectArrayIntoArray(fromString, 0); // (String[])BigDecimal[]
         divideArrayLength = MethodHandles.filterArguments(divide, 1, MethodHandles.arrayLength(BigDecimal[].class));
         median = MethodHandles.foldArguments(divideArrayLength, sumOfAll);
         median = MethodHandles.filterArguments(median, 0, fromString);

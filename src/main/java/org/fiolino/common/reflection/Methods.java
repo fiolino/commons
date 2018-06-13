@@ -1186,14 +1186,61 @@ public final class Methods {
      * </ol>
      * In any other case, the default iterator pattern is used.
      *
-     * @param lookup The local lookup; necessary when the target is a direct, private member
+     * @param lookup The local lookup; necessary when the target is a direct, private member. May be null
      * @param target This will be called
      * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
      *                       leading arguments
      * @param leadingArguments These will be passed to every call of the target as the first arguments
      * @return A handle that iterates over all elements of the given iterable
      */
-    public static MethodHandle iterate(@Nullable Lookup lookup, MethodHandle target,  int parameterIndex, Object... leadingArguments) {
+    public static MethodHandle iterate(@Nullable Lookup lookup, MethodHandle target, int parameterIndex, Object... leadingArguments) {
+        return iterate(lookup, target, Iterable.class, parameterIndex, leadingArguments);
+    }
+
+    /**
+     * Creates a handle that iterates over some inputType instance instead of the original parameter at the given index.
+     * Only stateless iterations are supported, and no value is returned.
+     *
+     * The given target handle will be called for each element in the given Iterable instance. If the target returns
+     * some values, it will be ignored.
+     *
+     * Let (l1, ... lN, aN+1, ... aP, aP+1, aP+2, ... aM)R be the target type, where N is the number of leading arguments,
+     * P is the parameter index of the iterated value, M is the number of all target's arguments,
+     * and R is the return type.
+     *
+     * Then the resulting handle will be of type (a1, ... aP-N, inputType, aP-N+2, ... aM)void.
+     *
+     * The given parameter index may be smaller than the number of leading arguments. In this case, the index still refers
+     * to the target's argument index, and the remaining leading arguments are filled thereafter. The input type will be
+     * at the first position of the resulting handle then.
+     *
+     * The result will be of variable arity if the original target was already of variable arity, and the iterated
+     * parameter is not the last one.
+     *
+     * Implementation note:
+     * The resulting handle will prefer calling forEach() when the target handle can be directly converted to a lambda.
+     * This is the case when
+     * <ol>
+     *     <li>the inputType implements the forEach() method,</li>
+     *     <li>the target is a direct method handle,</li>
+     *     <li>it is visible from the given Lookup instance,</li>
+     *     <li>it originally returns void,</li>
+     *     <li>the iterated value is the target's last parameter,</li>
+     *     <li>and it is non-primitive.</li>
+     * </ol>
+     * In any other case, the default iterator pattern is used.
+     *
+     * @param lookup The local lookup; necessary when the target is a direct, private member. May be null
+     * @param target This will be called
+     * @param inputType The new argument type at the specified position. Must at least implement iterator(), and
+     *                  optionally forEach(). Any class implementing the {@link Iterator} interface is a good choice
+     * @param parameterIndex The index of the target's iterated element parameter, starting from 0, including the
+     *                       leading arguments
+     * @param leadingArguments These will be passed to every call of the target as the first arguments
+     * @return A handle that iterates over all elements of the given iterable
+     */
+    public static MethodHandle iterate(@Nullable Lookup lookup, MethodHandle target,
+                                       Class<?> inputType, int parameterIndex, Object... leadingArguments) {
         MethodType targetType = target.type();
         int numberOfLeadingArguments = leadingArguments.length;
         checkArgumentCounts(target, numberOfLeadingArguments, parameterIndex);
@@ -1201,7 +1248,7 @@ public final class Methods {
         if (targetType.returnType() == void.class && targetType.parameterCount() == parameterIndex + 1
                 && !iteratedType.isPrimitive()) {
             // Try forEach() with direct lambda
-            MethodHandle h = iterateDirectHandle(lookup, target, parameterIndex, leadingArguments);
+            MethodHandle h = iterateDirectHandle(lookup, target, inputType, parameterIndex, leadingArguments);
             if (h != null) return h;
         }
 
@@ -1213,19 +1260,28 @@ public final class Methods {
             parameterIndex = 0;
         }
 
-        h = iterate(h, Iterable.class, parameterIndex);
-        targetType = h.type();
-        return h.withVarargs(target.isVarargsCollector() && parameterIndex < targetType.parameterCount() - 1);
+        h = iterate(l(lookup, inputType), h, inputType, parameterIndex);
+        return h.withVarargs(target.isVarargsCollector() && parameterIndex < h.type().parameterCount() - 1);
     }
 
-    private static MethodHandle iterate(MethodHandle target, Class<? extends Iterable> iterableType, int parameterIndex) {
+    private static MethodHandle iterate(Lookup lookup, MethodHandle target, Class<?> iterableType, int parameterIndex) {
         target = shiftArgument(target, parameterIndex, 0);
         target = dropArguments(target, 1, iterableType);
-        target = iteratedLoop(null, null, target);
+        MethodHandle iterable;
+        try {
+            iterable = lookup.findVirtual(iterableType, "iterator", methodType(Iterator.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new IllegalArgumentException(iterableType.getName() + " does not implement iterator() method", ex);
+        }
+        target = iteratedLoop(iterable, null, target);
         return shiftArgument(target, 0, parameterIndex);
     }
 
-    private static MethodHandle iterateDirectHandle(Lookup lookup, MethodHandle target, int parameterIndex, Object[] leadingArguments) {
+    private static Lookup l(Lookup l, Class<?> t) {
+        return l == null ? publicLookup().in(t) : l;
+    }
+
+    private static MethodHandle iterateDirectHandle(@Nullable Lookup lookup, MethodHandle target, Class<?> inputType, int parameterIndex, Object[] leadingArguments) {
         MethodHandle lambdaFactory;
         try {
             lambdaFactory = createLambdaFactory(lookup, target, Consumer.class);
@@ -1237,8 +1293,12 @@ public final class Methods {
             return null;
         }
         int numberOfLeadingArguments = leadingArguments.length;
-        @SuppressWarnings({"unchecked", "rawTypes"})
-        MethodHandle forEach = MethodLocator.findUsing(Iterable.class, i -> i.forEach(null));
+        MethodHandle forEach;
+        try {
+            forEach = l(lookup, inputType).findVirtual(inputType, "forEach", methodType(void.class, Consumer.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            return null; // No forEach method, use iterator
+        }
         if (parameterIndex == numberOfLeadingArguments) {
             // Can directly insert action, resulting handle will only accept the iterable
             Object action;
@@ -1317,7 +1377,7 @@ public final class Methods {
      * iteration steps.
      *
      * If the input type has a public size() method, this method will try to instantiate via a public constructor
-     * which accepts an int as the only parameter, filling it wil the size() return value.
+     * which accepts an int as the only parameter, filling it with the size() return value.
      * Otherwise, the empty constructor is used.
      *
      * The outputType must not necessarily be some {@link Collection}. It must have an add() method, accepting a
@@ -1334,35 +1394,85 @@ public final class Methods {
      * @param inputPosition ... at this position. The input element of each iteration step gets filled into this position
      *                      of the original target handle
      * @param outputType The result's return type. Must have an empty constructor or of type (int) if the input type has
-     *                   a size, and must have an add(Object) method
+     *                   a size method, and must have an add() method
      * @return A handle that iterates over all elements of the given container and returns the results
      */
-    public static MethodHandle collectInto(MethodHandle target, Class<? extends Iterable> inputType, int inputPosition, Class<?> outputType) {
+    public static MethodHandle collectInto(MethodHandle target, Class<?> inputType, int inputPosition, Class<?> outputType) {
         MethodType targetType = target.type();
         checkArgumentLength(targetType, inputPosition);
-        if (targetType.returnType() == void.class) {
-            throw new IllegalArgumentException(target + " must not return void");
-        }
-        MethodHandle result;
+        ensureReturnsValue(targetType);
         if (outputType.isArray()) {
-            result = collectCollectionIntoArray(target, inputType, inputPosition, outputType);
+            return collectCollectionIntoArray(target, inputType, inputPosition, outputType);
         } else {
-            MethodHandle constructor = findConstructorForOutput(outputType, targetType, inputType, inputPosition);
-            MethodHandle add = findAddMethod(outputType, targetType.returnType());
-            result = collectInto(target, add, inputType, inputPosition, constructor);
+            return collectCollectionIntoCollection(target, inputType, inputPosition, outputType, "add");
         }
+    }
+
+    private static MethodHandle collectCollectionIntoCollection(MethodHandle target, Class<?> inputType, int inputPosition, Class<?> outputType, String addMethodName) {
+        MethodType targetType = target.type();
+        MethodHandle constructor = findConstructorForOutput(outputType, targetType, inputType, inputPosition);
+        MethodHandle add = findAddMethod(outputType, targetType.returnType(), addMethodName);
+        MethodHandle result = collectInto(target, add, inputType, inputPosition, constructor);
         return result.withVarargs(target.isVarargsCollector());
     }
 
-    private static MethodHandle findAddMethod(Class<?> outputType, Class<?> elementType) {
+    /**
+     * Creates a handle that iterates over some {@link Iterable} or {@link Collection} instance instead of the original
+     * parameter at the given index.
+     * The return values of each iteration step is collected into a container of type 'outputType', which will be the
+     * return type of the constructed handle.
+     *
+     * The outputType must be some collection-like concrete class with a public constructor and an adder method,
+     * which is named via the addMethodName parameter.
+     *
+     * On every iteration, a new instance of the outputType is created.
+     *
+     * If the input type has a public size() method, this method will try to instantiate via a public constructor
+     * which accepts an int as the only parameter, filling it with the size() return value.
+     * Otherwise, the empty constructor is used.
+     *
+     * The given target handle will be called for each element in the input element. It must return some value which
+     * can be added to the outputType.
+     *
+     * The result will be of variable arity if the original target was already of variable arity.
+     *
+     * @param target This will be called
+     * @param inputType The resulting handle will accept this type...
+     * @param inputPosition ... at this position. The input element of each iteration step gets filled into this position
+     *                      of the original target handle
+     * @param outputType The result's return type. Must have an empty constructor or of type (int) if the input type has
+     *                   a size method
+     * @param addMethodName The name of the 'add' method. The outputType must implement this as an instance method. Its
+     *                      second argument type must be the target's return type or some super class of it. Its return
+     *                      type can be either void, boolean, or the outputType itself
+     * @return A handle that iterates over all elements of the given container and returns the results
+     */
+    public static MethodHandle collectInto(MethodHandle target, Class<?> inputType, int inputPosition, Class<?> outputType, String addMethodName) {
+        MethodType targetType = target.type();
+        checkArgumentLength(targetType, inputPosition);
+        ensureReturnsValue(targetType);
+        if (outputType.isArray()) {
+            throw new IllegalArgumentException("When outputType " + outputType.getName() + " is an array, no addMethodName (" + addMethodName + ") must be given.");
+        }
+        return collectCollectionIntoCollection(target, inputType, inputPosition, outputType, addMethodName);
+    }
+
+    private static void ensureReturnsValue(MethodType targetType) {
+        if (targetType.returnType() == void.class) {
+            throw new IllegalArgumentException(targetType + " must not return void");
+        }
+    }
+
+    private static MethodHandle findAddMethod(Class<?> outputType, Class<?> elementType, String methodName) {
         Lookup l = publicLookup().in(outputType);
         MethodHandle add = null;
         Class<?> p = elementType;
+        Class<?>[] possibleReturnTypes = {void.class, boolean.class, outputType};
         loop:
         do {
-            for (Class<?> r : Arrays.asList(void.class, boolean.class)) {
+            for (Class<?> r : possibleReturnTypes) {
                 try {
-                    add = l.findVirtual(outputType, "add", methodType(r, p));
+                    add = l.findVirtual(outputType, methodName, methodType(r, p));
                     break loop;
                 } catch (NoSuchMethodException | IllegalAccessException ex) {
                     // continue
@@ -1377,7 +1487,7 @@ public final class Methods {
         return add.asType(methodType(void.class, outputType, elementType));
     }
 
-    private static MethodHandle findConstructorForOutput(Class<?> outputType, MethodType targetType, Class<? extends Iterable> inputType, int inputPosition) {
+    private static MethodHandle findConstructorForOutput(Class<?> outputType, MethodType targetType, Class<?> inputType, int inputPosition) {
         try {
             MethodHandle size = publicLookup().in(inputType).findVirtual(inputType, "size", methodType(int.class));
             try {
@@ -1417,7 +1527,7 @@ public final class Methods {
      *                      of the original target handle
      * @return A handle that iterates over all elements of the given container and returns the results as an array
      */
-    public static MethodHandle collectIntoArray(MethodHandle target, Class<? extends Iterable> inputType, int inputPosition) {
+    public static MethodHandle collectIntoArray(MethodHandle target, Class<?> inputType, int inputPosition) {
         Class<?> returnType = target.type().returnType();
         if (returnType == void.class) {
             MethodHandle handle = iterate(target, inputPosition);
@@ -1426,7 +1536,7 @@ public final class Methods {
         return collectInto(target, inputType, inputPosition, toArrayType(returnType));
     }
 
-    private static MethodHandle collectCollectionIntoArray(MethodHandle target, Class<? extends Iterable> inputType, int inputPosition, Class<?> arrayType) {
+    private static MethodHandle collectCollectionIntoArray(MethodHandle target, Class<?> inputType, int inputPosition, Class<?> arrayType) {
         MethodHandle constructor, arrayGetter, indexGetter;
         Lookup l = lookup().in(ArrayFiller.class);
         try {
@@ -1465,12 +1575,13 @@ public final class Methods {
             throw new InternalError(ex);
         }
         getArray = getArray.asType(methodType(arrayType, ArrayFiller.class));
-        return MethodHandles.filterReturnValue(executeAndAdd, getArray);
+        MethodHandle result = MethodHandles.filterReturnValue(executeAndAdd, getArray);
+        return result.withVarargs(target.isVarargsCollector());
     }
 
-    private static MethodHandle collectInto(MethodHandle target, MethodHandle adder, Class<? extends Iterable> inputType, int inputPosition, MethodHandle constructor) {
+    private static MethodHandle collectInto(MethodHandle target, MethodHandle adder, Class<?> inputType, int inputPosition, MethodHandle constructor) {
         MethodHandle executeAndAdd = collectArguments(adder, 1, target);
-        executeAndAdd = iterate(executeAndAdd, inputType, inputPosition + 1);
+        executeAndAdd = iterate(publicLookup(), executeAndAdd, inputType, inputPosition + 1);
         executeAndAdd = returnArgument(executeAndAdd, 0);
         return foldArguments(executeAndAdd, constructor);
     }

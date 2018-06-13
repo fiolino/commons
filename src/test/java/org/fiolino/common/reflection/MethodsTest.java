@@ -963,7 +963,7 @@ class MethodsTest {
         counter.addAndGet(summand);
     }
 
-    private static class ContractBreakingIterable<T> implements Iterable<T> {
+    private static class ContractBreakingIterable<T> {
         private final Iterable<T> iterable;
         private final UnaryOperator<T> operator;
 
@@ -972,13 +972,11 @@ class MethodsTest {
             this.operator = operator;
         }
 
-        @Override
-        public Iterator<T> iterator() {
+        Iterator<T> iterator() {
             return iterable.iterator();
         }
 
-        @Override
-        public void forEach(Consumer<? super T> action) {
+        void forEach(Consumer<? super T> action) {
             iterable.forEach(x -> action.accept(operator.apply(x)));
         }
     }
@@ -988,13 +986,13 @@ class MethodsTest {
         AtomicInteger counter = new AtomicInteger();
         MethodHandle sum = LOOKUP.findStatic(LOOKUP.lookupClass(), "add", methodType(void.class, AtomicInteger.class, Integer.class));
         List<Integer> numbers = Arrays.asList(33, 27, 0, -10);
-        Iterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
-        MethodHandle iterator = Methods.iterate(LOOKUP, sum, 1);
+        ContractBreakingIterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
+        MethodHandle iterator = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 1);
         iterator.invokeExact(counter, iterable);
         assertEquals(100, counter.get());
 
         counter = new AtomicInteger();
-        iterator = Methods.iterate(LOOKUP, sum, 1, counter);
+        iterator = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 1, counter);
         iterator.invokeExact(iterable);
         assertEquals(100, counter.get());
     }
@@ -1004,13 +1002,13 @@ class MethodsTest {
         AtomicInteger counter = new AtomicInteger();
         MethodHandle sum = LOOKUP.findStatic(LOOKUP.lookupClass(), "add", methodType(void.class, AtomicInteger.class, int.class));
         List<Integer> numbers = Arrays.asList(33, 27, 0, -10);
-        Iterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
-        MethodHandle iterator = Methods.iterate(LOOKUP, sum, 1);
+        ContractBreakingIterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
+        MethodHandle iterator = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 1);
         iterator.invokeExact(counter, iterable);
         assertEquals(50, counter.get());
 
         counter = new AtomicInteger();
-        iterator = Methods.iterate(LOOKUP, sum, 1, counter);
+        iterator = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 1, counter);
         iterator.invokeExact(iterable);
         assertEquals(50, counter.get());
     }
@@ -1020,13 +1018,13 @@ class MethodsTest {
         AtomicInteger counter = new AtomicInteger();
         MethodHandle sum = publicLookup().findVirtual(AtomicInteger.class, "addAndGet", methodType(int.class, int.class));
         List<Integer> numbers = Arrays.asList(33, 27, 0, -10);
-        Iterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
-        MethodHandle iterator = Methods.iterate(sum, 1);
+        ContractBreakingIterable<Integer> iterable = new ContractBreakingIterable<>(numbers, x -> x + x);
+        MethodHandle iterator = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 1);
         iterator.invokeExact(counter, iterable);
         assertEquals(50, counter.get());
 
         counter = new AtomicInteger();
-        iterator = Methods.iterate(sum, 1, counter);
+        iterator = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 1, counter);
         iterator.invokeExact(iterable);
         assertEquals(50, counter.get());
     }
@@ -1045,9 +1043,9 @@ class MethodsTest {
     void testIterateMultipleArguments() throws Throwable {
         MethodHandle sum = LOOKUP.findVirtual(Calculator.class, "sumUp", methodType(void.class, int.class, String.class, Long.class));
         List<Long> vals = Arrays.asList(20L, 30L, 40L, 100L, -10L);
-        Iterable<Long> it = new ContractBreakingIterable<>(vals, x -> x + x);
+        ContractBreakingIterable<Long> it = new ContractBreakingIterable<>(vals, x -> x + x);
 
-        MethodHandle loop = Methods.iterate(LOOKUP, sum, 3);
+        MethodHandle loop = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 3);
         Calculator c = new Calculator();
         loop.invokeExact(c, 17, "11", it);
         assertEquals((17+11)*5 + 40 + 60 + 80 + 200 - 20, c.result);
@@ -1057,41 +1055,41 @@ class MethodsTest {
         assertEquals(1000 - 19*5 + 40 + 60 + 80 + 200 - 20, c.result);
 
         c = new Calculator();
-        loop = Methods.iterate(LOOKUP, sum, 3, c);
+        loop = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 3, c);
         loop.invokeExact(5, "9", it);
         assertEquals((5+9)*5 + 40 + 60 + 80 + 200 - 20, c.result);
 
         c = new Calculator();
-        loop = Methods.iterate(LOOKUP, sum, 3, c, 18);
+        loop = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 3, c, 18);
         loop.invokeExact("7", it);
         assertEquals((7+18)*5 + 40 + 60 + 80 + 200 - 20, c.result);
 
         c = new Calculator();
-        loop = Methods.iterate(LOOKUP, sum, 3, c, 12, "99");
+        loop = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 3, c, 12, "99");
         loop.invokeExact(it);
         assertEquals((12+99)*5 + 40 + 60 + 80 + 200 - 20, c.result);
 
         // Now we switch to iterator style
         List<String> vals2 = Arrays.asList("1", "2", "3");
-        Iterable<String> it2 = new ContractBreakingIterable<>(vals2, x -> x + "0");
+        ContractBreakingIterable<String> it2 = new ContractBreakingIterable<>(vals2, x -> x + "0");
 
         c = new Calculator();
-        loop = Methods.iterate(LOOKUP, sum, 2);
+        loop = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 2);
         loop.invokeExact(c, 11, it2, Long.valueOf(99L));
         assertEquals((11+99)*3 + 1 + 2 + 3, c.result);
 
         c = new Calculator();
-        loop = Methods.iterate(LOOKUP, sum, 2, c);
+        loop = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 2, c);
         loop.invokeExact(11, it2, Long.valueOf(99L));
         assertEquals((11+99)*3 + 1 + 2 + 3, c.result);
 
         c = new Calculator();
-        loop = Methods.iterate(LOOKUP, sum, 2, c, 5);
+        loop = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 2, c, 5);
         loop.invokeExact(it2, Long.valueOf(23L));
         assertEquals((23+5)*3 + 1 + 2 + 3, c.result);
 
         c = new Calculator();
-        loop = Methods.iterate(LOOKUP, sum, 2, c, 237, 46L);
+        loop = Methods.iterate(LOOKUP, sum, ContractBreakingIterable.class, 2, c, 237, 46L);
         loop.invokeExact(it2);
         assertEquals((237+46)*3 + 1 + 2 + 3, c.result);
 
@@ -1403,6 +1401,17 @@ class MethodsTest {
         MethodHandle convertAll = Methods.collectInto(toInt, List.class, 0, AddsNumbers.class);
         AddsNumbers result = (AddsNumbers) convertAll.invokeExact(Arrays.asList("11", "99", "1103"));
         assertEquals(11 + 99 + 1103, result.sum);
+    }
+
+    @Test
+    void testCollectionIntoSpecialContainer() throws Throwable {
+        MethodHandle someChar = publicLookup().findVirtual(String.class, "charAt", methodType(char.class, int.class));
+        MethodHandle collectChars = Methods.collectInto(someChar, List.class, 0, StringBuilder.class, "append"); // Will instantiate StringBuilder with initial length
+        List<String> words = Arrays.asList("There is nothing either good or bad, but thinking makes it so".split("\\W+"));
+        StringBuilder sb = (StringBuilder) collectChars.invokeExact(words, 0);
+        assertEquals("Tinegobbtmis", sb.toString());
+        sb = (StringBuilder) collectChars.invokeExact(words, 1);
+        assertEquals("hsoiorauhato", sb.toString());
     }
 
     @Test

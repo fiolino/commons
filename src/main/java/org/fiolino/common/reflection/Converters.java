@@ -181,18 +181,18 @@ public final class Converters {
         try {
             trim = lookup.findVirtual(String.class, "trim", methodType(String.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new InternalError("String.trim()", ex);
+            throw new InternalError("String::trim", ex);
         }
         MethodHandle stringEmptyCheck, charAt;
         try {
             stringEmptyCheck = lookup.findVirtual(String.class, "isEmpty", methodType(boolean.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new InternalError("String.isEmpty()", ex);
+            throw new InternalError("String::isEmpty", ex);
         }
         try {
             charAt = lookup.findVirtual(String.class, "charAt", methodType(char.class, int.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new InternalError("String.charAt(int)", ex);
+            throw new InternalError("String::charAt", ex);
         }
         getFirstChar = Methods.secureNull(rejectIf(MethodHandles.insertArguments(charAt, 1, 0), stringEmptyCheck));
         CharSet trueChars = CharSet.of("tTyYwWX1");
@@ -200,7 +200,7 @@ public final class Converters {
             charToBool = lookup.findVirtual(CharSet.class, "contains", methodType(boolean.class, char.class))
                     .bindTo(trueChars);
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new InternalError("CharSet.contains()", ex);
+            throw new InternalError("CharSet::contains", ex);
         }
         stringToBool = MethodHandles.filterArguments(charToBool, 0, getFirstChar);
 

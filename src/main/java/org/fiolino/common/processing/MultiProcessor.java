@@ -1,6 +1,7 @@
 package org.fiolino.common.processing;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -11,9 +12,7 @@ public class MultiProcessor<S, T> implements Processor<S, T> {
 
     @SafeVarargs
     public MultiProcessor(Processor<? super S, ? super T>... initial) {
-        for (Processor<? super S, ? super T> p : initial) {
-            processors.add(p);
-        }
+        Collections.addAll(processors, initial);
     }
 
     public void addProcessor(Processor<? super S, ? super T> processor) {

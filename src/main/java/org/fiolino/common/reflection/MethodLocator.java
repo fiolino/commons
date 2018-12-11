@@ -22,6 +22,10 @@ import static java.lang.invoke.MethodHandles.Lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
 
+/**
+ * Instances of this try to find various methods inside a given class.
+ * Only methods that are visible from the given {@link Lookup} are located.
+ */
 public final class MethodLocator {
 
     private final Lookup lookup;
@@ -32,18 +36,40 @@ public final class MethodLocator {
         this.type = type;
     }
 
+    /**
+     * Creates a Locator for the type in the given lookup.
+     *
+     * @param lookup This should be a native lookup object for a certain class
+     * @return A new MethodLocator
+     */
     public static MethodLocator forLocal(Lookup lookup) {
         return forLocal(lookup, lookup.lookupClass());
     }
 
+    /**
+     * Creates a Locator for a certain type, with the access restrictions of the given lookup.
+     *
+     * @param lookup Some lookup
+     * @param type Look in this type
+     * @return A new MethodLocator
+     */
     public static MethodLocator forLocal(Lookup lookup, Class<?> type) {
         return new MethodLocator(lookup, type);
     }
 
+    /**
+     * Creates a Locator for a certain type, locating only public methods.
+     *
+     * @param type Look in this type
+     * @return A new MethodLocator
+     */
     public static MethodLocator forPublic(Class<?> type) {
         return new MethodLocator(publicLookup(), type);
     }
 
+    /**
+     * Gets the associated lookup instance.
+     */
     public Lookup lookup() {
         return lookup;
     }
@@ -93,7 +119,7 @@ public final class MethodLocator {
     }
 
     /**
-     * Finds the getter method for a given field in the given owner class.
+     * Finds the getter method for a given field in my owner class.
      * Tries to find getters in this order:
      * 1. By looking up a method getFieldname with the certain return type
      * 2. If the field is of type boolean, tries to find a getter named isFieldname

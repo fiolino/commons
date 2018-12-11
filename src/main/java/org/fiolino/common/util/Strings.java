@@ -290,7 +290,7 @@ public final class Strings {
      */
     public static StringBuilder appendLongDuration(StringBuilder sb, long duration, TimeUnit unit) {
         if (duration == 0) {
-            sb.append("0");
+            sb.append('0');
             return sb;
         }
 
@@ -595,8 +595,11 @@ public final class Strings {
     @SafeVarargs
     public static String insertValues(String input, UnaryOperator<String>... repositories) {
         Matcher m = VARIABLE.matcher(input);
+        if (!m.find()) {
+            return input;
+        }
         StringBuffer sb = new StringBuffer();
-        while (m.find()) {
+        do {
             String keyword = m.group(1);
             if (keyword.charAt(0) == '{') {
                 keyword = keyword.substring(1, keyword.length() - 1);
@@ -610,9 +613,9 @@ public final class Strings {
                 throw new IllegalArgumentException("No key " + keyword + " available in pattern " + input);
             }
             m.appendReplacement(sb, value);
-        }
-        m.appendTail(sb);
+        } while (m.find());
 
+        m.appendTail(sb);
         return sb.toString();
     }
 
@@ -786,7 +789,7 @@ public final class Strings {
                     ch = input.codePointAt(i);
                     if (escaped) {
                         escaped = false;
-                        sb.appendCodePoint(ch < 256 ? escapedToSpecial[ch] : ch);
+                        i = appendEscapedSequence(input, sb, ch, i, l);
                     } else if (ch == '"') {
                         int end = nextIndexFrom(input, i);
                         int stopSign = end == -1 ? Character.UNASSIGNED : input.codePointAt(end);
@@ -840,6 +843,27 @@ public final class Strings {
         return new Extract(sb.toString().trim(), Extract.QuotationStatus.UNQUOTED_OPEN);
     }
 
+    private static int appendEscapedSequence(String input, StringBuilder sb, int ch, int start, int end) {
+        int escapedChar;
+        if (ch == 'u' && next4CharactersAreHexadecimal(input, start + 1, end)) {
+            try {
+                escapedChar = Integer.parseInt(input, start + 1, start + 5, 16);
+                try {
+                    sb.appendCodePoint(escapedChar);
+                    return start + 4;
+                } catch (IllegalArgumentException ex2) {
+                    // It wasn't a valid unicode character
+                    sb.append('u');
+                    return start;
+                }
+            } catch (NumberFormatException ex) {
+                // Then keep ch as 'u' and don't increment i
+            }
+        }
+        sb.appendCodePoint(ch < 256 ? escapedToSpecial[ch] : ch);
+        return start;
+    }
+
     private static int nextIndexFrom(String input, int start) {
         int l = input.length();
         int i = start;
@@ -850,5 +874,16 @@ public final class Strings {
         } while (Character.isWhitespace(input.charAt(i)));
 
         return i;
+    }
+
+    private static final CharSet HEXADECIMAL = CharSet.of("0123456789abcdefABCDEF");
+
+    private static boolean next4CharactersAreHexadecimal(String input, int start, int end) {
+        if (start > end - 4) return false;
+        for (int i=0; i < 4; i++) {
+            if (!HEXADECIMAL.test(input.codePointAt(start + i))) return false;
+        }
+
+        return true;
     }
 }

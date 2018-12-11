@@ -1397,10 +1397,11 @@ public final class Methods {
      *                   a size method, and must have an add() method
      * @return A handle that iterates over all elements of the given container and returns the results
      */
-    public static MethodHandle collectInto(MethodHandle target, Class<?> inputType, int inputPosition, Class<?> outputType) {
-        MethodType targetType = target.type();
-        checkArgumentLength(targetType, inputPosition);
-        ensureReturnsValue(targetType);
+    public static MethodHandle collectInto(@Nullable MethodHandle target, Class<?> inputType, int inputPosition, Class<?> outputType) {
+        inputType = validateCollectParameters(target, inputType, inputPosition, outputType);
+        if (outputType == null) {
+            return collectCollectionIntoArray(target, inputType, inputPosition, toArrayType(target.type().returnType()));
+        }
         if (outputType.isArray()) {
             return collectCollectionIntoArray(target, inputType, inputPosition, outputType);
         } else {
@@ -1408,12 +1409,26 @@ public final class Methods {
         }
     }
 
-    private static MethodHandle collectCollectionIntoCollection(MethodHandle target, Class<?> inputType, int inputPosition, Class<?> outputType, String addMethodName) {
-        MethodType targetType = target.type();
+    private static Class<?> validateCollectParameters(@Nullable MethodHandle target, Class<?> inputType, int inputPosition, Class<?> outputType) {
+        if (target == null) {
+            if (inputPosition != 0) throw new IllegalArgumentException("inputPosition " + inputPosition + " must be 0 if target is null");
+            if (inputType == null || outputType == null) throw new IllegalArgumentException("types are mandatory of target ist null");
+        } else {
+            MethodType targetType = target.type();
+            checkArgumentLength(targetType, inputPosition);
+            ensureReturnsValue(targetType);
+
+            if (inputType == null) inputType = toArrayType(targetType.parameterType(inputPosition));
+        }
+        return inputType;
+    }
+
+    private static MethodHandle collectCollectionIntoCollection(@Nullable MethodHandle target, Class<?> inputType, int inputPosition, Class<?> outputType, String addMethodName) {
+        MethodType targetType = target == null ? null : target.type();
         MethodHandle constructor = findConstructorForOutput(outputType, targetType, inputType, inputPosition);
-        MethodHandle add = findAddMethod(outputType, targetType.returnType(), addMethodName);
+        MethodHandle add = findAddMethod(outputType, targetType == null ? Object.class : targetType.returnType(), addMethodName);
         MethodHandle result = collectInto(target, add, inputType, inputPosition, constructor);
-        return result.withVarargs(target.isVarargsCollector());
+        return target == null ? result : result.withVarargs(target.isVarargsCollector());
     }
 
     /**
@@ -1447,12 +1462,10 @@ public final class Methods {
      *                      type can be either void, boolean, or the outputType itself
      * @return A handle that iterates over all elements of the given container and returns the results
      */
-    public static MethodHandle collectInto(MethodHandle target, Class<?> inputType, int inputPosition, Class<?> outputType, String addMethodName) {
-        MethodType targetType = target.type();
-        checkArgumentLength(targetType, inputPosition);
-        ensureReturnsValue(targetType);
-        if (outputType.isArray()) {
-            throw new IllegalArgumentException("When outputType " + outputType.getName() + " is an array, no addMethodName (" + addMethodName + ") must be given.");
+    public static MethodHandle collectInto(@Nullable MethodHandle target, @Nullable Class<?> inputType, int inputPosition, Class<?> outputType, String addMethodName) {
+        inputType = validateCollectParameters(target, inputType, inputPosition, outputType);
+        if (outputType == null || outputType.isArray()) {
+            throw new IllegalArgumentException("When outputType " + outputType.getName() + " is unspecified or an array, no addMethodName (" + addMethodName + ") must be given.");
         }
         return collectCollectionIntoCollection(target, inputType, inputPosition, outputType, addMethodName);
     }
@@ -1487,13 +1500,14 @@ public final class Methods {
         return add.asType(methodType(void.class, outputType, elementType));
     }
 
-    private static MethodHandle findConstructorForOutput(Class<?> outputType, MethodType targetType, Class<?> inputType, int inputPosition) {
+    private static MethodHandle findConstructorForOutput(Class<?> outputType, @Nullable MethodType targetType, Class<?> inputType, int inputPosition) {
         try {
             MethodHandle size = publicLookup().in(inputType).findVirtual(inputType, "size", methodType(int.class));
             try {
                 MethodHandle constructor = publicLookup().in(outputType).findConstructor(outputType, methodType(void.class, int.class));
                 constructor = filterArguments(constructor, 0, size);
-                return moveSingleArgumentTo(constructor, targetType, inputPosition);
+                if (targetType != null) constructor = moveSingleArgumentTo(constructor, targetType, inputPosition);
+                return constructor;
             } catch (NoSuchMethodException | IllegalAccessException ex) {
                 // No constructor with size initialization
                 // Empty constructor
@@ -1536,7 +1550,7 @@ public final class Methods {
         return collectInto(target, inputType, inputPosition, toArrayType(returnType));
     }
 
-    private static MethodHandle collectCollectionIntoArray(MethodHandle target, Class<?> inputType, int inputPosition, Class<?> arrayType) {
+    private static MethodHandle collectCollectionIntoArray(@Nullable MethodHandle target, Class<?> inputType, int inputPosition, Class<?> arrayType) {
         MethodHandle constructor, arrayGetter, indexGetter;
         Lookup l = lookup().in(ArrayFiller.class);
         try {
@@ -1554,13 +1568,13 @@ public final class Methods {
             size = filterReturnValue(size,  minimum1);
             arrayFactory = filterArguments(arrayFactory, 0, size);
             constructor = filterArguments(constructor, 0, arrayFactory);
-            constructor = moveSingleArgumentTo(constructor, target.type(), inputPosition);
+            if (target != null) constructor = moveSingleArgumentTo(constructor, target.type(), inputPosition);
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             // No size method
             constructor = foldArguments(constructor, arrayFactory.bindTo(ArrayFiller.DEFAULT_INITIAL_LENGTH));
         }
 
-        Class<?> returnType = target.type().returnType();
+        Class<?> returnType = target == null ? Object.class : target.type().returnType();
         MethodHandle arraySetter = arrayElementSetter(arrayType);
         arraySetter = arraySetter.asType(methodType(void.class, Object.class, int.class, returnType));
         arraySetter = filterArguments(arraySetter, 1, indexGetter);
@@ -1576,12 +1590,17 @@ public final class Methods {
         }
         getArray = getArray.asType(methodType(arrayType, ArrayFiller.class));
         MethodHandle result = MethodHandles.filterReturnValue(executeAndAdd, getArray);
-        return result.withVarargs(target.isVarargsCollector());
+        return target == null ? result : result.withVarargs(target.isVarargsCollector());
     }
 
-    private static MethodHandle collectInto(MethodHandle target, MethodHandle adder, Class<?> inputType, int inputPosition, MethodHandle constructor) {
-        MethodHandle executeAndAdd = collectArguments(adder, 1, target);
-        executeAndAdd = iterate(publicLookup(), executeAndAdd, inputType, inputPosition + 1);
+    private static MethodHandle collectInto(@Nullable MethodHandle target, MethodHandle adder, Class<?> inputType, int inputPosition, MethodHandle constructor) {
+        MethodHandle executeAndAdd;
+        if (target == null) {
+            executeAndAdd = iterate(publicLookup(), adder, inputType, 1);
+        } else {
+            executeAndAdd = collectArguments(adder, 1, target);
+            executeAndAdd = iterate(publicLookup(), executeAndAdd, inputType, inputPosition + 1);
+        }
         executeAndAdd = returnArgument(executeAndAdd, 0);
         return foldArguments(executeAndAdd, constructor);
     }
@@ -1591,50 +1610,6 @@ public final class Methods {
             return publicLookup().in(outputType).findConstructor(outputType, methodType(void.class));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             throw new IllegalArgumentException("No suitable constructor in " + outputType.getName(), ex);
-        }
-    }
-
-    private static class ArrayFiller<A> {
-        static final int DEFAULT_INITIAL_LENGTH = 16;
-
-        private A values;
-        private int i;
-        private final ArrayCopier<A> copier;
-        private final MethodHandle lengthGetter;
-
-        ArrayFiller(A array) {
-            values = array;
-            @SuppressWarnings("unchecked")
-            Class<A> arrayType = (Class<A>) array.getClass();
-            copier = ArrayCopier.createFor(arrayType);
-            lengthGetter = MethodHandles.arrayLength(arrayType).asType(methodType(int.class, Object.class));
-        }
-
-        private int l() throws Throwable {
-            return (int) lengthGetter.invokeExact(values);
-        }
-
-        A array() throws Throwable {
-            int l = l();
-            if (i >= l) {
-                values = copy(l * 2);
-            }
-            return values;
-        }
-
-        int next() {
-            return i++;
-        }
-
-        private A copy(int newLength) {
-            return copier.copyOf(values, newLength);
-        }
-
-        Object values() throws Throwable {
-            if (i == l()) {
-                return values;
-            }
-            return copy(i);
         }
     }
 
@@ -2114,5 +2089,49 @@ public final class Methods {
      */
     public static boolean wasLambdafiedDirect(Object instance) {
         return instance instanceof LambdaMarker;
+    }
+}
+
+class ArrayFiller<A> {
+    static final int DEFAULT_INITIAL_LENGTH = 16;
+
+    private A values;
+    private int i;
+    private final ArrayCopier<A> copier;
+    private final MethodHandle lengthGetter;
+
+    ArrayFiller(A array) {
+        values = array;
+        @SuppressWarnings("unchecked")
+        Class<A> arrayType = (Class<A>) array.getClass();
+        copier = ArrayCopier.createFor(arrayType);
+        lengthGetter = MethodHandles.arrayLength(arrayType).asType(methodType(int.class, Object.class));
+    }
+
+    private int l() throws Throwable {
+        return (int) lengthGetter.invokeExact(values);
+    }
+
+    A array() throws Throwable {
+        int l = l();
+        if (i >= l) {
+            values = copy(i * 2);
+        }
+        return values;
+    }
+
+    int next() {
+        return i++;
+    }
+
+    private A copy(int newLength) {
+        return copier.copyOf(values, newLength);
+    }
+
+    Object values() throws Throwable {
+        if (i == l()) {
+            return values;
+        }
+        return copy(i);
     }
 }

@@ -963,7 +963,7 @@ class MethodsTest {
         counter.addAndGet(summand);
     }
 
-    private static class ContractBreakingIterable<T> {
+    private static class ContractBreakingIterable<T> /* implements Iterable<T> */ {
         private final Iterable<T> iterable;
         private final UnaryOperator<T> operator;
 
@@ -1273,7 +1273,7 @@ class MethodsTest {
         return a + b + c + d + e;
     }
 
-    public static class SimpleIterable<T> implements Iterable<T> {
+    public static class SimpleIterable<T> /* implements Iterable<T> */ {
         private final T[] values;
 
         private SimpleIterable(T[] values) {
@@ -1289,7 +1289,7 @@ class MethodsTest {
             return values.length;
         }
 
-        @Override @Nonnull
+        @Nonnull
         public Iterator<T> iterator() {
             return new Iterator<>() {
                 private int i;

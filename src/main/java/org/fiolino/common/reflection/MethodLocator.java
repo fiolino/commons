@@ -557,7 +557,7 @@ public final class MethodLocator {
         }
         if (lookup.hasPrivateAccess()) {
             // Private methods allowed
-            if (declaringClass == lookupClass) {
+            if (declaringClass == lookupClass || declaringClass == lookupClass.getEnclosingClass()) {
                 return true;
             }
         }

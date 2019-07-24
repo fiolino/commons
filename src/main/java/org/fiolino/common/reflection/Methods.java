@@ -260,7 +260,7 @@ public final class Methods {
      */
     public static <E> MethodHandle convertEnumToString(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
         @SuppressWarnings("unchecked")
-        Map<E, String> map = type.isEnum() ? new EnumMap(Enum.class.asSubclass(type)) : new HashMap<>();
+        Map<E, String> map = type.isEnum() ? new EnumMap(type.asSubclass(Enum.class)) : new HashMap<>();
         boolean useMap = !type.isEnum();
         Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) type::getFields);
         for (java.lang.reflect.Field f : fields) {

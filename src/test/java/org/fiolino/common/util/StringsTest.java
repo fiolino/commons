@@ -121,7 +121,7 @@ class StringsTest {
     @Test
     void testNormalize() {
         String normal = Strings.normalizeName("Hello World!");
-        assertEquals("Hello World!", normal);
+        assertEquals("hello world!", normal);
 
         normal = Strings.normalizeName("HELLO_WORLD!");
         assertEquals("helloWorld!", normal);

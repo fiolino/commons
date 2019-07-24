@@ -128,7 +128,7 @@ class MethodsVisitorTest {
     @Test
     void testPrivateClass() {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
-        validate(lookup, PrivateClass.class, "publicMethod", "protectedMethod", "packageMethod", "privateMethod");
+        validate(lookup, PrivateClass.class, "publicMethod", "protectedMethod", "packageMethod");
     }
 
     @Test

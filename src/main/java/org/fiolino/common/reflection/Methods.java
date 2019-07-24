@@ -42,15 +42,17 @@ public final class Methods {
         logger.accept(callerName, message);
     }
 
-    private static final MethodHandle nullCheck;
-    private static final MethodHandle notNullCheck;
+    private static final class NullChecks {
+        private static final MethodHandle nullCheck;
+        private static final MethodHandle notNullCheck;
 
-    static {
-        try {
-            nullCheck = publicLookup().findStatic(Objects.class, "isNull", methodType(boolean.class, Object.class));
-            notNullCheck = publicLookup().findStatic(Objects.class, "nonNull", methodType(boolean.class, Object.class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new InternalError("Objects.isNull()", ex);
+        static {
+            try {
+                nullCheck = publicLookup().findStatic(Objects.class, "isNull", methodType(boolean.class, Object.class));
+                notNullCheck = publicLookup().findStatic(Objects.class, "nonNull", methodType(boolean.class, Object.class));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                throw new InternalError("Objects.isNull()", ex);
+            }
         }
     }
 
@@ -63,7 +65,7 @@ public final class Methods {
         if (toCheck.isPrimitive()) {
             return acceptThese(FALSE, toCheck);
         }
-        return nullCheck.asType(methodType(boolean.class, toCheck));
+        return NullChecks.nullCheck.asType(methodType(boolean.class, toCheck));
     }
 
     /**
@@ -75,7 +77,7 @@ public final class Methods {
         if (toCheck.isPrimitive()) {
             return acceptThese(TRUE, toCheck);
         }
-        return notNullCheck.asType(methodType(boolean.class, toCheck));
+        return NullChecks.notNullCheck.asType(methodType(boolean.class, toCheck));
     }
 
     /**
@@ -86,87 +88,95 @@ public final class Methods {
      */
     public static MethodHandle equalsComparator(Class<?> type) {
         if (type.isPrimitive()) {
-            return getIdentityComparator(type);
+            if (type == void.class) {
+                throw new IllegalArgumentException("void");
+            }
+            return IdentityComparators.getIdentityComparator(type);
         }
+        final MethodHandle handle;
         if (type.isEnum()) {
-            return getIdentityComparator(Enum.class).asType(methodType(boolean.class, type, type));
-        }
-        MethodHandle handle;
-        try {
-            handle = publicLookup().findStatic(Objects.class, "equals", methodType(boolean.class, Object.class, Object.class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("Objects.equals(Object,Object)");
+            handle = IdentityComparators.getIdentityComparator(Enum.class);
+        } else {
+            try {
+                handle = publicLookup().findStatic(Objects.class, "equals", methodType(boolean.class, Object.class, Object.class));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                throw new AssertionError("Objects.equals(Object,Object)");
+            }
         }
         return handle.asType(methodType(boolean.class, type, type));
     }
 
-    private static MethodHandle getIdentityComparator(Class<?> primitiveOrEnum) {
-        Lookup lookup = lookup();
-        try {
-            return lookup.findStatic(lookup.lookupClass(), "isIdentical", methodType(boolean.class, primitiveOrEnum, primitiveOrEnum));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("boolean isIdentical(" + primitiveOrEnum.getName() + "," + primitiveOrEnum.getName() + ")");
+    private static final class IdentityComparators {
+        private static MethodHandle getIdentityComparator(Class<?> primitiveOrEnum) {
+            Lookup lookup = lookup();
+            try {
+                return lookup.findStatic(lookup.lookupClass(), "isIdentical", methodType(boolean.class, primitiveOrEnum, primitiveOrEnum));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                throw new AssertionError("boolean isIdentical(" + primitiveOrEnum.getName() + "," + primitiveOrEnum.getName() + ")");
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static boolean isIdentical(int a, int b) {
+            return a == b;
+        }
+
+        @SuppressWarnings("unused")
+        private static boolean isIdentical(byte a, byte b) {
+            return a == b;
+        }
+
+        @SuppressWarnings("unused")
+        private static boolean isIdentical(short a, short b) {
+            return a == b;
+        }
+
+        @SuppressWarnings("unused")
+        private static boolean isIdentical(long a, long b) {
+            return a == b;
+        }
+
+        @SuppressWarnings("unused")
+        private static boolean isIdentical(double a, double b) {
+            return a == b;
+        }
+
+        @SuppressWarnings("unused")
+        private static boolean isIdentical(float a, float b) {
+            return a == b;
+        }
+
+        @SuppressWarnings("unused")
+        private static boolean isIdentical(char a, char b) {
+            return a == b;
+        }
+
+        @SuppressWarnings("unused")
+        private static boolean isIdentical(boolean a, boolean b) {
+            return a == b;
+        }
+
+        @SuppressWarnings("unused")
+        private static boolean isIdentical(Enum<?> a, Enum<?> b) {
+            return a == b;
         }
     }
 
-    @SuppressWarnings("unused")
-    private static boolean isIdentical(int a, int b) {
-        return a == b;
-    }
-
-    @SuppressWarnings("unused")
-    private static boolean isIdentical(byte a, byte b) {
-        return a == b;
-    }
-
-    @SuppressWarnings("unused")
-    private static boolean isIdentical(short a, short b) {
-        return a == b;
-    }
-
-    @SuppressWarnings("unused")
-    private static boolean isIdentical(long a, long b) {
-        return a == b;
-    }
-
-    @SuppressWarnings("unused")
-    private static boolean isIdentical(double a, double b) {
-        return a == b;
-    }
-
-    @SuppressWarnings("unused")
-    private static boolean isIdentical(float a, float b) {
-        return a == b;
-    }
-
-    @SuppressWarnings("unused")
-    private static boolean isIdentical(char a, char b) {
-        return a == b;
-    }
-
-    @SuppressWarnings("unused")
-    private static boolean isIdentical(Enum<?> a, Enum<?> b) {
-        return a == b;
-    }
-
     /**
-     * Creates a MethodHandle which accepts a String as the only parameter and returns an enum of type enumType.
-     * It already contains a null check: If the input string is null, then the return value will be null as well.
+     * Creates a MethodHandle which accepts a String as the only parameter and returns an instance of the given type.
+     * It already contains a null check: If the input string is null, then the returned value will be null as well.
      *
      * @param type The enum type
      * @param specialHandler Can return a special value for some field and its value.
      *                       If it returns null, name() is used.
      * @param <E> The enum
-     * @throws IllegalArgumentException If the input string is invalid, i.e. none of the accepted enumeration values
+     * @return (String)&lt;type&gt; -- throws IllegalArgumentException If the input string is invalid, i.e. none of the accepted enumeration values
      */
-    public static <E extends Enum<E>> MethodHandle convertStringToEnum(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
+    public static <E> MethodHandle convertStringToEnum(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
         assert type.isEnum();
         Map<String, Object> map = new HashMap<>();
-        if (!type.isEnum()) {
-            throw new IllegalArgumentException(type.getName() + " should be an enum.");
-        }
         Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) type::getFields);
-        boolean isSpecial = false;
+        boolean useMap = !type.isEnum();
 
         for (java.lang.reflect.Field f : fields) {
             int m = f.getModifiers();
@@ -185,17 +195,17 @@ public final class Methods {
             String value = specialHandler.apply(f, v);
             if (value == null) {
                 // The default handling.
-                put(map, v.name(), v);
+                put(map, f.getName(), v);
                 continue;
             }
-            isSpecial = true;
+            useMap = true;
             put(map, value, v);
         }
-        if (!isSpecial) {
+        if (!useMap) {
             // No special handling
             return convertStringToNormalEnum(type);
         }
-        // There are annotations, bind to Map.get() method
+        // There are annotations, or it wasn't an enum; bind to Map.get() method
         MethodHandle getFromMap;
         Lookup lookup = lookup();
         try {
@@ -236,24 +246,22 @@ public final class Methods {
     }
 
     /**
-     * Creates a handle that converts some enum to a String.
-     * Instead of just calling name(), it is checked whether some fields should be treated specifically; in that case,
+     * Creates a handle that converts some enum or sdome other class with constants to a String.
+     * Instead of just using the field's, it is checked whether some fields should be treated specifically; in that case,
      * those values will be used.
      *
      * An example would be to check whether some enum field is annotated somehow.
      *
-     * @param type The enum type
+     * @param type The type
      * @param specialHandler Can return a special value for some field and its value.
-     *                       If it returns null, name() is used. If it returns an empty String, null will be returned.
+     *                       If it returns null, the field's name is used. If it returns an empty String, the field will be skipped.
      * @param <E> The enum
      * @return (E)String
      */
-    public static <E extends Enum<E>> MethodHandle convertEnumToString(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
-        Map<E, String> map = new EnumMap<>(type);
-        if (!type.isEnum()) {
-            throw new IllegalArgumentException(type.getName() + " should be an enum.");
-        }
-        boolean isSpecial = false;
+    public static <E> MethodHandle convertEnumToString(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
+        @SuppressWarnings("unchecked")
+        Map<E, String> map = type.isEnum() ? new EnumMap(Enum.class.asSubclass(type)) : new HashMap<>();
+        boolean useMap = !type.isEnum();
         Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) type::getFields);
         for (java.lang.reflect.Field f : fields) {
             int m = f.getModifiers();
@@ -269,16 +277,19 @@ public final class Methods {
             } catch (IllegalAccessException ex) {
                 throw new AssertionError("Cannot access " + f, ex);
             }
+            if (v == null) continue;
             String value = specialHandler.apply(f, v);
             if (value == null) {
                 // The default handling.
-                map.put(v, v.name());
+                map.put(v, f.getName());
                 continue;
             }
-            isSpecial = true;
-            map.put(v, value.isEmpty() ? null : value);
+            useMap = true;
+            if (!value.isEmpty()) {
+                map.put(v, value);
+            }
         }
-        if (isSpecial) {
+        if (useMap) {
             MethodHandle getFromMap;
             try {
                 getFromMap = publicLookup().bind(map, "get", methodType(Object.class, Object.class));
@@ -288,6 +299,7 @@ public final class Methods {
             return getFromMap.asType(methodType(String.class, type));
         } else {
             // No special handling
+            // type will be an enum
             try {
                 return publicLookup().findVirtual(type, "name", methodType(String.class));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
@@ -296,6 +308,7 @@ public final class Methods {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private static MethodHandle exceptionHandlerCaller(ExceptionHandler handler) {
         return MethodLocator.findUsing(ExceptionHandler.class, h -> h.handle(null, null)).bindTo(handler);
     }
@@ -501,7 +514,7 @@ public final class Methods {
             return dropArguments(FALSE, 0, Object.class);
         }
         if (Object.class.equals(check)) {
-            return notNullCheck;
+            return NullChecks.notNullCheck;
         }
         try {
             return publicLookup().in(check).bind(check, "isInstance", methodType(boolean.class, Object.class));

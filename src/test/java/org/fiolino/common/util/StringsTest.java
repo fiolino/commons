@@ -126,10 +126,10 @@ class StringsTest {
         normal = Strings.normalizeName("HELLO_WORLD!");
         assertEquals("helloWorld!", normal);
 
-        normal = Strings.normalizeName("HELLO_WORLD$$HI_JOHN!");
+        normal = Strings.normalizeName("HELLO_WORLD$$HI_JOHN!", ch -> ch == '$' ? '.' : ch);
         assertEquals("helloWorld..hiJohn!", normal);
 
-        normal = Strings.normalizeName("HELLO$_WORLD!");
+        normal = Strings.normalizeName("HELLO$_WORLD!", ch -> ch == '$' ? '.' : ch);
         assertEquals("hello.World!", normal);
     }
 

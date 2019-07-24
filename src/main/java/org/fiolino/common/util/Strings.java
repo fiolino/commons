@@ -2,7 +2,9 @@ package org.fiolino.common.util;
 
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
+import java.util.function.IntUnaryOperator;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -176,31 +178,66 @@ public final class Strings {
         return sb.toString();
     }
 
+    private static final class NormalizedStringBuilder {
+        private final IntUnaryOperator modifier;
+        private final StringBuilder sb;
+        private boolean wasUnderscore;
+
+        NormalizedStringBuilder(IntUnaryOperator modifier, int l) {
+            this.modifier = modifier;
+            sb = new StringBuilder(l);
+        }
+
+        void append(int codePoint) {
+            if (codePoint == '_') {
+                if (wasUnderscore) sb.append('_');
+                else wasUnderscore = true;
+            } else if (wasUnderscore) {
+                sb.appendCodePoint(modifier.applyAsInt(codePoint));
+                wasUnderscore = false;
+            } else {
+                sb.appendCodePoint(modifier.applyAsInt(Character.toLowerCase(codePoint)));
+            }
+        }
+
+        // This will never be called, and it's ignoring wasUnderscore
+        void append(NormalizedStringBuilder nsb) {
+            sb.append(nsb.sb);
+        }
+
+        @Override
+        public String toString() {
+            if (wasUnderscore) {
+                sb.append('_');
+                wasUnderscore = false;
+            }
+            return sb.toString();
+        }
+    }
+
     /**
      * Normalizes an uppercased name by lowercasing everything, except letters that
      * follow an underscore, which become camel case then.
-     * On top, all $ signs are replaced by dots.
      * <p>
      * For instance, MAKE_ME_LOWER becomes makeMeLower.
      */
     public static String normalizeName(String name) {
+        return normalizeName(name, ch -> ch);
+    }
+
+    /**
+     * Normalizes an uppercased name by lowercasing everything, except letters that
+     * follow an underscore, which become camel case then.
+     * <p>
+     * A modifier may be given, which can transform individual characters after their case has changed.
+     * <p>
+     * For instance, MAKE_ME_LOWER becomes makeMeLower.
+     */
+    public static String normalizeName(String name, IntUnaryOperator modifier) {
         int l = name.length();
-        for (int i = 0; i < l; i++) {
-            if (Character.isLowerCase(name.charAt(i)))
-                return name.replace('$', '.'); // Then the name is already lowercased
-        }
-        StringBuilder sb = new StringBuilder(l).append(Character.toLowerCase(name.charAt(0)));
-        for (int i = 1; i < l; i++) {
-            char ch = name.charAt(i);
-            if (ch == '_' && ++i < l) {
-                sb.append(name.charAt(i));
-            } else if (ch == '$') {
-                sb.append('.');
-            } else {
-                sb.append(Character.toLowerCase(ch));
-            }
-        }
-        return sb.toString();
+        if (l == 0) return name;
+        return name.codePoints().collect(() -> new NormalizedStringBuilder(modifier, l),
+                NormalizedStringBuilder::append, NormalizedStringBuilder::append).toString();
     }
 
     /**
@@ -452,12 +489,12 @@ public final class Strings {
         public final int separator;
 
         /**
-         * The start index in the original text, not counting any separator.
+         * The start index in the original text, not including any separator.
          */
         public final int start;
 
         /**
-         * The end index in the original text, not counting any separator.
+         * The end index in the original text, not including any separator.
          */
         public final int end;
 

@@ -723,8 +723,7 @@ class MethodsTest {
 
     @Test
     void testFindSingleMethodFailed() {
-        assertThrows(NoSuchMethodError.class,
-                () -> Methods.findMethodHandleOfType(LOOKUP, ActionListener.class, methodType(String.class)));
+        assertFalse(Methods.findMethodHandleOfType(LOOKUP, ActionListener.class, methodType(String.class)).isPresent());
     }
 
     @Test

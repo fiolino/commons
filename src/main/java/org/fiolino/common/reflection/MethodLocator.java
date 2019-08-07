@@ -670,11 +670,11 @@ public final class MethodLocator {
      *
      * @param initialValue The visitor's first value
      * @param visitor      The method visitor
-     * @param instance     The instance of my type
+     * @param instance     The instance of my type, or a Supplier which will be called on every found method exactly once
      * @return The return value of the last visitor's run
      */
     public <V> V visitMethodsWithStaticContext(@Nullable V initialValue, MethodVisitor<V> visitor, @Nullable Object instance) {
-        if (instance != null && !type.isInstance(instance)) {
+        if (instance != null && !(instance instanceof Supplier) && !type.isInstance(instance)) {
             throw new IllegalArgumentException(instance + " should be of type " + type.getName());
         }
         return iterateOver(type, initialValue, visitor, m -> {
@@ -688,7 +688,7 @@ public final class MethodLocator {
                 return handle;
             }
             if (instance != null) {
-                return handle.bindTo(instance);
+                return handle.bindTo(instance instanceof Supplier ? ((Supplier<?>) instance).get() : instance);
             }
             MethodHandle constructor;
             try {

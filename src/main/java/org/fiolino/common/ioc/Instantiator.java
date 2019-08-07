@@ -29,8 +29,8 @@ import static java.lang.invoke.MethodType.methodType;
  * <ul>
  *     <li>A {@link Method}: Will be used as a factory method to instantiate if the return type matches.</li>
  *     <li>A {@link MethodHandle}: Like the method.</li>
- *     <li>A {@link Class}: Tries to find all methods ,with a @{@link org.fiolino.annotations.Factory} annotation which will serve as factory methods then.
- *     Static methods will be used directly, while for instance methods, a factory instance gets constructed on every call.</li>
+ *     <li>A {@link Class}: Tries to find all methods with a @{@link org.fiolino.annotations.Provider} annotation which will serve as factory methods then.
+ *     Static methods will be used directly, while for instance methods, a single factory instance gets constructed initially.</li>
  *     <li>Any object: Like the class case, but for instance methods, the given instance will be the only factory instance.</li>
  * </ul>
  * <p>
@@ -198,9 +198,8 @@ public final class Instantiator {
         register(makeOptional(h), findRequestedTypeParameter(provider));
     }
 
-    private <T> void register(Class<T> providerClass) {
-        Supplier<T> metaFactory = createSupplierFor(providerClass);
-        MethodLocator.forLocal(lookup, providerClass).visitMethodsWithStaticContext(null, (v, l, m, supp) -> {
+    private void registerAllProvidersFrom(MethodLocator locator, Object metaFactoryOrInstance) {
+        locator.visitMethodsWithStaticContext(null, (v, l, m, supp) -> {
             Provider annotation = m.getAnnotation(Provider.class);
             if (annotation == null) return null;
 
@@ -210,21 +209,16 @@ public final class Instantiator {
             }
             register(provider, findRequestedTypeParameter(m));
             return null;
-        });
+        }, metaFactoryOrInstance);
+    }
+
+    private <T> void register(Class<T> providerClass) {
+        Supplier<T> metaFactory = createSupplierFor(providerClass);
+        registerAllProvidersFrom(MethodLocator.forLocal(lookup, providerClass), metaFactory);
     }
 
     private <T> void register(Object providerInstance) {
-        MethodLocator.forLocal(lookup, providerInstance.getClass()).visitMethodsWithStaticContext(null, (v, l, m, supp) -> {
-            Provider annotation = m.getAnnotation(Provider.class);
-            if (annotation == null) return null;
-
-            MethodHandle provider = supp.get();
-            if (annotation.optional() || m.isAnnotationPresent(Nullable.class)) {
-                provider = makeOptional(provider);
-            }
-            register(provider, findRequestedTypeParameter(m));
-            return null;
-        }, providerInstance);
+        registerAllProvidersFrom(MethodLocator.forLocal(lookup, providerInstance.getClass()), providerInstance);
     }
 
     private MethodHandle makeOptional(MethodHandle provider) {

@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -234,7 +235,7 @@ class MethodsVisitorTest {
     @Test
     void testStaticMethods() throws Throwable {
         MethodHandle h = MethodLocator.forLocal(MethodHandles.lookup(), Uninstantiable.class).visitMethodsWithStaticContext(
-                Uninstantiable::new, null, (v, l, m, handleSupplier) -> {
+                null, (v, l, m, handleSupplier) -> {
                     if (m.getName().equals("staticMethod")) {
                         return handleSupplier.get();
                     }
@@ -269,7 +270,7 @@ class MethodsVisitorTest {
 
         Instantiable i = new Instantiable();
         wasInstantiated.set(false);
-        MethodLocator.visitMethodsWithStaticContext(MethodHandles.lookup(), i, null, (v, l, m, handleSupplier) -> {
+        MethodLocator.forLocal(MethodHandles.lookup(), Instantiable.class).visitMethodsWithStaticContext(null, (v, l, m, handleSupplier) -> {
             if (m.getName().equals("staticMethod")) {
                 staticRef.set(handleSupplier.get());
             }
@@ -277,7 +278,7 @@ class MethodsVisitorTest {
                 instanceRef.set(handleSupplier.get());
             }
             return null;
-        });
+        }, i);
 
         assertFalse(wasInstantiated.get(), "Wasn't instantiated because instance was already given.");
         MethodHandle h = staticRef.get();
@@ -292,7 +293,7 @@ class MethodsVisitorTest {
         // Now check with given class
         instanceRef.set(null);
         staticRef.set(null);
-        MethodLocator.forLocal(MethodHandles.lookup(), Instantiable.class).visitMethodsWithStaticContext(Instantiable::new, null, (v, l, m, handleSupplier) -> {
+        MethodLocator.forLocal(MethodHandles.lookup(), Instantiable.class).visitMethodsWithStaticContext(null, (v, l, m, handleSupplier) -> {
             if (m.getName().equals("staticMethod")) {
                 staticRef.set(handleSupplier.get());
             }
@@ -300,7 +301,7 @@ class MethodsVisitorTest {
                 instanceRef.set(handleSupplier.get());
             }
             return null;
-        });
+        }, (Supplier<?>) Instantiable::new);
 
         assertTrue(wasInstantiated.get(), "Was instantiated because there is an instance method.");
         h = staticRef.get();

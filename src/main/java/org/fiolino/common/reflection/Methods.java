@@ -1803,9 +1803,8 @@ public final class Methods {
      * @param lookup    The lookup
      * @param object    The object (Class or some instance) to investigate
      * @param reference The method type to look for
-     * @return The found method handle, or Optional.epmty()
+     * @return The found method handle, or Optional.empty()
      * @throws AmbiguousMethodException If there are multiple methods matching the searched type
-     * @throws NoSuchMethodError        If no method was found
      */
     public static Optional<MethodHandle> findMethodHandleOfType(@Nullable Lookup lookup, Object object, MethodType reference) {
         return findSingleMethodHandle(lookup, object, reference).map(h -> h.asType(reference));

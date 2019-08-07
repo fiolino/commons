@@ -77,12 +77,12 @@ class ConvertersTest {
     }
 
     private MethodHandle getHandle(ConverterLocator loc, Class<?> returnValue, Object provider) {
-        MethodHandle pHandle = MethodLocator.visitMethodsWithStaticContext(lookup(), provider, null, (v, l, m, handleSupplier) -> {
+        MethodHandle pHandle = MethodLocator.forLocal(lookup(), provider.getClass()).visitMethodsWithStaticContext(null, (v, l, m, handleSupplier) -> {
             if (m.getDeclaringClass() != Object.class) {
                 return handleSupplier.get();
             }
             return v;
-        });
+        }, provider);
         return Converters.convertReturnTypeTo(pHandle, loc, returnValue);
     }
 
@@ -98,7 +98,7 @@ class ConvertersTest {
         c = getHandle(Converters.defaultConverters, long.class, getInt);
         assertEquals(15L, (long) c.invokeExact());
         c = getHandle(Converters.defaultConverters, boolean.class, getInt);
-        assertEquals(true, (boolean) c.invokeExact());
+        assertTrue((boolean) c.invokeExact());
         c = getHandle(Converters.defaultConverters, float.class, getInt);
         assertEquals(15.0f, (float) c.invokeExact(), 0.1f);
         c = getHandle(Converters.defaultConverters, String.class, getInt);

@@ -111,7 +111,7 @@ class MethodLocatorTest {
     @Test
     void testFindUsingPrototype() throws Throwable {
         final MethodHandle[] handles = new MethodHandle[2];
-        MethodLocator.findUsing(LOOKUP, new Prototype(), null, (v, l, m, handleSupplier) -> {
+        MethodLocator.forLocal(LOOKUP, Prototype.class).findUsing(null, (v, l, m, handleSupplier) -> {
             handles[m.getName().equals("createAddHandle") ? 0 : 1] = handleSupplier.get();
             return null;
         });

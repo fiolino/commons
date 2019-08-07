@@ -110,8 +110,8 @@ public class SerializerBuilder {
         INITIAL_APPENDERS = addAppendersFrom(Appenders.LOOKUP, new ArrayList<>(), Appenders.class);
     }
 
-    private static <T extends Collection<MethodHandle>> T addAppendersFrom(MethodHandles.Lookup lookup, T appenders, Object appenderContainer) {
-        return MethodLocator.visitMethodsWithStaticContext(lookup, appenderContainer, appenders,
+    private static <T extends Collection<MethodHandle>> T addAppendersFrom(MethodHandles.Lookup lookup, T appenders, Class<?> appenderContainer) {
+        return MethodLocator.forLocal(lookup, appenderContainer).findUsing(appenders,
                 (list, l, m, supp) -> {
                     if (isAppender(m)) {
                         list.add(supp.get());
@@ -144,7 +144,7 @@ public class SerializerBuilder {
         appenders = new ArrayList<>(INITIAL_APPENDERS);
     }
 
-    public void addAppenders(MethodHandles.Lookup lookup, Object appenderContainer) {
+    public void addAppenders(MethodHandles.Lookup lookup, Class<?> appenderContainer) {
         addAppendersFrom(lookup, appenders, appenderContainer);
     }
 

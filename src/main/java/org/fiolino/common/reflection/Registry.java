@@ -196,21 +196,13 @@ public interface Registry extends Resettable {
      */
     static <T> LambdaRegistry<T> buildForFunctionalType(T function) {
         Class<?> functionClass = function.getClass();
-        LambdaRegistry<T> registry = MethodLocator.forPublic(functionClass).doInClassHierarchy(c -> {
-            for (Class<?> i : functionClass.getInterfaces()) {
-                if (Methods.findLambdaMethod(i).isPresent()) {
-                    @SuppressWarnings("unchecked")
-                    Class<T> castedInterface = (Class<T>) i;
-                    return buildForFunctionalType(castedInterface, function);
-                }
+        for (Class<?> i : functionClass.getInterfaces()) {
+            if (Methods.findLambdaMethod(i).isPresent()) {
+                @SuppressWarnings("unchecked")
+                Class<T> castedInterface = (Class<T>) i;
+                return buildForFunctionalType(castedInterface, function);
             }
-
-            return null;
-        });
-
-        if (registry == null) {
-            throw new IllegalArgumentException(function + " does not seem to be a lambda expression");
         }
-        return registry;
+        throw new IllegalArgumentException(function + " does not seem to be a lambda expression");
     }
 }

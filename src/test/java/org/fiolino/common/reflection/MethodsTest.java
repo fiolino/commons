@@ -705,7 +705,7 @@ class MethodsTest {
             void set(String value) {
                 ref.set(value);
             }
-        }, methodType(void.class, String.class));
+        }, methodType(void.class, String.class)).orElseThrow();
         assertEquals(methodType(void.class, String.class), handle.type());
         handle.invokeExact("Hello world.");
         assertEquals("Hello world.", ref.get());
@@ -715,7 +715,7 @@ class MethodsTest {
             void set(String value) {
                 ref.set(value);
             }
-        }, methodType(void.class, Object.class));
+        }, methodType(void.class, Object.class)).orElseThrow();
         assertEquals(methodType(void.class, Object.class), handle.type());
         handle.invokeExact((Object) "Hello world.");
         assertEquals("Hello world.", ref.get());
@@ -730,7 +730,7 @@ class MethodsTest {
     @Test
     void findSingleMethodWithNewInstance() throws Throwable {
         MethodHandle handle = Methods.findMethodHandleOfType(publicLookup(), StringBuilder.class,
-                methodType(StringBuilder.class, String.class));
+                methodType(StringBuilder.class, String.class)).orElseThrow();
         StringBuilder sb1 = (StringBuilder) handle.invokeExact("First");
         assertEquals("First", sb1.toString());
         StringBuilder sb2 = (StringBuilder) handle.invokeExact(" Second");
@@ -742,7 +742,7 @@ class MethodsTest {
     void findSingleMethodWithSameInstanceOnEveryCall() throws Throwable {
         StringBuilder sb = new StringBuilder("Initial ");
         MethodHandle handle = Methods.findMethodHandleOfType(publicLookup(), sb,
-                methodType(StringBuilder.class, String.class));
+                methodType(StringBuilder.class, String.class)).orElseThrow();
         StringBuilder sb1 = (StringBuilder) handle.invokeExact("First");
         assertSame(sb1, sb);
         assertEquals("Initial First", sb1.toString());
@@ -773,19 +773,19 @@ class MethodsTest {
     @Test
     void findSingleBestMatchingMethod() throws Throwable {
         // Also checks that no new instance ist created because returnHello() is static
-        MethodHandle handle = Methods.findMethodHandleOfType(LOOKUP, WithThreeMethods.class, methodType(String.class));
+        MethodHandle handle = Methods.findMethodHandleOfType(LOOKUP, WithThreeMethods.class, methodType(String.class)).orElseThrow();
         String s = (String) handle.invokeExact();
         assertEquals("Hello", s);
 
         // First find the exact match
         handle = Methods.findMethodHandleOfType(LOOKUP, new WithThreeMethods(true),
-                methodType(String.class, String.class));
+                methodType(String.class, String.class)).orElseThrow();
         s = (String) handle.invokeExact("My");
         assertEquals("My string", s);
 
         // then find the more generic one
         handle = Methods.findMethodHandleOfType(LOOKUP, new WithThreeMethods(true),
-                methodType(Object.class, CharSequence.class));
+                methodType(Object.class, CharSequence.class)).orElseThrow();
         Object o = handle.invokeExact((CharSequence) "My");
         assertEquals("My", o);
     }

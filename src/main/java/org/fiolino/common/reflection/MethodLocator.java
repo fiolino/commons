@@ -1,7 +1,6 @@
 package org.fiolino.common.reflection;
 
 
-import org.fiolino.common.ioc.Instantiator;
 import org.fiolino.common.util.Strings;
 
 import javax.annotation.Nullable;
@@ -11,12 +10,12 @@ import java.lang.invoke.MethodType;
 import java.lang.reflect.*;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import static java.lang.invoke.MethodHandles.Lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
@@ -72,6 +71,13 @@ public final class MethodLocator {
      */
     public Lookup lookup() {
         return lookup;
+    }
+
+    /**
+     * The type which gets examined.
+     */
+    public Class<?> getType() {
+        return type;
     }
 
     /**
@@ -456,25 +462,12 @@ public final class MethodLocator {
     /**
      * Finds all methods that are annotated either with {@link MethodFinder}, {@link ExecuteDirect} or {@link MethodHandleFactory}.
      *
-     * @param prototype Contains all methods
      * @param visitor   The callback for each found method
      */
-    public static <V> V findUsing(Object prototype, @Nullable V initialValue, MethodVisitor<V> visitor) {
-        return findUsing(publicLookup().in(prototype.getClass()), initialValue, visitor);
-    }
-
-    /**
-     * Finds all methods that are annotated either with {@link MethodFinder}, {@link ExecuteDirect} or {@link MethodHandleFactory}.
-     *
-     * @param lookup    The lookup
-     * @param prototype Contains all methods
-     * @param visitor   The callback for each found method
-     */
-    public static <V> V findUsing(Lookup lookup, Object prototype,
-                                  @Nullable V initialValue, MethodVisitor<V> visitor) {
-        return visitMethodsWithStaticContext(lookup, prototype, initialValue, (value, l, m, handleSupplier) -> {
+    public <V> V findUsing(@Nullable V initialValue, MethodVisitor<V> visitor) {
+        return visitMethodsWithStaticContext(initialValue, (value, l, m, handleSupplier) -> {
             if (m.isAnnotationPresent(MethodFinder.class)) {
-                return visitor.visit(value, l, m, () -> findHandleByProxy(lookup, handleSupplier.get()));
+                return visitor.visit(value, l, m, () -> findHandleByProxy(handleSupplier.get()));
             }
             if (m.isAnnotationPresent(ExecuteDirect.class) || m.isAnnotationPresent(MethodHandleFactory.class)) {
                 return visitor.visit(value, l, m, handleSupplier);
@@ -486,12 +479,11 @@ public final class MethodLocator {
     /**
      * Creates the method handle of some interface that is invoked in a finder method.
      *
-     * @param lookup The used lookup
      * @param finder This method should accept exactly one argument which must be an interface.
      *               The return type is irrelevant.
      * @return The first called method with that finder, or null if there is no such method called.
      */
-    private static MethodHandle findHandleByProxy(Lookup lookup, MethodHandle finder) {
+    private MethodHandle findHandleByProxy(MethodHandle finder) {
         if (finder.type().parameterCount() != 1) {
             throw new IllegalArgumentException(finder + " should accept exactly one argument.");
         }
@@ -647,81 +639,6 @@ public final class MethodLocator {
      * The visitor's MethodHandle will be static, that means, all MethodHandles are exactly of the Method's type
      * without any instance context.
      * <p>
-     * If the Method is an instance method, then the given reference is bound to the handle.
-     * <p>
-     * That means, the visitor doesn't have to care whether the method is static or not.
-     * <p>
-     * The reference can either be a Class; in that case, the visitor creates a new instance as a reference to
-     * the MethodHandle as soon as the first instance method is unreflected. That means, the class needs an
-     * empty constructor visible from the given lookup unless all visited methods are static.
-     * <p>
-     * Or it can be any other object, which is the method's context then.
-     * <p>
-     * This will visit all methods that the given lookup is able to find.
-     * If some method overrides another, then only the overriding method gets visited.
-     *
-     * @param reference    Either a Class or a prototype instance
-     * @param initialValue The visitor's first value
-     * @param visitor      The method visitor
-     * @return The return value of the last visitor's run
-     */
-    public static <V> V visitMethodsWithStaticContext(Object reference, @Nullable V initialValue, MethodVisitor<V> visitor) {
-        return visitMethodsWithStaticContext0(publicLookup(), reference, initialValue, visitor);
-    }
-
-    /**
-     * Iterates over all methods of the given type.
-     * The visitor's MethodHandle will be static, that means, all MethodHandles are exactly of the Method's type
-     * without any instance context.
-     * <p>
-     * If the Method is an instance method, then the given reference is bound to the handle.
-     * <p>
-     * That means, the visitor doesn't have to care whether the method is static or not.
-     * <p>
-     * The reference can either be a Class; in that case, the visitor creates a new instance as a reference to
-     * the MethodHandle as soon as the first instance method is unreflected. That means, the class needs an
-     * empty constructor visible from the given lookup unless all visited methods are static.
-     * <p>
-     * Or it can be any other object, which is the method's context then.
-     * <p>
-     * This will visit all methods that the given lookup is able to find.
-     * If some method overrides another, then only the overriding method gets visited.
-     *
-     * @param lookup       The lookup
-     * @param reference    Either a Class or a prototype instance
-     * @param initialValue The visitor's first value
-     * @param visitor      The method visitor
-     * @return The return value of the last visitor's run
-     */
-    public static <V> V visitMethodsWithStaticContext(Lookup lookup, Object reference,
-                                                      @Nullable V initialValue, MethodVisitor<V> visitor) {
-        return visitMethodsWithStaticContext0(lookup, reference, initialValue, visitor);
-    }
-
-    private static <T, V> V visitMethodsWithStaticContext0(Lookup lookup, T reference,
-                                                           V initialValue, MethodVisitor<V> visitor) {
-        Class<? extends T> type;
-        Supplier<T> factory;
-        if (reference instanceof Class) {
-            @SuppressWarnings("unchecked")
-            Class<T> t = (Class<T>) reference;
-            factory = Instantiator.getDefault().createSupplierFor(t);
-            type = t;
-        } else {
-            @SuppressWarnings("unchecked")
-            Class<? extends T> t = (Class<? extends T>) reference.getClass();
-            type = t;
-            factory = () -> reference;
-        }
-        Lookup l = lookup.in(type);
-        return forLocal(l).visitMethodsWithStaticContext(factory, initialValue, visitor);
-    }
-
-    /**
-     * Iterates over all methods of my type, including all super types.
-     * The visitor's MethodHandle will be static, that means, all MethodHandles are exactly of the Method's type
-     * without any instance context.
-     * <p>
      * If the Method is an instance method, then the given factory should create an instance of the given type.
      * This is bound to that handle then.
      * <p>
@@ -730,15 +647,37 @@ public final class MethodLocator {
      * This will visit all methods that the given lookup is able to find.
      * If some method overrides another, then only the overriding method gets visited.
      *
-     * @param factory      Used to instantiate a member if the created method handle is of an instance method
      * @param initialValue The visitor's first value
      * @param visitor      The method visitor
      * @return The return value of the last visitor's run
      */
-    public <T, V> V visitMethodsWithStaticContext(Supplier<T> factory,
-                                                  @Nullable V initialValue, MethodVisitor<V> visitor) {
-        Object[] instance = new Object[1];
-        return iterateOver(type, initialValue, visitor, (m) -> {
+    public <V> V visitMethodsWithStaticContext(@Nullable V initialValue, MethodVisitor<V> visitor) {
+        return visitMethodsWithStaticContext(initialValue, visitor, null);
+    }
+
+    /**
+     * Iterates over all methods of my type, including all super types.
+     * The visitor's MethodHandle will be static, that means, all MethodHandles are exactly of the Method's type
+     * without any instance context.
+     * <p>
+     * If the Method is an instance method, then the given factory should create an instance of the given type
+     * if no instance is given. Otherwise, that instance is being used.
+     * <p>
+     * That means, the visitor doesn't have to care whether the method is static or not.
+     * <p>
+     * This will visit all methods that the given lookup is able to find.
+     * If some method overrides another, then only the overriding method gets visited.
+     *
+     * @param initialValue The visitor's first value
+     * @param visitor      The method visitor
+     * @param instance     The instance of my type
+     * @return The return value of the last visitor's run
+     */
+    public <V> V visitMethodsWithStaticContext(@Nullable V initialValue, MethodVisitor<V> visitor, @Nullable Object instance) {
+        if (instance != null && !type.isInstance(instance)) {
+            throw new IllegalArgumentException(instance + " should be of type " + type.getName());
+        }
+        return iterateOver(type, initialValue, visitor, m -> {
             MethodHandle handle;
             try {
                 handle = lookup.unreflect(m);
@@ -748,12 +687,16 @@ public final class MethodLocator {
             if (Modifier.isStatic(m.getModifiers())) {
                 return handle;
             }
-            Object ref = instance[0];
-            if (ref == null) {
-                ref = factory.get();
-                instance[0] = ref;
+            if (instance != null) {
+                return handle.bindTo(instance);
             }
-            return handle.bindTo(ref);
+            MethodHandle constructor;
+            try {
+                constructor = lookup.findConstructor(type, methodType(void.class));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                throw new IllegalStateException(type.getName() + " should have an empty constructor!", ex);
+            }
+            return MethodHandles.foldArguments(handle, constructor);
         });
     }
 
@@ -761,20 +704,36 @@ public final class MethodLocator {
      * Iterates over the full class hierarchy of my type, but without Object itself.
      * Starts with the given type and then traverses over the superclass hierarchy until some value is found.
      *
-     * @param action What to do for each class - will continue with the next superclass only if this returns null
      * @return The return value of the last action call, or null if all actions returned null
      */
-    @Nullable
-    public <T> T doInClassHierarchy(Function<? super Class<?>, T> action) {
-        Class<?> c = type;
-        while (c != null && c != Object.class) {
-            T result = action.apply(c);
-            if (result != null) {
-                return result;
+    public Stream<Class<?>> hierarchy() {
+        return StreamSupport.stream(new Spliterator<>() {
+            private Class<?> c = type;
+
+            @Override
+            public boolean tryAdvance(Consumer<? super Class<?>> action) {
+                if (c == null) return false;
+                action.accept(c);
+                c = c.getSuperclass();
+                if (c == Object.class) c = null;
+                return true;
             }
-            c = c.getSuperclass();
-        }
-        return null;
+
+            @Override
+            public Spliterator<Class<?>> trySplit() {
+                return null;
+            }
+
+            @Override
+            public long estimateSize() {
+                return Long.MAX_VALUE;
+            }
+
+            @Override
+            public int characteristics() {
+                return Spliterator.DISTINCT | Spliterator.IMMUTABLE | Spliterator.NONNULL;
+            }
+        }, false);
     }
 
     /**
@@ -809,6 +768,91 @@ public final class MethodLocator {
         } while ((c = c.getSuperclass()) != null);
 
         return value;
+    }
+
+    /**
+     * Finds the method to the only unique method that fits to the given method type.
+     * <p>
+     * A method is a unique method if it is the only one with the given type within one class. If there are more
+     * in its super classes, then it doesn't matter.
+     * <p>
+     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
+     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
+     * if there is one method that is more generic, and another one is more specific, then uniqueness still
+     * is given and the more generic one is chosen.
+     *
+     * @param reference The method type to look for
+     * @return The found method handle, or Optional.empty()
+     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
+     */
+    public Optional<Method> findMethod(MethodType reference) {
+        return Optional.ofNullable(findSingleMethodOf(reference));
+    }
+
+    private static final class MethodLocatorInvariant {
+        Method bestMatch;
+        Comparison matchingRank;
+        boolean ambiguous;
+
+        MethodLocatorInvariant chooseMatching(MethodLocatorInvariant other) {
+            if (bestMatch == null || matchingRank == null) {
+                return other;
+            }
+            if (other.bestMatch == null || other.matchingRank == null) {
+                return this;
+            }
+            accept(other.bestMatch, other.matchingRank);
+            return this;
+        }
+
+        boolean accept(Method m, Comparison comp) {
+            switch (comp) {
+                case EQUAL:
+                    if (matchingRank == Comparison.EQUAL) {
+                        ambiguous = true;
+                        return true;
+                    }
+                    matchingRank = Comparison.EQUAL;
+                    bestMatch = m;
+                    ambiguous = false;
+                    break;
+                case MORE_SPECIFIC:
+                    if (matchingRank != null && matchingRank != Comparison.MORE_SPECIFIC) {
+                        break;
+                    }
+                case MORE_GENERIC: // or MORE_SPECIFIC
+                    if (matchingRank != comp) {
+                        matchingRank = comp;
+                        ambiguous = false;
+                    } else {
+                        ambiguous = bestMatch != null;
+                    }
+                    bestMatch = m;
+                    break;
+                default:
+                    // Do nothing then
+            }
+
+            return false;
+        }
+    }
+
+    private Method findSingleMethodOf(MethodType reference) {
+        return hierarchy().reduce(new MethodLocatorInvariant(), (i, c) -> {
+            Method[] methods = Methods.getDeclaredMethodsFrom(c);
+            for (Method m : methods) {
+                if (!wouldBeVisible(m)) {
+                    continue;
+                }
+                Comparison compare = Methods.compare(reference, m);
+                if (i.accept(m, compare)) break;
+            }
+
+            if (i.ambiguous) {
+                throw new AmbiguousMethodException("Multiple methods found with type " + reference + " in " + type.getName());
+            }
+            return i;
+        }, MethodLocatorInvariant::chooseMatching).bestMatch;
     }
 
     private static final int INVOKE_STATIC = Modifier.STATIC | Modifier.PRIVATE;

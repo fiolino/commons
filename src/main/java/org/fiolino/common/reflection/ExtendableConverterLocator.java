@@ -186,7 +186,8 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
      * @return A new locator with the registered converters
      */
     public ExtendableConverterLocator register(Object converterMethods) {
-        return register(MethodHandles.publicLookup().in(converterMethods.getClass()), converterMethods);
+        MethodHandles.Lookup l = converterMethods instanceof Class ? MethodHandles.publicLookup().in((Class<?>) converterMethods) : MethodHandles.publicLookup().in(converterMethods.getClass());
+        return register(l, converterMethods);
     }
 
     /**
@@ -206,7 +207,17 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
      * @return A new locator with the registered converters
      */
     public ExtendableConverterLocator register(MethodHandles.Lookup lookup, Object converterMethods) {
-        return MethodLocator.visitMethodsWithStaticContext(lookup, converterMethods, this,
+        MethodLocator locator;
+        Object instance;
+        if (converterMethods instanceof Class) {
+            locator = MethodLocator.forLocal(lookup, (Class<?>) converterMethods);
+            instance = null;
+        } else {
+            locator = MethodLocator.forLocal(lookup, converterMethods.getClass());
+            instance = converterMethods;
+        }
+
+        return locator.visitMethodsWithStaticContext(this,
                 (loc, l, m, handleSupplier) -> {
 
                     if (!m.isAnnotationPresent(ConvertValue.class)) {
@@ -243,6 +254,6 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
                         throw new AssertionError(m + " should convert from one value to another.");
                     }
                     return loc.register(handleSupplier.get());
-                });
+                }, instance);
     }
 }

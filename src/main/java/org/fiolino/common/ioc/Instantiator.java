@@ -200,7 +200,7 @@ public final class Instantiator {
 
     private <T> void register(Class<T> providerClass) {
         Supplier<T> metaFactory = createSupplierFor(providerClass);
-        MethodLocator.forLocal(lookup, providerClass).visitMethodsWithStaticContext(metaFactory, null, (v, l, m, supp) -> {
+        MethodLocator.forLocal(lookup, providerClass).visitMethodsWithStaticContext(null, (v, l, m, supp) -> {
             Provider annotation = m.getAnnotation(Provider.class);
             if (annotation == null) return null;
 
@@ -214,7 +214,7 @@ public final class Instantiator {
     }
 
     private <T> void register(Object providerInstance) {
-        MethodLocator.visitMethodsWithStaticContext(lookup, providerInstance, null, (v, l, m, supp) -> {
+        MethodLocator.forLocal(lookup, providerInstance.getClass()).visitMethodsWithStaticContext(null, (v, l, m, supp) -> {
             Provider annotation = m.getAnnotation(Provider.class);
             if (annotation == null) return null;
 
@@ -224,7 +224,7 @@ public final class Instantiator {
             }
             register(provider, findRequestedTypeParameter(m));
             return null;
-        });
+        }, providerInstance);
     }
 
     private MethodHandle makeOptional(MethodHandle provider) {

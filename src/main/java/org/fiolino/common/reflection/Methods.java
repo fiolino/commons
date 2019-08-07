@@ -173,7 +173,6 @@ public final class Methods {
      * @return (String)&lt;type&gt; -- throws IllegalArgumentException If the input string is invalid, i.e. none of the accepted enumeration values
      */
     public static <E> MethodHandle convertStringToEnum(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
-        assert type.isEnum();
         Map<String, Object> map = new HashMap<>();
         Field[] fields = AccessController.doPrivileged((PrivilegedAction<Field[]>) type::getFields);
         boolean useMap = !type.isEnum();
@@ -186,6 +185,10 @@ public final class Methods {
             if (!type.isAssignableFrom(f.getType())) {
                 continue;
             }
+            AccessController.doPrivileged((PrivilegedAction<Field>) () -> {
+                f.setAccessible(true);
+                return null;
+            });
             E v;
             try {
                 v = type.cast(f.get(null));
@@ -246,7 +249,7 @@ public final class Methods {
     }
 
     /**
-     * Creates a handle that converts some enum or sdome other class with constants to a String.
+     * Creates a handle that converts some enum or some other class with constants to a String.
      * Instead of just using the field's, it is checked whether some fields should be treated specifically; in that case,
      * those values will be used.
      *
@@ -256,7 +259,7 @@ public final class Methods {
      * @param specialHandler Can return a special value for some field and its value.
      *                       If it returns null, the field's name is used. If it returns an empty String, the field will be skipped.
      * @param <E> The enum
-     * @return (E)String
+     * @return (E)String -- Returns null if the parameter is null
      */
     public static <E> MethodHandle convertEnumToString(Class<E> type, BiFunction<? super Field, ? super E, String> specialHandler) {
         @SuppressWarnings("unchecked")
@@ -271,6 +274,10 @@ public final class Methods {
             if (!type.isAssignableFrom(f.getType())) {
                 continue;
             }
+            AccessController.doPrivileged((PrivilegedAction<Field>) () -> {
+                f.setAccessible(true);
+                return null;
+            });
             E v;
             try {
                 v = type.cast(f.get(null));
@@ -301,7 +308,7 @@ public final class Methods {
             // No special handling
             // type will be an enum
             try {
-                return publicLookup().findVirtual(type, "name", methodType(String.class));
+                return secureNull(publicLookup().findVirtual(type, "name", methodType(String.class)));
             } catch (NoSuchMethodException | IllegalAccessException ex) {
                 throw new InternalError(type.getName() + "::name", ex);
             }
@@ -320,7 +327,7 @@ public final class Methods {
      * of the failed target handle call.
      *
      * So if 0..k are the indexes of the injection parameters, and 0..n are the indexes of the target's parameters of the
-     * failed call, then you can refer to these values in the exception handler via parameters [0]..[k[ for the injection values,
+     * failed call, then you can refer to these values in the exception handler via parameters [0]..[k] for the injection values,
      * and [k+1]..[k+n+1] for the target call's parameters.
      *
      * @param target           The method handle to wrap.
@@ -346,7 +353,7 @@ public final class Methods {
      * of the failed target handle call.
      *
      * So if 0..k are the indexes of the injection parameters, and 0..n are the indexes of the target's parameters of the
-     * failed call, then you can refer to these values in the exception handler via parameters [0]..[k[ for the injection values,
+     * failed call, then you can refer to these values in the exception handler via parameters [0]..[k] for the injection values,
      * and [k+1]..[k+n+1] for the target call's parameters.
      *
      * @param target           The method handle to wrap.
@@ -902,143 +909,6 @@ public final class Methods {
     }
 
     /**
-     * Finds the method handle to the only unique method that fits to the given method type.
-     * <p>
-     * A method is a unique method if it is the only one with the given type within one class. If there are more
-     * in its super classes, then it doesn't matter.
-     * <p>
-     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
-     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
-     * if there is one method that is more generic, and another one is more specific, then uniqueness still
-     * is given and the more generic one is chosen.
-     * <p>
-     * The object to look up may either be an instance: Then its class type will be searched. If the found method then
-     * is static, it will simply be used, otherwise the given instance is bound to it.
-     * <p>
-     * If the object is a Class, and the found method is an instance method, then an empty constructor is expected
-     * and a new instance is created now.
-     * <p>
-     * As a result, the returned handle will have exactly the given reference method type, without any additional
-     * object instance.
-     *
-     * @param object    The object (Class or some instance) to investigate
-     * @param reference The method type to look for
-     * @return The found method handle
-     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
-     * @throws NoSuchMethodError        If no method was found
-     */
-    public static MethodHandle findMethodHandleOfType(Object object, MethodType reference) {
-        return findMethodHandleOfType(null, object, reference);
-    }
-
-    /**
-     * Finds the method handle to the only unique method that fits to the given method type.
-     * <p>
-     * A method is a unique method if it is the only one with the given type within one class. If there are more
-     * in its super classes, then it doesn't matter.
-     * <p>
-     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
-     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
-     * if there is one method that is more generic, and another one is more specific, then uniqueness still
-     * is given and the more generic one is chosen.
-     * <p>
-     * The object to look up may either be an instance: Then its class type will be searched. If the found method then
-     * is static, it will simply be used, otherwise the given instance is bound to it.
-     * <p>
-     * If the object is a Class, and the found method is an instance method, then an empty constructor is expected
-     * and a new instance is created now.
-     * <p>
-     * As a result, the returned handle will have exactly the given reference method type, without any additional
-     * object instance.
-     *
-     * @param lookup    The lookup
-     * @param object    The object (Class or some instance) to investigate
-     * @param reference The method type to look for
-     * @return The found method handle
-     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
-     * @throws NoSuchMethodError        If no method was found
-     */
-    public static MethodHandle findMethodHandleOfType(@Nullable Lookup lookup, Object object, MethodType reference) {
-        MethodHandle handle = findSingleMethodHandle(lookup, object, reference);
-        return handle.asType(reference);
-    }
-
-    /**
-     * Finds the method to the only unique method that fits to the given method type.
-     * <p>
-     * A method is a unique method if it is the only one with the given type within one class. If there are more
-     * in its super classes, then it doesn't matter.
-     * <p>
-     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
-     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
-     * if there is one method that is more generic, and another one is more specific, then uniqueness still
-     * is given and the more generic one is chosen.
-     *
-     * @param type      The reference type to investigate
-     * @param reference The method type to look for
-     * @return The found method handle
-     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
-     * @throws NoSuchMethodError        If no method was found
-     */
-    public static Method findMethodOfType(Class<?> type, MethodType reference) {
-        return findMethodOfType(null, type, reference);
-    }
-
-    /**
-     * Finds the method to the only unique method that fits to the given method type.
-     * <p>
-     * A method is a unique method if it is the only one with the given type within one class. If there are more
-     * in its super classes, then it doesn't matter.
-     * <p>
-     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
-     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
-     * if there is one method that is more generic, and another one is more specific, then uniqueness still
-     * is given and the more generic one is chosen.
-     *
-     * @param lookup    The lookup
-     * @param type      The reference type to investigate
-     * @param reference The method type to look for
-     * @return The found method handle
-     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
-     * @throws NoSuchMethodError        If no method was found
-     */
-    public static Method findMethodOfType(@Nullable Lookup lookup, Class<?> type, MethodType reference) {
-        Method m = findSingleMethodIn(lookup, type, reference);
-        if (m == null) {
-            throw new NoSuchMethodError("No method " + reference + " in " + type.getName());
-        }
-        return m;
-    }
-
-    private static MethodHandle findSingleMethodHandle(Lookup lookup, Object object, MethodType reference) {
-        Class<?> type;
-        if (object instanceof Class) {
-            type = (Class<?>) object;
-        } else {
-            if (MethodHandleProxies.isWrapperInstance(object)) {
-                return MethodHandleProxies.wrapperInstanceTarget(object);
-            }
-            type = object.getClass();
-        }
-        Lookup l = lookup == null ? publicLookup().in(type) : lookup;
-        Method m = findMethodOfType(l, type, reference);
-        MethodHandle handle;
-        try {
-            handle = l.unreflect(m);
-        } catch (IllegalAccessException ex) {
-            throw new AssertionError(m + " should be visible.", ex);
-        }
-        if (Modifier.isStatic(m.getModifiers())) {
-            return handle;
-        }
-        if (object instanceof Class) {
-            // Then inject a new instance now
-            object = Instantiator.getDefault().instantiate((Class<?>) object);
-        }
-        return handle.bindTo(object);
-    }
-
-    /**
      * Guards a method handle with a semaphore to assure bounded access to one single thread at a time.
      *
      * On each call to the target handle, a single permit is acquired, and it's released afterwards.
@@ -1410,9 +1280,12 @@ public final class Methods {
      *                   a size method, and must have an add() method
      * @return A handle that iterates over all elements of the given container and returns the results
      */
-    public static MethodHandle collectInto(@Nullable MethodHandle target, Class<?> inputType, int inputPosition, Class<?> outputType) {
+    public static MethodHandle collectInto(@Nullable MethodHandle target, Class<?> inputType, int inputPosition, @Nullable Class<?> outputType) {
         inputType = validateCollectParameters(target, inputType, inputPosition, outputType);
         if (outputType == null) {
+            if (target == null) {
+                throw new IllegalArgumentException("Only one of target and outputType may be null");
+            }
             return collectCollectionIntoArray(target, inputType, inputPosition, toArrayType(target.type().returnType()));
         }
         if (outputType.isArray()) {
@@ -1477,8 +1350,8 @@ public final class Methods {
      */
     public static MethodHandle collectInto(@Nullable MethodHandle target, @Nullable Class<?> inputType, int inputPosition, Class<?> outputType, String addMethodName) {
         inputType = validateCollectParameters(target, inputType, inputPosition, outputType);
-        if (outputType == null || outputType.isArray()) {
-            throw new IllegalArgumentException("When outputType " + outputType.getName() + " is unspecified or an array, no addMethodName (" + addMethodName + ") must be given.");
+        if (outputType.isArray()) {
+            throw new IllegalArgumentException("When outputType " + outputType.getName() + " is an array, no addMethodName (" + addMethodName + ") must be given.");
         }
         return collectCollectionIntoCollection(target, inputType, inputPosition, outputType, addMethodName);
     }
@@ -1877,52 +1750,96 @@ public final class Methods {
         return permuteArguments(target, methodType(type.returnType(), newArguments), permutations);
     }
 
-    private static Method findSingleMethodIn(Lookup lookup, Class<?> type, MethodType reference) {
-        MethodLocator locator = MethodLocator.forLocal(lookup, type);
+    /**
+     * Finds the method handle to the only unique method that fits to the given method type.
+     * <p>
+     * A method is a unique method if it is the only one with the given type within one class. If there are more
+     * in its super classes, then it doesn't matter.
+     * <p>
+     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
+     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
+     * if there is one method that is more generic, and another one is more specific, then uniqueness still
+     * is given and the more generic one is chosen.
+     * <p>
+     * The object to look up may either be an instance: Then its class type will be searched. If the found method then
+     * is static, it will simply be used, otherwise the given instance is bound to it.
+     * <p>
+     * If the object is a Class, and the found method is an instance method, then an empty constructor is expected
+     * and a new instance is created now.
+     * <p>
+     * As a result, the returned handle will have exactly the given reference method type, without any additional
+     * object instance.
+     *
+     * @param object    The object (Class or some instance) to investigate
+     * @param reference The method type to look for
+     * @return The found method handle, or Optional.epmty()
+     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
+     * @throws NoSuchMethodError        If no method was found
+     */
+    public static Optional<MethodHandle> findMethodHandleOfType(Object object, MethodType reference) {
+        return findMethodHandleOfType(null, object, reference);
+    }
 
-        return locator.doInClassHierarchy(c -> {
-            Method bestMatch = null;
-            Comparison matchingRank = null;
-            boolean ambiguous = false;
-            Method[] methods = getDeclaredMethodsFrom(c);
-            loop:
-            for (Method m : methods) {
-                if (!locator.wouldBeVisible(m)) {
-                    continue;
-                }
-                Comparison compare = compare(reference, m);
-                switch (compare) {
-                    case EQUAL:
-                        if (matchingRank == Comparison.EQUAL) {
-                            ambiguous = true;
-                            break loop;
-                        }
-                        matchingRank = Comparison.EQUAL;
-                        bestMatch = m;
-                        ambiguous = false;
-                        break;
-                    case MORE_SPECIFIC:
-                        if (matchingRank != null && matchingRank != Comparison.MORE_SPECIFIC) {
-                            break;
-                        }
-                    case MORE_GENERIC: // or MORE_SPECIFIC
-                        if (matchingRank != compare) {
-                            matchingRank = compare;
-                            ambiguous = false;
-                        } else {
-                            ambiguous = bestMatch != null;
-                        }
-                        bestMatch = m;
-                        break;
-                    default:
-                        // Do nothing then
-                }
-            }
+    /**
+     * Finds the method handle to the only unique method that fits to the given method type.
+     * <p>
+     * A method is a unique method if it is the only one with the given type within one class. If there are more
+     * in its super classes, then it doesn't matter.
+     * <p>
+     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
+     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
+     * if there is one method that is more generic, and another one is more specific, then uniqueness still
+     * is given and the more generic one is chosen.
+     * <p>
+     * The object to look up may either be an instance: Then its class type will be searched. If the found method then
+     * is static, it will simply be used, otherwise the given instance is bound to it.
+     * <p>
+     * If the object is a Class, and the found method is an instance method, then an empty constructor is expected
+     * and a new instance is created now.
+     * <p>
+     * As a result, the returned handle will have exactly the given reference method type, without any additional
+     * object instance.
+     *
+     * @param lookup    The lookup
+     * @param object    The object (Class or some instance) to investigate
+     * @param reference The method type to look for
+     * @return The found method handle, or Optional.epmty()
+     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
+     * @throws NoSuchMethodError        If no method was found
+     */
+    public static Optional<MethodHandle> findMethodHandleOfType(@Nullable Lookup lookup, Object object, MethodType reference) {
+        return findSingleMethodHandle(lookup, object, reference).map(h -> h.asType(reference));
+    }
 
-            if (ambiguous) {
-                throw new AmbiguousMethodException("Multiple methods found with type " + reference + " in " + type.getName());
+    private static Optional<MethodHandle> findSingleMethodHandle(Lookup lookup, Object object, MethodType reference) {
+        Class<?> type;
+        if (object instanceof Class) {
+            type = (Class<?>) object;
+        } else {
+            if (MethodHandleProxies.isWrapperInstance(object)) {
+                MethodHandle h = MethodHandleProxies.wrapperInstanceTarget(object);
+                if (compare(reference, h.type()).isConvertible()) {
+                    return Optional.of(h);
+                }
+                return Optional.empty();
             }
-            return bestMatch;
+            type = object.getClass();
+        }
+        MethodLocator locator = lookup == null ? MethodLocator.forPublic(type) : MethodLocator.forLocal(lookup, type);
+        return locator.findMethod(reference).map(m -> {
+            MethodHandle h;
+            try {
+                h = locator.lookup().unreflect(m);
+            } catch (IllegalAccessException ex) {
+                throw new AssertionError(m + " should be visible.", ex);
+            }
+            if (Modifier.isStatic(m.getModifiers())) {
+                return h;
+            }
+            Object o = object instanceof Class ?
+                // Then inject a new instance now
+                Instantiator.getDefault().instantiate((Class<?>) object) : object;
+            return h.bindTo(o);
         });
     }
 

@@ -1945,7 +1945,7 @@ public final class Methods {
         try {
             callSite = LambdaMetafactory.altMetafactory(l, name, factoryType, metaArguments);
         } catch (LambdaConversionException ex) {
-            if (ex.getMessage().contains("Unsupported MethodHandle kind")) {
+            if (ex.getMessage().contains("Unsupported MethodHandle kind") || ex.getMessage().startsWith("Type mismatch")) {
                 // Ugly check, but how to do better?
                 return null;
             }

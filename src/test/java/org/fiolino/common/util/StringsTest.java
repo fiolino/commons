@@ -225,6 +225,12 @@ class StringsTest {
     }
 
     @Test
+    void testReplaceBeginning() {
+        String replacement = Strings.replace("$a.b**$o...${}", x -> x.equals("a.b") ? "1" : null, x -> x.equals("o") ? "2" : null, x -> x.equals("") ? "3" : null);
+        assertEquals("1**2...3", replacement);
+    }
+
+    @Test
     void testExtractUntil() {
         String text = " Some text # comment";
         int sign = text.indexOf('#');

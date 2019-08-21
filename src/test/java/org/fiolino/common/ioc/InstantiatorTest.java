@@ -21,6 +21,8 @@ import java.util.function.IntFunction;
 import java.util.function.Supplier;
 
 import static java.lang.invoke.MethodHandles.lookup;
+import static java.lang.invoke.MethodHandles.publicLookup;
+import static java.lang.invoke.MethodType.methodType;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -277,12 +279,12 @@ class InstantiatorTest {
 
     static class StringFactory {
         @Provider
-        static String sayHello() {
+        String sayHello() {
             return "Hello!";
         }
 
         @Provider
-        static String sayHelloTo(String name) {
+        String sayHelloTo(String name) {
             return "Hello " + name + "!";
         }
     }
@@ -291,9 +293,11 @@ class InstantiatorTest {
     void testFactory() {
         Instantiator i = Instantiator.withProviders(lookup(), StringFactory.class);
         Supplier<String> hello = i.createSupplierFor(String.class);
+        checkIsLambda(hello);
         assertEquals("Hello!", hello.get());
 
         Function<String, String> helloWithName = i.createFunctionFor(String.class, String.class);
+        checkIsLambda(helloWithName);
         assertEquals("Hello John!", helloWithName.apply("John"));
     }
 
@@ -310,6 +314,7 @@ class InstantiatorTest {
     void testFactoryInstance() {
         Instantiator i = Instantiator.withProviders(lookup(), Counter.class);
         Supplier<AtomicInteger> source = i.createSupplierFor(AtomicInteger.class);
+        checkIsLambda(source);
         for (int x = 1; x < 100; x++) {
             assertEquals(x, source.get().get());
         }
@@ -384,7 +389,7 @@ class InstantiatorTest {
 
     static class GenericFactory {
         @Provider
-        CharSequence reproduce(String someValue, int factor, @Requested Class<?> type) {
+        CharSequence reproduce(@Requested Class<?> type, String someValue, Integer factor) {
             StringBuilder sb = new StringBuilder();
             for (int i=0; i < factor; i++) {
                 sb.append(someValue);
@@ -397,6 +402,12 @@ class InstantiatorTest {
                 return null;
             }
         }
+
+        @Provider
+        static Object staticAlternative(@Requested Class<? extends Number> type, String someValue, Integer factor) throws Throwable {
+            MethodHandle valueOf = publicLookup().findStatic(type, "valueOf", methodType(type, String.class));
+            return valueOf.invoke(someValue);
+        }
     }
 
     static class HasConstructor {
@@ -408,28 +419,34 @@ class InstantiatorTest {
         Instantiator i = Instantiator.withProviders(lookup(), new GenericFactory());
         @SuppressWarnings("unchecked")
         BiFunction<String, Integer, String> func = i.createProviderFor(BiFunction.class, String.class, String.class, int.class);
-        checkIsNotLambda(func);
+        checkIsLambda(func);
         String s = func.apply("test", 3);
         assertNotNull(s);
         assertEquals("testtesttest", s);
 
         @SuppressWarnings("unchecked")
         BiFunction<String, Integer, StringBuilder> func2 = i.createProviderFor(BiFunction.class, StringBuilder.class, String.class, int.class);
-        checkIsNotLambda(func2);
+        checkIsLambda(func2);
         StringBuilder sb = func2.apply("bla", 4);
         assertNotNull(sb);
         assertEquals("blablablabla", sb.toString());
 
         @SuppressWarnings("unchecked")
         BiFunction<String, Integer, StringBuffer> func3 = i.createProviderFor(BiFunction.class, StringBuffer.class, String.class, int.class);
-        checkIsNotLambda(func3);
+        checkIsLambda(func3);
         StringBuffer sb2 = func3.apply("blubb", 5);
         assertNull(sb2); // Because GenericFactory is not @Nullable
 
         @SuppressWarnings("unchecked")
-        BiFunction<String, Integer, HasConstructor> func4 = i.createProviderFor(BiFunction.class, HasConstructor.class, String.class, Integer.class);
+        BiFunction<String, Integer, Integer> func4 = i.createProviderFor(BiFunction.class, Integer.class, String.class, Integer.class);
         checkIsLambda(func4);
-        HasConstructor x = func4.apply("x", 6);
+        int integer = func4.apply("19", 6);
+        assertEquals(19, integer);
+
+        @SuppressWarnings("unchecked")
+        BiFunction<String, Integer, HasConstructor> func5 = i.createProviderFor(BiFunction.class, HasConstructor.class, String.class, Integer.class);
+        checkIsLambda(func5);
+        HasConstructor x = func5.apply("x", 6);
         assertNotNull(x);
     }
 

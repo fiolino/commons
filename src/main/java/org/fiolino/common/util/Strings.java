@@ -617,7 +617,7 @@ public final class Strings {
         throw new IllegalArgumentException("No overlap between " + s1 + " and " + s2);
     }
 
-    private static final Pattern VARIABLE = Pattern.compile("((^|[^\\\\])\\$(\\{[^}]+}|\\w+(\\.\\w+)*))|\\\\\\$");
+    private static final Pattern VARIABLE = Pattern.compile("((^|[^\\\\])\\$(\\{[^}]*}|\\w+(\\.\\w+)*))|(\\\\\\$)");
 
     /**
      * Returns a String where all variables are replaced by their values.
@@ -640,7 +640,7 @@ public final class Strings {
             String keyword = m.group(3);
             if (keyword == null) {
                 // Then it's a quoted dollar sign - \$
-                m.appendReplacement(sb, "$");
+                m.appendReplacement(sb, "\\$");
                 continue;
             }
             if (keyword.charAt(0) == '{') {
@@ -654,7 +654,7 @@ public final class Strings {
             if (value == null) {
                 throw new IllegalArgumentException("No key " + keyword + " available in pattern " + input);
             }
-            m.appendReplacement(sb, value);
+            m.appendReplacement(sb, m.group(2) + value);
         } while (m.find());
 
         m.appendTail(sb);

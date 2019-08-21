@@ -430,7 +430,7 @@ public final class Strings {
     }
 
     private static final long[] DIGI; // 0, 0, 10, 100, 1000, ...
-    // The first two numbers are 0 by intention
+    // The first two values are 0 by intention
 
     static {
         int n = String.valueOf(Long.MAX_VALUE).length()+1;
@@ -617,27 +617,32 @@ public final class Strings {
         throw new IllegalArgumentException("No overlap between " + s1 + " and " + s2);
     }
 
-    private static final Pattern VARIABLE = Pattern.compile("\\$(\\{[^}]+}|\\w+)");
+    private static final Pattern VARIABLE = Pattern.compile("((^|[^\\\\])\\$(\\{[^}]+}|\\w+(\\.\\w+)*))|\\\\\\$");
 
     /**
      * Returns a String where all variables are replaced by their values.
-     * Variables appear in the String with a leading $ sign, followed directly by the name if it
-     * only contains letters, digits or underscores, or the name surrounded by curly brackets.
+     * Variables appear in the String with a leading $ sign, followed directly by some token if it
+     * only contains letters, digits, underscores and surrounded single dots, or any token surrounded by curly brackets.
      * <p>
-     * If the first repository does not contain the key, then next one is asked. If no repository contains
-     * such a key, an {@link IllegalArgumentException} is thrown.
+     * If the first repository does not contain the token, then next one is asked. If no repository contains
+     * this, an {@link IllegalArgumentException} is thrown.
      * <p>
      * To avoid that, you can add an empty repository returning any default value as the last one.
      */
     @SafeVarargs
-    public static String insertValues(String input, UnaryOperator<String>... repositories) {
+    public static String replace(String input, UnaryOperator<String>... repositories) {
         Matcher m = VARIABLE.matcher(input);
         if (!m.find()) {
             return input;
         }
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder(input.length()); // length is just a guess
         do {
-            String keyword = m.group(1);
+            String keyword = m.group(3);
+            if (keyword == null) {
+                // Then it's a quoted dollar sign - \$
+                m.appendReplacement(sb, "$");
+                continue;
+            }
             if (keyword.charAt(0) == '{') {
                 keyword = keyword.substring(1, keyword.length() - 1);
             }

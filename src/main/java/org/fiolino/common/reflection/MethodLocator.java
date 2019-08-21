@@ -4,6 +4,7 @@ package org.fiolino.common.reflection;
 import org.fiolino.common.util.Strings;
 
 import javax.annotation.Nullable;
+import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -597,6 +598,151 @@ public final class MethodLocator {
         });
     }
 
+    private abstract class MethodSpliterator extends Spliterators.AbstractSpliterator<MethodInfo> {
+        private final MethodFetcher fetcher = new MethodFetcher(type);
+        Class<?> c = type;
+
+        MethodSpliterator() {
+            super(Long.MAX_VALUE, Spliterator.DISTINCT | Spliterator.NONNULL | Spliterator.IMMUTABLE);
+        }
+
+        @Override
+        public boolean tryAdvance(Consumer<? super MethodInfo> action) {
+            while (c != null) {
+                Method m = fetcher.next();
+                if (m != null && wouldBeVisible(m)) {
+                    action.accept(new MyMethodInfo(m));
+                    return true;
+                }
+                c = nextClass();
+                fetcher.reset(c);
+            }
+
+            return false;
+        }
+
+        @Nullable
+        abstract Class<?> nextClass();
+    }
+
+    static class MethodFetcher {
+        private final List<Method> usedMethods = new ArrayList<>();
+        private Method[] methods;
+        private int i;
+
+        MethodFetcher(Class<?> type) {
+            reset(type);
+        }
+
+        void reset(@Nullable Class<?> c) {
+            methods = c == null ? new Method[0] : Methods.getDeclaredMethodsFrom(c);
+            i = 0;
+        }
+
+        Method next() {
+            outer:
+            while (i < methods.length) {
+                Method m = methods[i++];
+                for (Method u : usedMethods) {
+                    if (isOverriding(m, u)) {
+                        continue outer;
+                    }
+                }
+                usedMethods.add(m);
+                return m;
+            }
+
+            return null;
+        }
+    }
+
+    public Stream<MethodInfo> methods() {
+        return StreamSupport.stream(type.isInterface() ? new MethodSpliterator() {
+            private final Set<Class<?>> classesToIterate = new HashSet<>();
+
+            @Nullable
+            @Override
+            Class<?> nextClass() {
+                Collections.addAll(classesToIterate, c.getInterfaces());
+                Iterator<Class<?>> iterator = classesToIterate.iterator();
+                if (iterator.hasNext()) {
+                    Class<?> next = iterator.next();
+                    iterator.remove();
+                    return next;
+                }
+                return null;
+            }
+        } : new MethodSpliterator() {
+            @Nullable
+            @Override
+            Class<?> nextClass() {
+                return c == Object.class ? null : c.getSuperclass();
+            }
+        }, false);
+    }
+
+    private final class MyMethodInfo implements MethodInfo {
+        private final Method method;
+
+        MyMethodInfo(Method method) {
+            this.method = method;
+        }
+
+        @Override
+        public Method getMethod() {
+            return method;
+        }
+
+        @Override
+        public String getName() {
+            return method.getName();
+        }
+
+        @Override
+        public MethodHandle getHandle() {
+            try {
+                return lookup.unreflect(method);
+            } catch (IllegalAccessException ex) {
+                throw new IllegalStateException(method + " should be visible for " + lookup, ex);
+            }
+        }
+
+        @Override
+        public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
+            return method.getAnnotation(annotationClass);
+        }
+
+        @Override
+        public Annotation[] getAnnotations() {
+            return method.getAnnotations();
+        }
+
+        @Override
+        public Annotation[] getDeclaredAnnotations() {
+            return method.getDeclaredAnnotations();
+        }
+
+        @Override
+        public boolean isAnnotationPresent(Class<? extends Annotation> annotationClass) {
+            return method.isAnnotationPresent(annotationClass);
+        }
+
+        @Override
+        public <T extends Annotation> T[] getAnnotationsByType(Class<T> annotationClass) {
+            return method.getAnnotationsByType(annotationClass);
+        }
+
+        @Override
+        public <T extends Annotation> T getDeclaredAnnotation(Class<T> annotationClass) {
+            return method.getDeclaredAnnotation(annotationClass);
+        }
+
+        @Override
+        public <T extends Annotation> T[] getDeclaredAnnotationsByType(Class<T> annotationClass) {
+            return method.getDeclaredAnnotationsByType(annotationClass);
+        }
+    }
+
     /**
      * Iterates over all methods of my type, including all super types.
      * The visitor's MethodHandle will be based on instances, that means, each MethodHandle has an instance
@@ -857,7 +1003,7 @@ public final class MethodLocator {
 
     private static final int INVOKE_STATIC = Modifier.STATIC | Modifier.PRIVATE;
 
-    private boolean isOverriding(Method fromSub, Method fromSuper) {
+    private static boolean isOverriding(Method fromSub, Method fromSuper) {
         if ((fromSub.getModifiers() & INVOKE_STATIC) != 0) {
             return false;
         }

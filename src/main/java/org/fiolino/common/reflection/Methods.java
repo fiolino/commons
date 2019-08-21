@@ -1897,14 +1897,13 @@ public final class Methods {
      * @param targetMethod This will be called in the created lambda - it must be a direct handle, otherwise this
      *                     method will return null
      * @param lambdaType   The interface that specifies the lambda. The lambda method's argument size n must not exceed
-     *                     the target's argument size t, and their types must be convertible to the last n arguments of the
+     *                     the targetMethod's argument size t, and their types must be convertible to the last n arguments of the
      *                     target.
      * @param markerInterfaces Some interfaces without methods that will be implemented by the created lambda instance
-     * @return A MethodHandle that accepts the first (t-n) arguments of the target and returns an instance of lambdaType.
+     * @return A MethodHandle that accepts the first (t-n) arguments of the targetMethod and returns an instance of lambdaType.
      */
     @Nullable
     public static MethodHandle createLambdaFactory(@Nullable Lookup lookup, MethodHandle targetMethod, Class<?> lambdaType, Class<?>... markerInterfaces) {
-
         Method m = findLambdaMethodOrFail(lambdaType);
         String name = m.getName();
         Class<?>[] calledParameters = m.getParameterTypes();

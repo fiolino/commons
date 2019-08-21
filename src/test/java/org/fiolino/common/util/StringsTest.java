@@ -1,6 +1,5 @@
 package org.fiolino.common.util;
 
-import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -200,29 +199,29 @@ class StringsTest {
     }
 
     @Test
-    void testInsertValues() {
+    void testReplace() {
         Map<String, String> map = new HashMap<>();
         map.put("Normal_value", "Normal-Replacement");
         map.put("123", "987");
         map.put("   -- !!!! --   ", "weird");
 
-        String replaceAll = Strings.insertValues("This is a $Normal_value, this is a $123 number, and this is ${   -- !!!! --   } of course.", map::get);
-        assertEquals("This is a Normal-Replacement, this is a 987 number, and this is weird of course.", replaceAll);
+        String replaceAll = Strings.replace("This is a $Normal_value, this is a $123 number, this is \\$something, and this is ${   -- !!!! --   } of course.", map::get);
+        assertEquals("This is a Normal-Replacement, this is a 987 number, this is $something, and this is weird of course.", replaceAll);
 
-        String withDollars = Strings.insertValues(" $$$ ", map::get);
+        String withDollars = Strings.replace(" $$$ ", map::get);
         assertEquals(" $$$ ", withDollars);
 
-        String only = Strings.insertValues("$123", map::get);
+        String only = Strings.replace("$123", map::get);
         assertEquals("987", only);
 
-        String multi = Strings.insertValues("1. ${   -- !!!! --   }, and 2. ${   -- !!!! --   }", map::get);
+        String multi = Strings.replace("1. ${   -- !!!! --   }, and 2. ${   -- !!!! --   }", map::get);
         assertEquals("1. weird, and 2. weird", multi);
     }
 
     @Test
-    void testFailedInsertValues() {
+    void testFailedReplace() {
         assertThrows(IllegalArgumentException.class,
-                () -> Strings.insertValues("$bbb", x -> null));
+                () -> Strings.replace("$bbb", x -> null));
     }
 
     @Test

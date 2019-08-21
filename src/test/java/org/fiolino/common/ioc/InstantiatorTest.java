@@ -180,7 +180,7 @@ class InstantiatorTest {
 
         @PostCreate
         static ModifiedPostConstructWithStatic secondCheck(Object couldBeAnything) {
-            if (couldBeAnything instanceof ModifiedPostConstruct) {
+            if (couldBeAnything instanceof ModifiedPostConstructWithStatic) {
                 if (((ModifiedPostConstruct) couldBeAnything).value.equals("second")) {
                     return new ModifiedPostConstructWithStatic("Gotcha!");
                 }
@@ -317,7 +317,7 @@ class InstantiatorTest {
 
     static class NotOptionalFactory {
         @Provider
-        static AtomicInteger createOnlyEven(int num) {
+        AtomicInteger createOnlyEven(int num) {
             if ((num & 1) == 0) return new AtomicInteger(num);
             return null;
         }
@@ -350,7 +350,7 @@ class InstantiatorTest {
         Instantiator i = Instantiator.withProviders(lookup(), new OptionalFactory());
         @SuppressWarnings("unchecked")
         IntFunction<AtomicInteger> func = i.createProviderFor(IntFunction.class, AtomicInteger.class);
-        checkIsNotLambda(func);
+        checkIsNotLambda(func); // Because it's nullable
         AtomicInteger r1 = func.apply(2);
         assertNotNull(r1);
         assertEquals(99, r1.get());
@@ -372,20 +372,14 @@ class InstantiatorTest {
         Instantiator i = Instantiator.withProviders(lookup, OptionalFactory.class, provider);
         @SuppressWarnings("unchecked")
         IntFunction<AtomicInteger> func = i.createProviderFor(IntFunction.class, AtomicInteger.class);
-        checkIsNotLambda(func);
+        checkIsLambda(func);
 
         AtomicInteger r0 = func.apply(-100);
         assertNotNull(r0);
         assertEquals(2046, r0.get());
 
         AtomicInteger r1 = func.apply(2);
-        assertNotNull(r1);
-        assertEquals(99, r1.get());
-
-        // Now the default constructor
-        AtomicInteger r2 = func.apply(3);
-        assertNotNull(r2);
-        assertEquals(3, r2.get());
+        assertNull(r1);
     }
 
     static class GenericFactory {

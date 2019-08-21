@@ -7,16 +7,14 @@ import org.fiolino.annotations.Requested;
 import org.fiolino.common.reflection.MethodLocator;
 import org.fiolino.common.reflection.Methods;
 import org.fiolino.common.reflection.OneTimeExecution;
+import org.fiolino.common.util.Types;
 
 import javax.annotation.Nullable;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleInfo;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.Parameter;
-import java.lang.reflect.UndeclaredThrowableException;
+import java.lang.reflect.*;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.*;
@@ -136,9 +134,9 @@ public final class Instantiator {
         }
 
         private boolean matches(MethodType type) {
-            MethodType myType = handle.type();
-            if (!returnTypeMatches(myType.returnType(), type.returnType())) return false;
+            if (!returnTypeMatches(type.returnType())) return false;
             int additionalParameterCount = additionalParameterCount();
+            MethodType myType = handle.type();
             if (myType.parameterCount() != type.parameterCount() + additionalParameterCount) return false;
             for (int i = type.parameterCount(); i >= additionalParameterCount; i--) {
                 if (!myType.parameterType(i).equals(type.parameterType(i-additionalParameterCount))) return false;
@@ -150,8 +148,8 @@ public final class Instantiator {
             return 1;
         }
 
-        boolean returnTypeMatches(Class<?> myReturnType, Class<?> requestedReturnType) {
-            return myReturnType.equals(requestedReturnType);
+        boolean returnTypeMatches(Class<?> requestedReturnType) {
+            return handle.type().returnType().equals(requestedReturnType);
         }
 
         @Override
@@ -181,13 +179,16 @@ public final class Instantiator {
     }
 
     private static class HandleWithTypeInfoFromInstantiableProviderContainer extends HandleFromInstantiableProviderContainer {
-        HandleWithTypeInfoFromInstantiableProviderContainer(MethodHandle handle, MethodHandle providerFactory) {
+        private final Class<?> upperBound;
+
+        HandleWithTypeInfoFromInstantiableProviderContainer(MethodHandle handle, MethodHandle providerFactory, Class<?> upperBound) {
             super(handle, providerFactory);
+            this.upperBound = upperBound;
         }
 
         @Override
-        boolean returnTypeMatches(Class<?> myReturnType, Class<?> requestedReturnType) {
-            return myReturnType.isAssignableFrom(requestedReturnType);
+        boolean returnTypeMatches(Class<?> requestedReturnType) {
+            return upperBound.isAssignableFrom(requestedReturnType);
         }
 
         @Override
@@ -308,11 +309,11 @@ public final class Instantiator {
             MethodHandleInfo info = AccessController.doPrivileged((PrivilegedAction<MethodHandleInfo>) () -> lookup.revealDirect(providerHandle));
             try {
                 Method m = info.reflectAs(Method.class, lookup);
-                int typeIndex = findRequestedTypeParameterIndex(m);
-                register(providerHandle, info.getDeclaringClass(), isOptional(m), typeIndex, Modifier.isStatic(info.getModifiers()), null);
+                RequestedClass requestedClass = findRequestedClass(m);
+                register(providerHandle, info.getDeclaringClass(), isOptional(m), requestedClass, Modifier.isStatic(info.getModifiers()), null);
             } catch (ClassCastException ex2) {
                 // Not a method?
-                register(providerHandle, info.getDeclaringClass(), false, -1, Modifier.isStatic(info.getModifiers()), null);
+                register(providerHandle, info.getDeclaringClass(), false, null, Modifier.isStatic(info.getModifiers()), null);
             }
         } catch (IllegalArgumentException ex) {
             // providerHandle seems not to be direct
@@ -335,40 +336,48 @@ public final class Instantiator {
         } catch (IllegalAccessException ex) {
             throw new IllegalArgumentException(provider + " is not accessible.", ex);
         }
-        int typeIndex = findRequestedTypeParameterIndex(provider);
-        register(handle, provider.getDeclaringClass(), optional, typeIndex, Modifier.isStatic(provider.getModifiers()), providerInstance);
+        RequestedClass requestedClass = findRequestedClass(provider);
+        register(handle, provider.getDeclaringClass(), optional, requestedClass, Modifier.isStatic(provider.getModifiers()), providerInstance);
     }
 
-    private void register(MethodHandle providerHandle, Class<?> providerClass, boolean optional, int typeIndex, boolean isStatic, Object providerInstance) {
+    private void register(MethodHandle providerHandle, Class<?> providerClass, boolean optional, RequestedClass requestedClass, boolean isStatic, Object providerInstance) {
         MethodHandle h = withPostProcessor(providerHandle);
         HandleContainer handleContainer;
         if (isStatic) {
-            handleContainer = createStaticNondirectHandleProvider(providerClass, h, optional, typeIndex);
+            handleContainer = createStaticNondirectHandleProvider(h, optional, requestedClass);
         } else {
             if (optional) {
-                handleContainer = createVirtualNondirectHandleProvider(providerClass, h, true, typeIndex);
+                handleContainer = createVirtualNondirectHandleProvider(providerClass, h, true, requestedClass);
             } else {
-                if (typeIndex > 1 || h != providerHandle) {
-                    handleContainer = createVirtualNondirectHandleProvider(providerClass, h, false, typeIndex);
+                if (requestedClass != null && requestedClass.parameterIndex > 1 || h != providerHandle) {
+                    handleContainer = createVirtualNondirectHandleProvider(providerClass, h, false, requestedClass);
                 } else {
                     // Might be direct
                     MethodHandle factory = providerInstance == null ?
                             OneTimeExecution.createFor(findProviderHandle(providerClass)).getAccessor() : identity(providerClass).bindTo(providerInstance);
-                    handleContainer = typeIndex < 0 ? new HandleFromInstantiableProviderContainer(providerHandle, factory) : new HandleWithTypeInfoFromInstantiableProviderContainer(providerHandle, factory);
+                    handleContainer = requestedClass == null ? new HandleFromInstantiableProviderContainer(providerHandle, factory)
+                            : new HandleWithTypeInfoFromInstantiableProviderContainer(providerHandle, factory, commonSubclassOf(providerHandle.type().returnType(), requestedClass.upperBound));
                 }
             }
         }
         providers.add(0, handleContainer);
     }
 
-    private HandleContainer createVirtualNondirectHandleProvider(Class<?> providerClass, MethodHandle handle, boolean optional, int typeIndex) {
+    private HandleContainer createVirtualNondirectHandleProvider(Class<?> providerClass, MethodHandle handle, boolean optional, RequestedClass requestedClass) {
         handle = handle.bindTo(instantiate(providerClass));
-        return createStaticNondirectHandleProvider(providerClass, handle, optional, typeIndex);
+        return createStaticNondirectHandleProvider(handle, optional, requestedClass);
     }
 
-    private HandleContainer createStaticNondirectHandleProvider(Class<?> providerClass, MethodHandle handle, boolean optional, int typeIndex) {
+    private HandleContainer createStaticNondirectHandleProvider(MethodHandle handle, boolean optional, RequestedClass requestedClass) {
         if (optional) handle = makeOptional(handle);
-        return typeIndex < 0 ? new DirectHandleContainer(handle) : new GenericHandleContainer(handle, typeIndex, handle.type().returnType());
+        return requestedClass == null ? new DirectHandleContainer(handle) :
+                new GenericHandleContainer(handle, requestedClass.parameterIndex, commonSubclassOf(handle.type().returnType(), requestedClass.upperBound));
+    }
+
+    private Class<?> commonSubclassOf(Class<?> returnType, Class<?> parameterizedArgument) {
+        if (returnType.isAssignableFrom(parameterizedArgument)) return parameterizedArgument;
+        if (parameterizedArgument.isAssignableFrom(returnType)) return returnType;
+        throw new AssertionError("Bad provider method: Return type " + returnType.getName() + " and argument type " + parameterizedArgument.getName() + " are not compatible.");
     }
 
     private void registerAllProvidersFrom(MethodLocator locator, Object providerInstance) {
@@ -416,19 +425,20 @@ public final class Instantiator {
         }
     }
 
-    private int findRequestedTypeParameterIndex(Method m) {
+    private RequestedClass findRequestedClass(Method m) {
         int i=0;
         for (Parameter p : m.getParameters()) {
             if (p.isAnnotationPresent(Requested.class)) {
-                Class<?> t = p.getType();
-                if (!Class.class.equals(t)) {
+                Type t = p.getParameterizedType();
+                if (!Class.class.equals(Types.erasureOf(t))) {
                     throw new AssertionError("Parameter #" + i + " of " + m + " is annotated with @Requested but of wrong type " + t);
                 }
-                return i;
+                Class<?> upperBound = t instanceof ParameterizedType ? Types.erasedArgument(t, Class.class, 0, Types.Bounded.UPPER) : Object.class;
+                return new RequestedClass(i, upperBound);
             }
             i++;
         }
-        return -1;
+        return null;
     }
 
     /**
@@ -603,5 +613,15 @@ public final class Instantiator {
                     }
                     return postProcessor;
                 }).filter(Objects::nonNull).map(h -> h.asType(methodType(type, type))).reduce(fullConstructor, MethodHandles::filterReturnValue);
+    }
+
+    private static final class RequestedClass {
+        final int parameterIndex;
+        final Class<?> upperBound;
+
+        RequestedClass(int parameterIndex, Class<?> upperBound) {
+            this.parameterIndex = parameterIndex;
+            this.upperBound = upperBound;
+        }
     }
 }

@@ -150,17 +150,17 @@ public final class MethodLocator {
         String name = Strings.addLeading(fieldName, "get");
         return attachTo(onTop -> {
             String n = name;
-            MethodHandle h = findGetter0(n, fieldType, onTop);
+            MethodHandle h = findAccessor(n, fieldType, onTop);
             if (h == null && (fieldType == boolean.class || fieldType == Boolean.class)) {
                 n = fieldName;
                 if (!n.startsWith("is") || n.length() > 2 && Character.isLowerCase(n.charAt(2))) {
                     n = Strings.addLeading(fieldName, "is");
                 }
-                h = findGetter0(n, fieldType, onTop);
+                h = findAccessor(n, fieldType, onTop);
             }
             if (h == null) {
                 // Look for a method with the exact same name
-                h = findGetter0(fieldName, fieldType, onTop);
+                h = findAccessor(fieldName, fieldType, onTop);
             }
             return h;
         }, additionalTypes, () -> {
@@ -271,7 +271,7 @@ public final class MethodLocator {
         String name = Strings.addLeading(fieldName, "set");
         return attachTo(params -> {
             String n = name;
-            MethodHandle h = findSetter0(n, params);
+            MethodHandle h = findAccessor(n, void.class, params);
             if (h != null) {
                 // Method is setFieldname
                 return h;
@@ -281,7 +281,7 @@ public final class MethodLocator {
                 n = Strings.removeLeading(fieldName, "is");
                 if (!n.equals(fieldName)) {
                     n = Strings.addLeading(n, "set");
-                    h = findSetter0(n, params);
+                    h = findAccessor(n, void.class, params);
                     if (h != null) {
                         // Method is isFieldname
                         return h;
@@ -289,7 +289,7 @@ public final class MethodLocator {
                 }
             }
             // Look for a method with the exact same name
-            return findSetter0(fieldName, params);
+            return findAccessor(fieldName, void.class, params);
         }, types, () -> {
             // Try to find the direct field setter
             try {
@@ -340,19 +340,9 @@ public final class MethodLocator {
     }
 
     @Nullable
-    private MethodHandle findSetter0(String name, Class<?>... types) {
+    private MethodHandle findAccessor(String name, Class<?> returnType, Class<?>[] parameterTypes) {
         try {
-            return lookup.findVirtual(type, name, methodType(void.class, types));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            // Then there is none
-            return null;
-        }
-    }
-
-    @Nullable
-    private MethodHandle findGetter0(String name, Class<?> varType, Class<?>[] additionalTypes) {
-        try {
-            return lookup.findVirtual(type, name, methodType(varType, additionalTypes));
+            return lookup.findVirtual(type, name, methodType(returnType, parameterTypes));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
             // Then try next
             return null;

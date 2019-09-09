@@ -4,6 +4,8 @@ import org.fiolino.annotations.PostCreate;
 import org.fiolino.annotations.PostProcessor;
 import org.fiolino.annotations.Provider;
 import org.fiolino.annotations.Requested;
+import org.fiolino.common.reflection.Methods;
+import org.hamcrest.Factory;
 import org.junit.jupiter.api.Test;
 
 import javax.annotation.Nullable;
@@ -15,6 +17,7 @@ import java.lang.invoke.MethodType;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.IntFunction;
@@ -35,7 +38,7 @@ class InstantiatorTest {
     }
 
     private void checkIsLambda(Object func) {
-        assertFalse(MethodHandleProxies.isWrapperInstance(func), "Should be a lambda function");
+        assertTrue(Methods.wasLambdafiedDirect(func), "Should be a lambda function");
     }
 
     private void checkIsNotLambda(Object func) {
@@ -299,6 +302,26 @@ class InstantiatorTest {
         Function<String, String> helloWithName = i.createFunctionFor(String.class, String.class);
         checkIsLambda(helloWithName);
         assertEquals("Hello John!", helloWithName.apply("John"));
+
+        i = i.addProviders(new Object() {
+            @Factory
+            private Object newObject(Class<? extends Number> type, String value) throws Throwable {
+                MethodHandle valueOf = publicLookup().findStatic(type, "valueOf", methodType(type, String.class));
+                return type.cast(valueOf.invoke(value));
+            }
+        });
+        // find a function that uses the given factory
+        Function<String, Integer> numberFunction = i.createFunctionFor(Integer.class, String.class);
+        checkIsLambda(numberFunction);
+        int integer = numberFunction.apply("1234");
+        assertEquals(1234, integer);
+
+        // find a function where the factory does not match, so use the constructor instead
+        Function<Object, AtomicReference> referenceFunction = i.createFunctionFor(AtomicReference.class, Object.class);
+        checkIsLambda(referenceFunction);
+        @SuppressWarnings("unchecked")
+        AtomicReference<Object> ref = referenceFunction.apply("Some text");
+        assertEquals("Some text", ref.get());
     }
 
     static class Counter {

@@ -457,7 +457,7 @@ public final class Strings {
             number *= -1;
         }
         while (digits >= DIGI.length) {
-            // If more digits are requested than the maximum possible long value has
+            // If more digits are requested than the size of the maximum possible long value
             digits--;
             sb.append('0');
         }

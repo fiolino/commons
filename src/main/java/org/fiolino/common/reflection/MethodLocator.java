@@ -698,6 +698,21 @@ public final class MethodLocator {
         }
 
         @Override
+        public Class<?> getDeclaringClass() {
+            return method.getDeclaringClass();
+        }
+
+        @Override
+        public int getModifiers() {
+            return method.getModifiers();
+        }
+
+        @Override
+        public boolean isSynthetic() {
+            return method.isSynthetic();
+        }
+
+        @Override
         public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
             return method.getAnnotation(annotationClass);
         }
@@ -730,6 +745,24 @@ public final class MethodLocator {
         @Override
         public <T extends Annotation> T[] getDeclaredAnnotationsByType(Class<T> annotationClass) {
             return method.getDeclaredAnnotationsByType(annotationClass);
+        }
+
+        @Override
+        public String toString() {
+            return "Method info for " + method;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            MyMethodInfo that = (MyMethodInfo) o;
+            return method.equals(that.method);
+        }
+
+        @Override
+        public int hashCode() {
+            return method.hashCode() * 11;
         }
     }
 

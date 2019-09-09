@@ -304,17 +304,17 @@ class InstantiatorTest {
         assertEquals("Hello John!", helloWithName.apply("John"));
 
         i = i.addProviders(new Object() {
-            @Factory
-            private Object newObject(Class<? extends Number> type, String value) throws Throwable {
+            @Provider
+            Object newObject(@Requested Class<? extends Number> type, String value) throws Throwable {
                 MethodHandle valueOf = publicLookup().findStatic(type, "valueOf", methodType(type, String.class));
-                return type.cast(valueOf.invoke(value));
+                return type.cast(valueOf.invoke(value + value)); // Make sure it was our method being called
             }
         });
         // find a function that uses the given factory
         Function<String, Integer> numberFunction = i.createFunctionFor(Integer.class, String.class);
         checkIsLambda(numberFunction);
         int integer = numberFunction.apply("1234");
-        assertEquals(1234, integer);
+        assertEquals(12341234, integer);
 
         // find a function where the factory does not match, so use the constructor instead
         Function<Object, AtomicReference> referenceFunction = i.createFunctionFor(AtomicReference.class, Object.class);

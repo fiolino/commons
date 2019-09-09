@@ -1941,17 +1941,27 @@ public final class Methods {
         metaArguments[5] = LambdaMarker.class;
         System.arraycopy(markerInterfaces, 0, metaArguments, 6, markerInterfaces.length);
         Lookup l = lookup == null ? lookup() : lookup;
+        try {
+            MethodHandleInfo info = l.revealDirect(targetMethod);
+            Member originalMember = info.reflectAs(Member.class, lookup);
+            if (Modifier.isPrivate(originalMember.getModifiers()) && !originalMember.getDeclaringClass().equals(l.lookupClass())) {
+                // This is a weird situation where only the call to the lambda method itself will throw an IllegalAccessError
+                return null;
+            }
+        } catch (IllegalArgumentException | ClassCastException ex) {
+            // Then it's probably not a direct member? continue trying...
+        }
         CallSite callSite;
         try {
             callSite = LambdaMetafactory.altMetafactory(l, name, factoryType, metaArguments);
         } catch (LambdaConversionException ex) {
-            if (ex.getMessage().contains("Unsupported MethodHandle kind") || ex.getMessage().startsWith("Type mismatch")) {
+            if (ex.getMessage().contains("Unsupported MethodHandle kind") || ex.getMessage().startsWith("Type mismatch") || ex.getMessage().startsWith("Invalid caller")) {
                 // Ugly check, but how to do better?
                 return null;
             }
             throw new IllegalArgumentException("Cannot call " + targetMethod + " on " + m, ex);
         } catch (IllegalArgumentException ex) {
-            if (ex.getMessage().contains("not a direct method handle") || ex.getMessage().contains(" is private:")) {
+            if (ex.getMessage().contains("not a direct method handle") || ex.getMessage().contains(" is private:") || ex.getMessage().contains("member is protected")) {
                 // Ugly check, but how to do better?
                 return null;
             }

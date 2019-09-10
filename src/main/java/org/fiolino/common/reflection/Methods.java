@@ -1943,7 +1943,7 @@ public final class Methods {
         Lookup l = lookup == null ? lookup() : lookup;
         try {
             MethodHandleInfo info = l.revealDirect(targetMethod);
-            Member originalMember = info.reflectAs(Member.class, lookup);
+            Member originalMember = info.reflectAs(Member.class, l);
             if (Modifier.isPrivate(originalMember.getModifiers()) && !originalMember.getDeclaringClass().equals(l.lookupClass())) {
                 // This is a weird situation where only the call to the lambda method itself will throw an IllegalAccessError
                 return null;

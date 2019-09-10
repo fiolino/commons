@@ -66,6 +66,8 @@ class ArrayCopierTest {
         testArrayFactory(boolean.class, boolean[]::new);
         testArrayFactory(double.class, double[]::new);
         testArrayFactory(char.class, char[]::new);
+        testArrayFactory(String.class, String[]::new);
+        testArrayFactory(Date[][].class, Date[][][]::new);
     }
 
     @Test

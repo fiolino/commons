@@ -90,43 +90,39 @@ public final class Instantiator {
         return new Instantiator(lookup);
     }
 
-    private static abstract class HandleContainer {
-        final MethodHandle handle;
-
-        HandleContainer(MethodHandle handle) {
-            this.handle = handle;
-        }
-
-        abstract Optional<MethodHandle> getProviderFor(MethodType type);
+    private static abstract class HandleProvider {
+        abstract Optional<MethodHandle> getProviderFor(MethodHandles.Lookup lookup, MethodType type);
 
         <T> Optional<T> lambdafy(MethodHandles.Lookup lookup, Class<T> functionalInterface, MethodType methodType) {
-            return getProviderFor(methodType).map(h -> Methods.lambdafy(lookup, h, functionalInterface));
+            return getProviderFor(lookup, methodType).map(h -> Methods.lambdafy(lookup, h, functionalInterface));
         }
     }
 
-    private static class DirectHandleContainer extends HandleContainer {
-        DirectHandleContainer(MethodHandle handle) {
-            super(handle);
+    private static class DirectHandleProvider extends HandleProvider {
+        final MethodHandle handle;
+
+        DirectHandleProvider(MethodHandle handle) {
+            this.handle = handle;
         }
 
         @Override
-        public Optional<MethodHandle> getProviderFor(MethodType type) {
+        public Optional<MethodHandle> getProviderFor(MethodHandles.Lookup lookup, MethodType type) {
             if (type.equals(handle.type())) return Optional.of(handle);
             return Optional.empty();
         }
     }
 
-    private static class HandleFromInstantiableProviderContainer extends DirectHandleContainer {
+    private static class HandleFromInstantiableProviderProvider extends DirectHandleProvider {
         // ()Object
         private final MethodHandle providerFactory;
 
-        HandleFromInstantiableProviderContainer(MethodHandle handle, MethodHandle providerFactory) {
+        HandleFromInstantiableProviderProvider(MethodHandle handle, MethodHandle providerFactory) {
             super(handle);
             this.providerFactory = providerFactory;
         }
 
         @Override
-        public Optional<MethodHandle> getProviderFor(MethodType type) {
+        public Optional<MethodHandle> getProviderFor(MethodHandles.Lookup lookup, MethodType type) {
             if (matches(type)) {
                 return Optional.of(MethodHandles.foldArguments(handle, providerFactory));
             }
@@ -178,10 +174,10 @@ public final class Instantiator {
         }
     }
 
-    private static class HandleWithTypeInfoFromInstantiableProviderContainer extends HandleFromInstantiableProviderContainer {
+    private static class HandleWithTypeInfoFromInstantiableProviderProvider extends HandleFromInstantiableProviderProvider {
         private final Class<?> upperBound;
 
-        HandleWithTypeInfoFromInstantiableProviderContainer(MethodHandle handle, MethodHandle providerFactory, Class<?> upperBound) {
+        HandleWithTypeInfoFromInstantiableProviderProvider(MethodHandle handle, MethodHandle providerFactory, Class<?> upperBound) {
             super(handle, providerFactory);
             this.upperBound = upperBound;
         }
@@ -202,12 +198,12 @@ public final class Instantiator {
         }
     }
 
-    private static class GenericHandleContainer extends HandleContainer {
+    private static class GenericHandleProvider extends DirectHandleProvider {
         private final int argumentIndex;
         private final Class<?> subscribedClass;
         private final Class<?>[] expectedArguments;
 
-        GenericHandleContainer(MethodHandle handle, int argumentIndex, Class<?> subscribedClass) {
+        GenericHandleProvider(MethodHandle handle, int argumentIndex, Class<?> subscribedClass) {
             super(handle);
             this.argumentIndex = argumentIndex;
             this.subscribedClass = subscribedClass;
@@ -221,7 +217,7 @@ public final class Instantiator {
         }
 
         @Override
-        public Optional<MethodHandle> getProviderFor(MethodType type) {
+        public Optional<MethodHandle> getProviderFor(MethodHandles.Lookup lookup, MethodType type) {
             if (matches(type)) {
                 return Optional.of(MethodHandles.insertArguments(handle, argumentIndex, type.returnType()));
             }
@@ -242,10 +238,36 @@ public final class Instantiator {
         }
     }
 
-    private final MethodHandles.Lookup lookup;
-    private final List<HandleContainer> providers;
+    private static class DynamicHandleProvider extends HandleProvider {
+        private final MethodHandleProvider handleProvider;
 
-    private Instantiator(MethodHandles.Lookup lookup, List<HandleContainer> providers) {
+        DynamicHandleProvider(MethodHandleProvider handleProvider) {
+            this.handleProvider = handleProvider;
+        }
+
+        @Override
+        Optional<MethodHandle> getProviderFor(MethodHandles.Lookup lookup, MethodType type) {
+            try {
+                return Optional.ofNullable(handleProvider.createFor(lookup, type)).map(h -> h.asType(type));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                return Optional.empty();
+            }
+        }
+
+        @Override
+        <T> Optional<T> lambdafy(MethodHandles.Lookup lookup, Class<T> functionalInterface, MethodType methodType) {
+            try {
+                return handleProvider.lambdafy(lookup, functionalInterface, methodType);
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                return Optional.empty();
+            }
+        }
+    }
+
+    private final MethodHandles.Lookup lookup;
+    private final List<HandleProvider> providers;
+
+    private Instantiator(MethodHandles.Lookup lookup, List<HandleProvider> providers) {
         this.lookup = lookup;
         this.providers = providers;
     }
@@ -296,6 +318,8 @@ public final class Instantiator {
                 register((MethodHandle) p);
             } else if (p instanceof Method) {
                 register((Method) p, isOptional((Method) p), null);
+            } else if (p instanceof MethodHandleProvider) {
+                register((MethodHandleProvider) p);
             } else {
                 register(p);
             }
@@ -303,8 +327,12 @@ public final class Instantiator {
         return this;
     }
 
+    private void register(MethodHandleProvider provider) {
+        providers.add(0, new DynamicHandleProvider(provider));
+    }
+
     private void register(MethodHandle providerHandle) {
-        HandleContainer handleContainer;
+        HandleProvider handleProvider;
         try {
             MethodHandleInfo info = AccessController.doPrivileged((PrivilegedAction<MethodHandleInfo>) () -> lookup.revealDirect(providerHandle));
             try {
@@ -317,8 +345,8 @@ public final class Instantiator {
             }
         } catch (IllegalArgumentException ex) {
             // providerHandle seems not to be direct
-            handleContainer = new DirectHandleContainer(makeOptional(providerHandle));
-            providers.add(0, handleContainer);
+            handleProvider = new DirectHandleProvider(makeOptional(providerHandle));
+            providers.add(0, handleProvider);
         }
     }
 
@@ -327,7 +355,7 @@ public final class Instantiator {
         return provider.isAnnotationPresent(Nullable.class) || ((annotation = provider.getAnnotation(Provider.class)) != null && annotation.optional());
     }
 
-    private void register(Method provider, boolean optional, Object providerInstance) {
+    private void register(Method provider, boolean optional, Object providerInstanceOrNull) {
         Class<?> instantiatedType = provider.getReturnType();
         checkReturnType(instantiatedType, provider);
         MethodHandle handle;
@@ -337,41 +365,42 @@ public final class Instantiator {
             throw new IllegalArgumentException(provider + " is not accessible.", ex);
         }
         RequestedClass requestedClass = findRequestedClass(provider);
-        register(handle, provider.getDeclaringClass(), optional, requestedClass, Modifier.isStatic(provider.getModifiers()), providerInstance);
+        register(handle, provider.getDeclaringClass(), optional, requestedClass, Modifier.isStatic(provider.getModifiers()), providerInstanceOrNull);
     }
 
-    private void register(MethodHandle providerHandle, Class<?> providerClass, boolean optional, RequestedClass requestedClass, boolean isStatic, Object providerInstance) {
+    private void register(MethodHandle providerHandle, Class<?> providerClass, boolean optional, RequestedClass requestedClass, boolean isStatic, Object providerInstanceOrNull) {
         MethodHandle h = withPostProcessor(providerHandle);
-        HandleContainer handleContainer;
+        HandleProvider handleProvider;
         if (isStatic) {
-            handleContainer = createStaticNondirectHandleProvider(h, optional, requestedClass);
+            handleProvider = createStaticNondirectHandleProvider(h, optional, requestedClass);
         } else {
             if (optional) {
-                handleContainer = createVirtualNondirectHandleProvider(providerClass, h, true, requestedClass);
+                handleProvider = createVirtualNondirectHandleProvider(providerClass, h, true, requestedClass);
             } else {
                 if (requestedClass != null && requestedClass.parameterIndex > 1 || h != providerHandle) {
-                    handleContainer = createVirtualNondirectHandleProvider(providerClass, h, false, requestedClass);
+                    // Cannot be a direct lambda method
+                    handleProvider = createVirtualNondirectHandleProvider(providerClass, h, false, requestedClass);
                 } else {
                     // Might be direct
-                    MethodHandle factory = providerInstance == null ?
-                            OneTimeExecution.createFor(findProviderHandle(providerClass)).getAccessor() : identity(providerClass).bindTo(providerInstance);
-                    handleContainer = requestedClass == null ? new HandleFromInstantiableProviderContainer(providerHandle, factory)
-                            : new HandleWithTypeInfoFromInstantiableProviderContainer(providerHandle, factory, commonSubclassOf(providerHandle.type().returnType(), requestedClass.upperBound));
+                    MethodHandle factory = providerInstanceOrNull == null ?
+                            OneTimeExecution.createFor(findProviderHandle(providerClass)).getAccessor() : identity(providerClass).bindTo(providerInstanceOrNull);
+                    handleProvider = requestedClass == null ? new HandleFromInstantiableProviderProvider(providerHandle, factory)
+                            : new HandleWithTypeInfoFromInstantiableProviderProvider(providerHandle, factory, commonSubclassOf(providerHandle.type().returnType(), requestedClass.upperBound));
                 }
             }
         }
-        providers.add(0, handleContainer);
+        providers.add(0, handleProvider);
     }
 
-    private HandleContainer createVirtualNondirectHandleProvider(Class<?> providerClass, MethodHandle handle, boolean optional, RequestedClass requestedClass) {
+    private HandleProvider createVirtualNondirectHandleProvider(Class<?> providerClass, MethodHandle handle, boolean optional, RequestedClass requestedClass) {
         handle = handle.bindTo(instantiate(providerClass));
         return createStaticNondirectHandleProvider(handle, optional, requestedClass);
     }
 
-    private HandleContainer createStaticNondirectHandleProvider(MethodHandle handle, boolean optional, RequestedClass requestedClass) {
+    private HandleProvider createStaticNondirectHandleProvider(MethodHandle handle, boolean optional, RequestedClass requestedClass) {
         if (optional) handle = makeOptional(handle);
-        return requestedClass == null ? new DirectHandleContainer(handle) :
-                new GenericHandleContainer(handle, requestedClass.parameterIndex, commonSubclassOf(handle.type().returnType(), requestedClass.upperBound));
+        return requestedClass == null ? new DirectHandleProvider(handle) :
+                new GenericHandleProvider(handle, requestedClass.parameterIndex, commonSubclassOf(handle.type().returnType(), requestedClass.upperBound));
     }
 
     private Class<?> commonSubclassOf(Class<?> returnType, Class<?> parameterizedArgument) {
@@ -380,10 +409,10 @@ public final class Instantiator {
         throw new AssertionError("Bad provider method: Return type " + returnType.getName() + " and argument type " + parameterizedArgument.getName() + " are not compatible.");
     }
 
-    private void registerAllProvidersFrom(MethodLocator locator, Object providerInstance) {
+    private void registerAllProvidersFrom(MethodLocator locator, Object providerInstanceOrNull) {
         locator.methods().filter(m -> m.isAnnotationPresent(Provider.class)).forEach(m -> {
             Provider annotation = m.getAnnotation(Provider.class);
-            register(m.getMethod(), annotation.optional() || m.isAnnotationPresent(Nullable.class), providerInstance);
+            register(m.getMethod(), annotation.optional() || m.isAnnotationPresent(Nullable.class), providerInstanceOrNull);
         });
     }
 
@@ -547,7 +576,7 @@ public final class Instantiator {
     }
 
     private MethodHandle findProviderOrGeneric(MethodType methodType) {
-        return providers.stream().map(p -> p.getProviderFor(methodType)).filter(Optional::isPresent).map(Optional::get)
+        return providers.stream().map(p -> p.getProviderFor(lookup, methodType)).filter(Optional::isPresent).map(Optional::get)
             .findFirst().orElseGet(() -> findConstructor(methodType));
     }
 

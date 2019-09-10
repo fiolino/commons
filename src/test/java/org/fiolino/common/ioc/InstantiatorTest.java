@@ -5,7 +5,6 @@ import org.fiolino.annotations.PostProcessor;
 import org.fiolino.annotations.Provider;
 import org.fiolino.annotations.Requested;
 import org.fiolino.common.reflection.Methods;
-import org.hamcrest.Factory;
 import org.junit.jupiter.api.Test;
 
 import javax.annotation.Nullable;
@@ -14,6 +13,8 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -477,5 +478,50 @@ class InstantiatorTest {
     void testFail() {
         Instantiator i = Instantiator.withProviders(lookup(), new GenericFactory(), new OptionalFactory());
         assertThrows(AssertionError.class, () -> i.createProviderFor(BiFunction.class, Rectangle.class, Date.class, TimeUnit.class));
+    }
+
+    @FunctionalInterface
+    interface MyFunction {
+        BigDecimal withScale(String value, int scale);
+    }
+
+    @Test
+    void testOwnFunctionalInterface() {
+        Instantiator i = Instantiator.withProviders(lookup(), new Object() {
+            @Provider
+            BigDecimal create(String value, int scale) {
+                return new BigDecimal(value).setScale(scale, RoundingMode.HALF_UP);
+            }
+        });
+        MyFunction func = i.createProviderFor(MyFunction.class);
+        BigDecimal dec = func.withScale("145.66", 1);
+        assertEquals("145.7", dec.toString());
+    }
+
+    @FunctionalInterface
+    interface FromInt<T> {
+        T fromInt(int value);
+    }
+
+    @Test
+    void testDynamicProvider() {
+        Instantiator i = Instantiator.withProviders(lookup(), (MethodHandleProvider)(l, t) -> l.findStatic(t.returnType(), "valueOf", t));
+        Function<String, Integer> intFunction = i.createFunctionFor(Integer.class, String.class);
+        checkIsLambda(intFunction);
+        Integer integer = intFunction.apply("1234");
+        assertEquals(1234, (int) integer);
+
+        @SuppressWarnings("unchecked")
+        FromInt<String> stringFunction = i.createProviderFor(FromInt.class, String.class);
+        checkIsLambda(stringFunction);
+        String string = stringFunction.fromInt(9876);
+        assertEquals("9876", string);
+
+        // Now without valueOf() call
+        @SuppressWarnings("unchecked")
+        FromInt<AtomicInteger> atomicFunction = i.createProviderFor(FromInt.class, AtomicInteger.class);
+        checkIsLambda(atomicFunction);
+        AtomicInteger atomic = atomicFunction.fromInt(8848);
+        assertEquals(8848, atomic.get());
     }
 }

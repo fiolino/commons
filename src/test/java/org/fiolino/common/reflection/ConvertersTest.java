@@ -77,12 +77,9 @@ class ConvertersTest {
     }
 
     private MethodHandle getHandle(ConverterLocator loc, Class<?> returnValue, Object provider) {
-        MethodHandle pHandle = MethodLocator.forLocal(lookup(), provider.getClass()).visitMethodsWithStaticContext(null, (v, l, m, handleSupplier) -> {
-            if (m.getDeclaringClass() != Object.class) {
-                return handleSupplier.get();
-            }
-            return v;
-        }, provider);
+        MethodHandle pHandle = MethodLocator.forLocal(lookup(), provider.getClass()).methods()
+                .filter(info -> info.getMethod().getDeclaringClass() != Object.class)
+                .map(info -> info.getStaticHandle(() -> provider)).findFirst().orElseThrow();
         return Converters.convertReturnTypeTo(pHandle, loc, returnValue);
     }
 

@@ -3,6 +3,7 @@ package org.fiolino.common.util;
 import org.fiolino.annotations.SerialFieldIndex;
 import org.fiolino.annotations.SerializeEmbedded;
 import org.fiolino.common.analyzing.ClassWalker;
+import org.fiolino.common.ioc.Instantiator;
 import org.fiolino.common.reflection.*;
 
 import java.lang.invoke.MethodHandle;
@@ -107,17 +108,18 @@ public class SerializerBuilder {
             throw new InternalError(ex);
         }
 
-        INITIAL_APPENDERS = addAppendersFrom(Appenders.LOOKUP, new ArrayList<>(), Appenders.class);
+        INITIAL_APPENDERS = addAppendersFrom(Appenders.getLookup(), new ArrayList<>(), Appenders.class);
     }
 
     private static <T extends Collection<MethodHandle>> T addAppendersFrom(MethodHandles.Lookup lookup, T appenders, Class<?> appenderContainer) {
-        return MethodLocator.forLocal(lookup, appenderContainer).findUsing(appenders,
-                (list, l, m, supp) -> {
-                    if (isAppender(m)) {
-                        list.add(supp.get());
-                    }
-                    return list;
-                });
+        Instantiator i = Instantiator.forLookup(lookup);
+        MethodLocator.forLocal(lookup, appenderContainer).methods()
+                .filter(info -> info.getMethod().getReturnType() == void.class)
+                .filter(info -> info.getMethod().getParameterCount() == 2)
+                .filter(info -> info.getMethod().getParameterTypes()[0].equals(StringBuilder.class))
+                .map(info -> info.getStaticHandle(() -> Instantiator.forLookup(lookup).instantiate(appenderContainer)))
+                .forEach(appenders::add);
+        return appenders;
     }
 
     private static boolean isAppender(Method m) {
@@ -239,10 +241,6 @@ public class SerializerBuilder {
     }
 
     private MethodHandle findAppendMethod(Class<?> printedType) {
-        if (printedType.isPrimitive()) {
-            return findDirectAppendMethod(printedType);
-        }
-
         MethodHandle found = null;
         int d = Integer.MAX_VALUE;
         for (MethodHandle a : appenders) {
@@ -256,8 +254,7 @@ public class SerializerBuilder {
                 found = a;
             }
         }
-        assert found != null : "There must be some match at least at Object";
-        return found;
+        return found == null ? findDirectAppendMethod(printedType) : found;
     }
 
     private MethodHandle findDirectAppendMethod(Class<?> printedType) {
@@ -272,9 +269,10 @@ public class SerializerBuilder {
 
     @SuppressWarnings("unused")
     private static class Appenders {
-        static final MethodHandles.Lookup LOOKUP = lookup();
+        static MethodHandles.Lookup getLookup() {
+            return lookup();
+        }
 
-        @ExecuteDirect
         private static void append(StringBuilder sb, Iterable<?> coll) {
             boolean first = true;
             for (Object v : coll) {
@@ -290,7 +288,6 @@ public class SerializerBuilder {
             }
         }
 
-        @ExecuteDirect
         private static void append(StringBuilder sb, Object val) {
             if (val instanceof String) {
                 append(sb, (String) val);
@@ -299,7 +296,6 @@ public class SerializerBuilder {
             }
         }
 
-        @ExecuteDirect
         private static void append(StringBuilder sb, String s) {
             if (shouldBeQuoted(s)) {
                 Strings.appendQuotedString(sb, s);
@@ -310,17 +306,6 @@ public class SerializerBuilder {
 
         private static boolean shouldBeQuoted(String val) {
             return val.isEmpty() || QUOTED_CHARACTERS.isContainedIn(val) || val.charAt(0) == '"';
-        }
-
-        @MethodHandleFactory
-        private static MethodHandle findDirectAppendMethod(Class<?> printedType) {
-            MethodHandle sbAppend;
-            try {
-                sbAppend = publicLookup().findVirtual(StringBuilder.class, "append", methodType(StringBuilder.class, printedType));
-            } catch (NoSuchMethodException | IllegalAccessException ex) {
-                throw new InternalError("Missing StringBuilder.append(" + printedType.getName() + ")", ex);
-            }
-            return sbAppend.asType(methodType(void.class, StringBuilder.class, printedType));
         }
     }
 }

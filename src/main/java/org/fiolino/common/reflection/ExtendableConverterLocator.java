@@ -1,8 +1,12 @@
 package org.fiolino.common.reflection;
 
+import org.fiolino.common.ioc.Instantiator;
+
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Method;
+import java.util.function.Supplier;
 
 /**
  * A {@link ConverterLocator} where you can register individual converters for certain types.
@@ -150,6 +154,25 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
         }
     }
 
+    private static class CombinedConverterLocator extends StackedConverterLocator {
+        private final ExtendableConverterLocator first;
+
+        CombinedConverterLocator(ExtendableConverterLocator first, ExtendableConverterLocator fallback) {
+            super(fallback);
+            this.first = first;
+        }
+
+        @Override
+        void print(StringBuilder sb) {
+            first.printAll(sb);
+        }
+
+        @Override
+        MethodHandle getConverter(Class<?> source, Class<?> target) {
+            return first.getConverter(source, target);
+        }
+    }
+
     /**
      * Register a MethodHandle that accepts some value and returns another.
      *
@@ -208,52 +231,49 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
      */
     public ExtendableConverterLocator register(MethodHandles.Lookup lookup, Object converterMethods) {
         MethodLocator locator;
-        Object instance;
+        Supplier<Object> supplier;
         if (converterMethods instanceof Class) {
+            Instantiator i = Instantiator.forLookup(lookup);
+            supplier = () -> i.instantiate((Class<?>) converterMethods);
             locator = MethodLocator.forLocal(lookup, (Class<?>) converterMethods);
-            instance = null;
         } else {
+            supplier = () -> converterMethods;
             locator = MethodLocator.forLocal(lookup, converterMethods.getClass());
-            instance = converterMethods;
         }
 
-        return locator.visitMethodsWithStaticContext(this,
-                (loc, l, m, handleSupplier) -> {
-
-                    if (!m.isAnnotationPresent(ConvertValue.class)) {
-                        return loc;
-                    }
-                    Class<?>[] parameterTypes = m.getParameterTypes();
-                    if (m.getReturnType() == MethodHandle.class) {
-                        switch (parameterTypes.length) {
-                            case 0:
-                                MethodHandle h;
-                                try {
-                                    h = (MethodHandle) handleSupplier.get().invokeExact();
-                                } catch (RuntimeException | Error e) {
-                                    throw e;
-                                } catch (Throwable t) {
-                                    throw new RuntimeException(t);
-                                }
-                                if (h == null) {
-                                    return loc;
-                                }
-                                return loc.register(h);
-                            case 1:
-                                // Then it's a normal converter to some MethodHandle - whyever
-                                break;
-                            case 2:
-                                if (parameterTypes[0] == Class.class && parameterTypes[1] == Class.class) {
-                                    return new MethodHandleFactory(loc, m.getName(), handleSupplier.get());
-                                }
-                            default:
-                                throw new AssertionError(m + " is expected to accept a source and a target type");
+        return locator.methods().filter(info -> info.isAnnotationPresent(ConvertValue.class)).reduce(this, (loc, info) -> {
+            Method m = info.getMethod();
+            Class<?>[] parameterTypes = m.getParameterTypes();
+            if (m.getReturnType() == MethodHandle.class) {
+                switch (parameterTypes.length) {
+                    case 0:
+                        MethodHandle h;
+                        try {
+                            h = (MethodHandle) info.getStaticHandle(supplier).invokeExact();
+                        } catch (RuntimeException | Error e) {
+                            throw e;
+                        } catch (Throwable t) {
+                            throw new RuntimeException(t);
                         }
-                    }
-                    if (parameterTypes.length != 1 || m.getReturnType() == void.class || m.getReturnType().equals(parameterTypes[0])) {
-                        throw new AssertionError(m + " should convert from one value to another.");
-                    }
-                    return loc.register(handleSupplier.get());
-                }, instance);
+                        if (h == null) {
+                            return loc;
+                        }
+                        return loc.register(h);
+                    case 1:
+                        // Then it's a normal converter to some MethodHandle - whyever
+                        break;
+                    case 2:
+                        if (parameterTypes[0] == Class.class && parameterTypes[1] == Class.class) {
+                            return new MethodHandleFactory(this, m.getName(), info.getStaticHandle(supplier));
+                        }
+                    default:
+                        throw new AssertionError(m + " is expected to accept a source and a target type");
+                }
+            }
+            if (parameterTypes.length != 1 || m.getReturnType() == void.class || m.getReturnType().equals(parameterTypes[0])) {
+                throw new AssertionError(m + " should convert from one value to another.");
+            }
+            return register(info.getStaticHandle(supplier));
+        }, CombinedConverterLocator::new);
     }
 }

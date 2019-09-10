@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static java.lang.invoke.MethodHandles.lookup;
-import static java.lang.invoke.MethodHandles.privateLookupIn;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -90,40 +89,6 @@ class MethodLocatorTest {
         assertTrue(added);
         assertEquals(1, testList.size());
         assertEquals("Hello World", testList.get(0));
-    }
-
-    private static class Prototype {
-        @MethodFinder
-        @SuppressWarnings("unused")
-        int createAddHandle(List<Object> someList) {
-            someList.add(new Object());
-            fail("Should never reach here!");
-            return 0;
-        }
-
-        @ExecuteDirect
-        @SuppressWarnings("unused")
-        int getDoubledSize(List<?> someList) {
-            return someList.size() * 2;
-        }
-    }
-
-    @Test
-    void testFindUsingPrototype() throws Throwable {
-        final MethodHandle[] handles = new MethodHandle[2];
-        MethodLocator.forLocal(LOOKUP, Prototype.class).findUsing(null, (v, l, m, handleSupplier) -> {
-            handles[m.getName().equals("createAddHandle") ? 0 : 1] = handleSupplier.get();
-            return null;
-        });
-        assertNotNull(handles[0]);
-        assertNotNull(handles[1]);
-        List<String> testList = new ArrayList<>();
-        boolean added = (boolean) handles[0].invokeExact(testList, (Object) "Hello World");
-        assertTrue(added);
-        assertEquals(1, testList.size());
-        assertEquals("Hello World", testList.get(0));
-        int doubledSize = (int) handles[1].invokeExact(testList);
-        assertEquals(2, doubledSize);
     }
 
     private static class PrivateClass {

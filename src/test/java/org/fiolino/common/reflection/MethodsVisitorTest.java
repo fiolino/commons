@@ -11,7 +11,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -27,17 +26,19 @@ class MethodsVisitorTest {
         Set<String> exp = new HashSet<>(Arrays.asList(expectedVisibleMethods));
         MethodLocator methodLocator = MethodLocator.forLocal(lookup, instance.getClass());
 
-        methodLocator.visitAllMethods(null, (v, l, m, handleSupplier) -> {
-            if (methodIsIgnored(m)) {
-                return null;
-            }
-            String name = m.getName();
+        methodLocator.methods().filter(info -> methodIsEligible(info.getMethod())).forEach(info -> {
+            String name = info.getName();
             assertTrue(exp.remove(name), () -> name + " should be expected to be visible");
 
             // Now check that MethodHandle can be created
-            MethodHandle h = handleSupplier.get();
+            MethodHandle h = info.getHandle();
             assertNotNull(h);
-            return null;
+
+            if (!Modifier.isProtected(info.getModifiers()) || lookup.lookupClass().isInstance(instance)) {
+                // Otherwise somehow the instance of a protected method must be of the lookup type
+                Runnable r = info.lambdafy(Runnable.class, () -> instance);
+                r.run();
+            }
         });
 
         assertTrue(exp.isEmpty(), () -> "Methods expected to be visible but they aren't: " + exp);
@@ -48,7 +49,7 @@ class MethodsVisitorTest {
         Set<String> visited = new HashSet<>();
         do {
             for (Method m : c.getDeclaredMethods()) {
-                if (!visited.add(m.getName()) || methodIsIgnored(m)) {
+                if (!visited.add(m.getName()) || !methodIsEligible(m)) {
                     continue;
                 }
                 MethodHandle handle;
@@ -83,10 +84,10 @@ class MethodsVisitorTest {
         } while (c != null && c != Object.class);
     }
 
-    private boolean methodIsIgnored(Method m) {
-        return m.getDeclaringClass() == Object.class || m.getReturnType() != void.class
-                || m.getParameterCount() > 0
-                || m.getName().startsWith("$"); // Last one resorts to $jacocoInit() and such
+    private boolean methodIsEligible(Method m) {
+        return m.getDeclaringClass() != Object.class && m.getReturnType() == void.class
+                && m.getParameterCount() == 0
+                && !m.getName().startsWith("$"); // Last one resorts to $jacocoInit() and such
     }
 
     @Test
@@ -228,7 +229,7 @@ class MethodsVisitorTest {
     void testOverriddenMethodOnlyOnce() {
         final AtomicReference<Method> foundAnother = new AtomicReference<>();
 
-        Method foundMethod = MethodLocator.forLocal(MethodHandles.lookup(), B.class).visitAllMethods(null, (v, l, m, handleSupplier) -> {
+        Method foundMethod = MethodLocator.forLocal(MethodHandles.lookup(), B.class).methods().map(MethodInfo::getMethod).reduce(null, (v, m) -> {
             if (m.getName().equals("method")) {
                 assertNull(v);
                 return m;
@@ -252,8 +253,8 @@ class MethodsVisitorTest {
             fail("Can't instantiate");
         }
 
-        static String staticMethod() {
-            return "I'm static, yeah!";
+        static String staticMethod(String name) {
+            return "Hello " + name + ", I'm static, yeah!";
         }
 
         void instanceMethod() {
@@ -263,111 +264,23 @@ class MethodsVisitorTest {
 
     @Test
     void testStaticMethods() throws Throwable {
-        MethodHandle h = MethodLocator.forLocal(MethodHandles.lookup(), Uninstantiable.class).visitMethodsWithStaticContext(
-                null, (v, l, m, handleSupplier) -> {
-                    if (m.getName().equals("staticMethod")) {
-                        return handleSupplier.get();
-                    }
-                    return v;
-                });
+        MethodLocator locator = MethodLocator.forLocal(lookup(), Uninstantiable.class);
+        MethodHandle h = locator.methods()
+                .filter(info -> info.getName().equals("staticMethod"))
+                .map(info -> info.getStaticHandle(Uninstantiable::new))
+                .findFirst().orElseThrow();
 
         assertNotNull(h);
-        String val = (String) h.invokeExact();
-        assertEquals("I'm static, yeah!", val);
-    }
+        String val = (String) h.invokeExact("Lisa");
+        assertEquals("Hello Lisa, I'm static, yeah!", val);
 
-    static final AtomicBoolean wasInstantiated = new AtomicBoolean();
-
-    static class Instantiable {
-        Instantiable() {
-            wasInstantiated.set(true);
-        }
-
-        static String staticMethod() {
-            return "Static";
-        }
-
-        String instanceMethod() {
-            return "Instance";
-        }
-    }
-
-    @Test
-    void testStaticContextOnInstances() throws Throwable {
-        final AtomicReference<MethodHandle> staticRef = new AtomicReference<>();
-        final AtomicReference<MethodHandle> instanceRef = new AtomicReference<>();
-
-        Instantiable i = new Instantiable();
-        wasInstantiated.set(false);
-        MethodLocator.forLocal(MethodHandles.lookup(), Instantiable.class).visitMethodsWithStaticContext(null, (v, l, m, handleSupplier) -> {
-            if (m.getName().equals("staticMethod")) {
-                staticRef.set(handleSupplier.get());
-            }
-            if (m.getName().equals("instanceMethod")) {
-                instanceRef.set(handleSupplier.get());
-            }
-            return null;
-        }, i);
-
-        assertFalse(wasInstantiated.get(), "Wasn't instantiated because instance was already given.");
-        MethodHandle h = staticRef.get();
-        assertNotNull(h);
-        String val = (String) h.invokeExact();
-        assertEquals("Static", val);
-        h = instanceRef.get();
-        assertNotNull(h);
-        val = (String) h.invokeExact();
-        assertEquals("Instance", val);
-
-        // Now check with given class
-        instanceRef.set(null);
-        staticRef.set(null);
-        MethodLocator.forLocal(MethodHandles.lookup(), Instantiable.class).visitMethodsWithStaticContext(null, (v, l, m, handleSupplier) -> {
-            if (m.getName().equals("staticMethod")) {
-                staticRef.set(handleSupplier.get());
-            }
-            if (m.getName().equals("instanceMethod")) {
-                instanceRef.set(handleSupplier.get());
-            }
-            return null;
-        }, (Supplier<?>) Instantiable::new);
-
-        assertTrue(wasInstantiated.get(), "Was instantiated because there is an instance method.");
-        h = staticRef.get();
-        assertNotNull(h);
-        val = (String) h.invokeExact();
-        assertEquals("Static", val);
-        h = instanceRef.get();
-        assertNotNull(h);
-        val = (String) h.invokeExact();
-        assertEquals("Instance", val);
-    }
-
-    @Test
-    void testInstanceContext() throws Throwable {
-        final AtomicReference<MethodHandle> staticRef = new AtomicReference<>();
-        final AtomicReference<MethodHandle> instanceRef = new AtomicReference<>();
-
-        wasInstantiated.set(false);
-        MethodLocator.forLocal(MethodHandles.lookup(), Instantiable.class).visitMethodsWithInstanceContext(null, (v, l, m, handleSupplier) -> {
-            if (m.getName().equals("staticMethod")) {
-                staticRef.set(handleSupplier.get());
-            }
-            if (m.getName().equals("instanceMethod")) {
-                instanceRef.set(handleSupplier.get());
-            }
-            return null;
-        });
-
-        assertFalse(wasInstantiated.get(), "Wasn't instantiated because instance is injected on every call.");
-        MethodHandle h = staticRef.get();
-        assertNotNull(h);
-        // Even static methods now expect an instance
-        String val = (String) h.invokeExact(new Instantiable());
-        assertEquals("Static", val);
-        h = instanceRef.get();
-        assertNotNull(h);
-        val = (String) h.invokeExact(new Instantiable());
-        assertEquals("Instance", val);
+        @SuppressWarnings("unchecked")
+        Supplier<String> supplier = locator.methods()
+                .filter(info -> info.getName().equals("staticMethod"))
+                .map(info -> info.lambdafy(Supplier.class, Uninstantiable::new, "Monica"))
+                .findFirst().orElseThrow();
+        assertTrue(Methods.wasLambdafiedDirect(supplier));
+        val = supplier.get();
+        assertEquals("Hello Monica, I'm static, yeah!", val);
     }
 }

@@ -304,6 +304,16 @@ public final class Instantiator {
     }
 
     /**
+     * Creates a new Instantiator with the same lookup and existing providers, plus the ones added here.
+     *
+     * @param provider A concrete {@link MethodHandleProvider}
+     * @return The new Instantiator
+     */
+    public Instantiator addMethodHandleProvider(MethodHandleProvider provider) {
+        return new Instantiator(lookup, new ArrayList<>(providers)).register(provider);
+    }
+
+    /**
      * Gets the lookup that is used for this {@link Instantiator}.
      */
     final MethodHandles.Lookup getLookup() {
@@ -327,8 +337,9 @@ public final class Instantiator {
         return this;
     }
 
-    private void register(MethodHandleProvider provider) {
+    private Instantiator register(MethodHandleProvider provider) {
         providers.add(0, new DynamicHandleProvider(provider));
+        return this;
     }
 
     private void register(MethodHandle providerHandle) {

@@ -6,7 +6,6 @@ import org.fiolino.common.util.Strings;
 import javax.annotation.Nullable;
 import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.*;
 import java.security.AccessController;
@@ -451,57 +450,6 @@ public final class MethodLocator {
     }
 
     /**
-     * Finds all methods that are annotated either with {@link MethodFinder}, {@link ExecuteDirect} or {@link MethodHandleFactory}.
-     *
-     * @param visitor   The callback for each found method
-     */
-    public <V> V findUsing(@Nullable V initialValue, MethodVisitor<V> visitor) {
-        return visitMethodsWithStaticContext(initialValue, (value, l, m, handleSupplier) -> {
-            if (m.isAnnotationPresent(MethodFinder.class)) {
-                return visitor.visit(value, l, m, () -> findHandleByProxy(handleSupplier.get()));
-            }
-            if (m.isAnnotationPresent(ExecuteDirect.class) || m.isAnnotationPresent(MethodHandleFactory.class)) {
-                return visitor.visit(value, l, m, handleSupplier);
-            }
-            return value;
-        });
-    }
-
-    /**
-     * Creates the method handle of some interface that is invoked in a finder method.
-     *
-     * @param finder This method should accept exactly one argument which must be an interface.
-     *               The return type is irrelevant.
-     * @return The first called method with that finder, or null if there is no such method called.
-     */
-    private MethodHandle findHandleByProxy(MethodHandle finder) {
-        if (finder.type().parameterCount() != 1) {
-            throw new IllegalArgumentException(finder + " should accept exactly one argument.");
-        }
-        Class<?> proxyType = finder.type().parameterType(0);
-        if (!proxyType.isInterface()) {
-            throw new IllegalArgumentException(finder + " should only accept one interface.");
-        }
-        Object proxy = createProxy(proxyType);
-        Method found = null;
-        try {
-            finder.invoke(proxy);
-        } catch (MethodFoundException ex) {
-            found = ex.getMethod();
-        } catch (Throwable t) {
-            throw new IllegalStateException("Prototype " + finder + " threw exception.", t);
-        }
-        if (found == null) {
-            return null;
-        }
-        try {
-            return lookup.unreflect(found);
-        } catch (IllegalAccessException ex) {
-            throw new AssertionError("Cannot access " + found, ex);
-        }
-    }
-
-    /**
      * Checks whether some method or field would be visible in the given {@link Lookup},
      * i.e. a call to unreflect() would be successful even without setting the
      * assignable flag in the method.
@@ -567,27 +515,6 @@ public final class MethodLocator {
         return a.getPackage().equals(b.getPackage());
     }
 
-    /**
-     * Iterates over all methods of my type, including all super types.
-     * The visitor's MethodHandle will be the plain converted method, without any modifications.
-     * <p>
-     * This will visit all methods that the given lookup is able to find.
-     * If some method overrides another, then only the overriding method gets visited.
-     *
-     * @param initialValue The visitor's first value
-     * @param visitor      The method visitor
-     * @return The return value of the last visitor's run
-     */
-    public <V> V visitAllMethods(@Nullable V initialValue, MethodVisitor<V> visitor) {
-        return iterateOver(type, initialValue, visitor, (m) -> {
-            try {
-                return lookup.unreflect(m);
-            } catch (IllegalAccessException ex) {
-                throw new AssertionError(m + " was tested for visibility; huh? Lookup: " + lookup, ex);
-            }
-        });
-    }
-
     private abstract class MethodSpliterator extends Spliterators.AbstractSpliterator<MethodInfo> {
         private final MethodFetcher fetcher = new MethodFetcher(type);
         Class<?> c = type;
@@ -599,10 +526,12 @@ public final class MethodLocator {
         @Override
         public boolean tryAdvance(Consumer<? super MethodInfo> action) {
             while (c != null) {
-                Method m = fetcher.next();
-                if (m != null && wouldBeVisible(m)) {
-                    action.accept(new MyMethodInfo(m));
-                    return true;
+                Method m;
+                while ((m = fetcher.next()) != null) {
+                    if (wouldBeVisible(m)) {
+                        action.accept(new MyMethodInfo(m));
+                        return true;
+                    }
                 }
                 c = nextClass();
                 fetcher.reset(c);
@@ -684,17 +613,23 @@ public final class MethodLocator {
         }
 
         @Override
-        public String getName() {
-            return method.getName();
-        }
-
-        @Override
         public MethodHandle getHandle() {
             try {
                 return lookup.unreflect(method);
             } catch (IllegalAccessException ex) {
                 throw new IllegalStateException(method + " should be visible for " + lookup, ex);
             }
+        }
+
+        @Override
+        public <T> T lambdafy(Class<T> functionalType, Supplier<Object> instanceFactory, Object... additionalInitializers) {
+            if (Modifier.isStatic(getModifiers())) {
+                return Methods.lambdafy(lookup, getHandle(), functionalType, additionalInitializers);
+            }
+            Object[] initializers = new Object[additionalInitializers.length + 1];
+            System.arraycopy(additionalInitializers, 0, initializers, 1, additionalInitializers.length);
+            initializers[0] = instanceFactory.get();
+            return Methods.lambdafy(lookup, getHandle(), functionalType, initializers);
         }
 
         @Override
@@ -767,109 +702,6 @@ public final class MethodLocator {
     }
 
     /**
-     * Iterates over all methods of my type, including all super types.
-     * The visitor's MethodHandle will be based on instances, that means, each MethodHandle has an instance
-     * of the given class type as the first parameter, which will be the instance.
-     * <p>
-     * If the Method is an instance method, then the MethodHandle will just be used, except that the
-     * instance argument will be casted to the given type.
-     * <p>
-     * If the Method is static, then the MethodHandle will still expect an instance of type as the first
-     * parameter. If the static method has a parameter of that type as the first argument, then it will
-     * be kept, otherwise it will be discarded.
-     * <p>
-     * That means, the visitor doesn't have to care whether the method is static or not.
-     * <p>
-     * This will visit all methods that the given lookup is able to find.
-     * If some method overrides another, then only the overriding method gets visited.
-     *
-     * @param initialValue The visitor's first value
-     * @param visitor      The method visitor
-     * @return The return value of the last visitor's run
-     */
-    public <V> V visitMethodsWithInstanceContext(@Nullable V initialValue, MethodVisitor<V> visitor) {
-        return iterateOver(type, initialValue, visitor, (m) -> {
-            MethodHandle handle;
-            try {
-                handle = lookup.unreflect(m);
-            } catch (IllegalAccessException ex) {
-                throw new AssertionError(m + " is not accessible in " + lookup, ex);
-            }
-            if (Modifier.isStatic(m.getModifiers()) &&
-                    (m.getParameterCount() == 0 || !m.getParameterTypes()[0].isAssignableFrom(type))) {
-                return MethodHandles.dropArguments(handle, 0, type);
-            }
-            return handle.asType(handle.type().changeParameterType(0, type));
-        });
-    }
-
-    /**
-     * Iterates over all methods of my type, including all super types.
-     * The visitor's MethodHandle will be static, that means, all MethodHandles are exactly of the Method's type
-     * without any instance context.
-     * <p>
-     * If the Method is an instance method, then the given factory should create an instance of the given type.
-     * This is bound to that handle then.
-     * <p>
-     * That means, the visitor doesn't have to care whether the method is static or not.
-     * <p>
-     * This will visit all methods that the given lookup is able to find.
-     * If some method overrides another, then only the overriding method gets visited.
-     *
-     * @param initialValue The visitor's first value
-     * @param visitor      The method visitor
-     * @return The return value of the last visitor's run
-     */
-    public <V> V visitMethodsWithStaticContext(@Nullable V initialValue, MethodVisitor<V> visitor) {
-        return visitMethodsWithStaticContext(initialValue, visitor, null);
-    }
-
-    /**
-     * Iterates over all methods of my type, including all super types.
-     * The visitor's MethodHandle will be static, that means, all MethodHandles are exactly of the Method's type
-     * without any instance context.
-     * <p>
-     * If the Method is an instance method, then the given factory should create an instance of the given type
-     * if no instance is given. Otherwise, that instance is being used.
-     * <p>
-     * That means, the visitor doesn't have to care whether the method is static or not.
-     * <p>
-     * This will visit all methods that the given lookup is able to find.
-     * If some method overrides another, then only the overriding method gets visited.
-     *
-     * @param initialValue The visitor's first value
-     * @param visitor      The method visitor
-     * @param instance     The instance of my type, or a Supplier which will be called on every found method exactly once
-     * @return The return value of the last visitor's run
-     */
-    public <V> V visitMethodsWithStaticContext(@Nullable V initialValue, MethodVisitor<V> visitor, @Nullable Object instance) {
-        if (instance != null && !(instance instanceof Supplier) && !type.isInstance(instance)) {
-            throw new IllegalArgumentException(instance + " should be of type " + type.getName());
-        }
-        return iterateOver(type, initialValue, visitor, m -> {
-            MethodHandle handle;
-            try {
-                handle = lookup.unreflect(m);
-            } catch (IllegalAccessException ex) {
-                throw new AssertionError(m + " is not accessible in " + lookup, ex);
-            }
-            if (Modifier.isStatic(m.getModifiers())) {
-                return handle;
-            }
-            if (instance != null) {
-                return handle.bindTo(instance instanceof Supplier ? ((Supplier<?>) instance).get() : instance);
-            }
-            MethodHandle constructor;
-            try {
-                constructor = lookup.findConstructor(type, methodType(void.class));
-            } catch (NoSuchMethodException | IllegalAccessException ex) {
-                throw new IllegalStateException(type.getName() + " should have an empty constructor!", ex);
-            }
-            return MethodHandles.foldArguments(handle, constructor);
-        });
-    }
-
-    /**
      * Iterates over the full class hierarchy of my type, but without Object itself.
      * Starts with the given type and then traverses over the superclass hierarchy until some value is found.
      *
@@ -903,40 +735,6 @@ public final class MethodLocator {
                 return Spliterator.DISTINCT | Spliterator.IMMUTABLE | Spliterator.NONNULL;
             }
         }, false);
-    }
-
-    /**
-     * Iterates over all methods of my type, including all super types.
-     */
-    private <V> V iterateOver(Class<?> type, V initialValue, MethodVisitor<V> visitor,
-                              Function<Method, MethodHandle> handleFactory) {
-        Class<?> c = type;
-        List<Method> usedMethods = new ArrayList<>();
-        V value = initialValue;
-        do {
-            Method[] methods = Methods.getDeclaredMethodsFrom(c);
-            outer:
-            for (Method m : methods) {
-                for (Method used : usedMethods) {
-                    if (isOverriding(used, m)) {
-                        continue outer;
-                    }
-                }
-                usedMethods.add(m);
-                if (wouldBeVisible(m)) {
-                    value = visitor.visit(value, lookup(), m, () -> handleFactory.apply(m));
-                }
-            }
-
-            if (c.isInterface()) {
-                for (Class<?> extended : c.getInterfaces()) {
-                    value = iterateOver(extended, value, visitor, handleFactory);
-                }
-                return value;
-            }
-        } while ((c = c.getSuperclass()) != null);
-
-        return value;
     }
 
     /**

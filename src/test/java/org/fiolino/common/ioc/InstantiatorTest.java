@@ -498,30 +498,25 @@ class InstantiatorTest {
         assertEquals("145.7", dec.toString());
     }
 
-    @FunctionalInterface
-    interface FromInt<T> {
-        T fromInt(int value);
-    }
-
     @Test
     void testDynamicProvider() {
-        Instantiator i = Instantiator.withProviders(lookup(), (MethodHandleProvider)(l, t) -> l.findStatic(t.returnType(), "valueOf", t));
+        Instantiator i = Instantiator.forLookup(lookup()).addMethodHandleProvider((l, t) -> l.findStatic(t.returnType(), "valueOf", t));
         Function<String, Integer> intFunction = i.createFunctionFor(Integer.class, String.class);
         checkIsLambda(intFunction);
         Integer integer = intFunction.apply("1234");
         assertEquals(1234, (int) integer);
 
         @SuppressWarnings("unchecked")
-        FromInt<String> stringFunction = i.createProviderFor(FromInt.class, String.class);
+        IntFunction<String> stringFunction = i.createProviderFor(IntFunction.class, String.class);
         checkIsLambda(stringFunction);
-        String string = stringFunction.fromInt(9876);
+        String string = stringFunction.apply(9876);
         assertEquals("9876", string);
 
         // Now without valueOf() call
         @SuppressWarnings("unchecked")
-        FromInt<AtomicInteger> atomicFunction = i.createProviderFor(FromInt.class, AtomicInteger.class);
+        IntFunction<AtomicInteger> atomicFunction = i.createProviderFor(IntFunction.class, AtomicInteger.class);
         checkIsLambda(atomicFunction);
-        AtomicInteger atomic = atomicFunction.fromInt(8848);
+        AtomicInteger atomic = atomicFunction.apply(8848);
         assertEquals(8848, atomic.get());
     }
 }

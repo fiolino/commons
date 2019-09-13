@@ -13,16 +13,17 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.Time;
+import java.sql.Timestamp;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiFunction;
-import java.util.function.Function;
-import java.util.function.IntFunction;
-import java.util.function.Supplier;
+import java.util.function.*;
 
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
@@ -48,7 +49,7 @@ class InstantiatorTest {
 
     @Test
     void testNormal() {
-        Supplier<Normal> instantiator = Instantiator.getDefault().createSupplierFor(Normal.class);
+        Supplier<Normal> instantiator = Instantiator.forLookup(lookup()).createSupplierFor(Normal.class);
         checkIsLambda(instantiator);
         Normal result = instantiator.get();
 
@@ -65,7 +66,7 @@ class InstantiatorTest {
 
     @Test
     void testPostProcessor() {
-        Supplier<WithPostProcessor> instantiator = Instantiator.getDefault().createSupplierFor(WithPostProcessor.class);
+        Supplier<WithPostProcessor> instantiator = Instantiator.forLookup(lookup()).createSupplierFor(WithPostProcessor.class);
         checkIsNotLambda(instantiator);
         Normal result = instantiator.get();
 
@@ -76,7 +77,7 @@ class InstantiatorTest {
     public static class WithVoidPostConstruct {
         String content = "Initial";
 
-        @PostCreate
+        @PostCreate @SuppressWarnings("unused")
         public void changeContent() {
             content = "Changed";
         }
@@ -96,7 +97,7 @@ class InstantiatorTest {
 
     @Test
     void testWithArgument() {
-        Supplier<WithPostProcessor> instantiator = Instantiator.getDefault().createSupplierFor(WithPostProcessor.class);
+        Supplier<WithPostProcessor> instantiator = Instantiator.forLookup(lookup()).createSupplierFor(WithPostProcessor.class);
         checkIsNotLambda(instantiator);
         Normal result = instantiator.get();
 
@@ -106,7 +107,7 @@ class InstantiatorTest {
 
     @Test
     void testCorrectArgument() {
-        Function<String, StringBuilder> instantiator = Instantiator.getDefault().createFunctionFor(StringBuilder.class, String.class);
+        Function<String, StringBuilder> instantiator = Instantiator.forLookup(lookup()).createFunctionFor(StringBuilder.class, String.class);
         checkIsLambda(instantiator);
         StringBuilder result = instantiator.apply("Hello!");
 
@@ -126,12 +127,12 @@ class InstantiatorTest {
             num *= 2;
         }
 
-        @PostCreate
+        @PostCreate @SuppressWarnings("unused")
         void increase() {
             num++;
         }
 
-        @PostCreate
+        @PostCreate @SuppressWarnings("unused")
         void increaseAgain() {
             num += 2;
         }
@@ -156,7 +157,7 @@ class InstantiatorTest {
             this.value = value;
         }
 
-        @PostCreate
+        @PostCreate @SuppressWarnings("unused")
         ModifiedPostConstruct check() {
             if (value.equals("hit")) {
                 return FALLBACK;
@@ -184,7 +185,7 @@ class InstantiatorTest {
             super(value);
         }
 
-        @PostCreate
+        @PostCreate @SuppressWarnings("unused")
         static ModifiedPostConstructWithStatic secondCheck(Object couldBeAnything) {
             if (couldBeAnything instanceof ModifiedPostConstructWithStatic) {
                 if (((ModifiedPostConstruct) couldBeAnything).value.equals("second")) {
@@ -218,7 +219,7 @@ class InstantiatorTest {
 
     @Test
     void testPrimitiveInsteadOfObject() {
-        Function<Number, ExpectNumber> instantiator = Instantiator.getDefault().createFunctionFor(ExpectNumber.class, Number.class);
+        Function<Number, ExpectNumber> instantiator = Instantiator.forLookup(lookup()).createFunctionFor(ExpectNumber.class, Number.class);
         checkIsLambda(instantiator);
         ExpectNumber result = instantiator.apply(123);
 
@@ -227,13 +228,13 @@ class InstantiatorTest {
     }
 
     public static class WithOptionalArgument {
-        public WithOptionalArgument(String unused) {
+        public WithOptionalArgument(@SuppressWarnings("unused")String unused) {
         }
     }
 
     @Test
     void testNotMandatory() {
-        Function<String, WithOptionalArgument> instantiator = Instantiator.getDefault().createFunctionFor(WithOptionalArgument.class, String.class);
+        Function<String, WithOptionalArgument> instantiator = Instantiator.forLookup(lookup()).createFunctionFor(WithOptionalArgument.class, String.class);
         checkIsLambda(instantiator);
         WithOptionalArgument result = instantiator.apply(null);
 
@@ -259,7 +260,7 @@ class InstantiatorTest {
     }
 
     public static class HiddenWithArgument {
-        HiddenWithArgument(String unused) {
+        HiddenWithArgument(@SuppressWarnings("unused") String unused) {
 
         }
 
@@ -281,6 +282,7 @@ class InstantiatorTest {
         assertNotNull(result2);
     }
 
+    @SuppressWarnings("unused")
     static class StringFactory {
         @Provider
         String sayHello() {
@@ -305,7 +307,7 @@ class InstantiatorTest {
         assertEquals("Hello John!", helloWithName.apply("John"));
 
         i = i.addProviders(new Object() {
-            @Provider
+            @Provider @SuppressWarnings("unused")
             Object newObject(@Requested Class<? extends Number> type, String value) throws Throwable {
                 MethodHandle valueOf = publicLookup().findStatic(type, "valueOf", methodType(type, String.class));
                 return type.cast(valueOf.invoke(value + value)); // Make sure it was our method being called
@@ -328,7 +330,7 @@ class InstantiatorTest {
     static class Counter {
         private int c;
 
-        @Provider
+        @Provider @SuppressWarnings("unused")
         AtomicInteger createNext() {
             return new AtomicInteger(++c);
         }
@@ -345,7 +347,7 @@ class InstantiatorTest {
     }
 
     static class NotOptionalFactory {
-        @Provider
+        @Provider @SuppressWarnings("unused")
         AtomicInteger createOnlyEven(int num) {
             if ((num & 1) == 0) return new AtomicInteger(num);
             return null;
@@ -367,7 +369,7 @@ class InstantiatorTest {
     }
 
     static class OptionalFactory {
-        @Provider @Nullable
+        @Provider @Nullable @SuppressWarnings("unused")
         AtomicInteger createOnlyEven(int num) {
             if ((num & 1) == 0) return new AtomicInteger(99);
             return null;
@@ -390,6 +392,7 @@ class InstantiatorTest {
         assertEquals(3, r2.get());
     }
 
+    @SuppressWarnings("unused")
     private static AtomicInteger getConstant(int num) {
         return num < 0 ? new AtomicInteger(2046) : null;
     }
@@ -412,7 +415,7 @@ class InstantiatorTest {
     }
 
     static class GenericFactory {
-        @Provider
+        @Provider @SuppressWarnings("unused")
         CharSequence reproduce(@Requested Class<?> type, String someValue, Integer factor) {
             StringBuilder sb = new StringBuilder();
             for (int i=0; i < factor; i++) {
@@ -427,7 +430,7 @@ class InstantiatorTest {
             }
         }
 
-        @Provider
+        @Provider @SuppressWarnings("unused")
         static Object staticAlternative(@Requested Class<? extends Number> type, String someValue, Integer factor) throws Throwable {
             MethodHandle valueOf = publicLookup().findStatic(type, "valueOf", methodType(type, String.class));
             return valueOf.invoke(someValue);
@@ -435,7 +438,7 @@ class InstantiatorTest {
     }
 
     static class HasConstructor {
-        HasConstructor(String unused, Integer unused2) {}
+        HasConstructor(@SuppressWarnings("unused") String unused, @SuppressWarnings("unused") Integer unused2) {}
     }
 
     @Test
@@ -488,7 +491,7 @@ class InstantiatorTest {
     @Test
     void testOwnFunctionalInterface() {
         Instantiator i = Instantiator.withProviders(lookup(), new Object() {
-            @Provider
+            @Provider @SuppressWarnings("unused")
             BigDecimal create(String value, int scale) {
                 return new BigDecimal(value).setScale(scale, RoundingMode.HALF_UP);
             }
@@ -500,23 +503,117 @@ class InstantiatorTest {
 
     @Test
     void testDynamicProvider() {
-        Instantiator i = Instantiator.forLookup(lookup()).addMethodHandleProvider((l, t) -> l.findStatic(t.returnType(), "valueOf", t));
-        Function<String, Integer> intFunction = i.createFunctionFor(Integer.class, String.class);
+        Instantiator inst = Instantiator.forLookup(lookup()).addMethodHandleProvider((i, t) -> i.getLookup().findStatic(t.returnType(), "valueOf", t));
+        Function<String, Integer> intFunction = inst.createFunctionFor(Integer.class, String.class);
         checkIsLambda(intFunction);
         Integer integer = intFunction.apply("1234");
         assertEquals(1234, (int) integer);
 
         @SuppressWarnings("unchecked")
-        IntFunction<String> stringFunction = i.createProviderFor(IntFunction.class, String.class);
+        IntFunction<String> stringFunction = inst.createProviderFor(IntFunction.class, String.class);
         checkIsLambda(stringFunction);
         String string = stringFunction.apply(9876);
         assertEquals("9876", string);
 
         // Now without valueOf() call
         @SuppressWarnings("unchecked")
-        IntFunction<AtomicInteger> atomicFunction = i.createProviderFor(IntFunction.class, AtomicInteger.class);
+        IntFunction<AtomicInteger> atomicFunction = inst.createProviderFor(IntFunction.class, AtomicInteger.class);
         checkIsLambda(atomicFunction);
         AtomicInteger atomic = atomicFunction.apply(8848);
         assertEquals(8848, atomic.get());
+    }
+
+    @Test
+    void testToPrimitive() throws NoSuchMethodException, IllegalAccessException {
+        MethodHandle h = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
+        Instantiator i = Instantiator.withProviders(lookup(), h);
+        @SuppressWarnings("unchecked")
+        ToIntFunction<String> func = i.createProviderFor(ToIntFunction.class, int.class, String.class);
+        checkIsLambda(func);
+        int value = func.applyAsInt("-550055");
+        assertEquals(-550055, value);
+    }
+
+    static class DateFactory {
+        @Provider @SuppressWarnings("unused")
+        Date getDate(long time) {
+            return new Date(0L);
+        }
+    }
+
+    static class DateAndSubclassesFactory {
+        @Provider @SuppressWarnings("unused")
+        Date getDate(@Requested Class<? extends Date> type, long time) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, java.lang.InstantiationException {
+            Constructor<? extends Date> c = type.getConstructor(long.class);
+            return c.newInstance(0L);
+        }
+    }
+
+    @Test @SuppressWarnings("unchecked")
+    void testOnlyExactType() {
+        Instantiator i = Instantiator.withProviders(lookup(), new DateFactory());
+        LongFunction<Date> dateFunction = (LongFunction<Date>) i.createProviderFor(LongFunction.class, Date.class);
+        Date d = dateFunction.apply(999_999L);
+        assertEquals(0L, d.getTime());
+
+        LongFunction<Timestamp> timestampFunction = (LongFunction<Timestamp>) i.createProviderFor(LongFunction.class, Timestamp.class);
+        Timestamp timestamp = timestampFunction.apply(999_999);
+        assertEquals(999_999L, timestamp.getTime());
+
+        i = Instantiator.withProviders(lookup(), new DateAndSubclassesFactory());
+        dateFunction = (LongFunction<Date>) i.createProviderFor(LongFunction.class, Date.class);
+        d = dateFunction.apply(999_999);
+        assertEquals(0L, d.getTime());
+
+        timestampFunction = (LongFunction<Timestamp>) i.createProviderFor(LongFunction.class, Timestamp.class);
+        timestamp = timestampFunction.apply(999_999);
+        assertEquals(0L, timestamp.getTime());
+    }
+
+    @SuppressWarnings("unused")
+    static class FactoryForCertainTypes {
+        @Provider(CharSequence.class)
+        Object sequenceOnly() {
+            return "This is a string";
+        }
+
+        @Provider({java.sql.Date.class, Timestamp.class })
+        Date sqlTypesOnly(@Requested Class<? extends Date> type, long time) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, java.lang.InstantiationException {
+            Constructor<? extends Date> c = type.getConstructor(long.class);
+            return c.newInstance(0L);
+        }
+    }
+
+    @Test @SuppressWarnings("unchecked")
+    void testOnlySpecifiedTypes() {
+        Instantiator i = Instantiator.withProviders(lookup(), new FactoryForCertainTypes());
+        Supplier<Object> objectSupplier = i.createSupplierFor(Object.class);
+        Object o = objectSupplier.get();
+        assertEquals(Object.class, o.getClass());
+
+        Supplier<String> stringSupplier = i.createSupplierFor(String.class);
+        String s = stringSupplier.get();
+        assertEquals("", s);
+
+        Supplier<CharSequence> sequenceSupplier = i.createSupplierFor(CharSequence.class);
+        CharSequence seq = sequenceSupplier.get();
+        assertEquals("This is a string", seq);
+
+
+        LongFunction<Date> dateFunction = (LongFunction<Date>) i.createProviderFor(LongFunction.class, Date.class);
+        Date d = dateFunction.apply(999_999L);
+        assertEquals(999_999L, d.getTime());
+
+        LongFunction<java.sql.Date> sqlDateFunction = (LongFunction<java.sql.Date>) i.createProviderFor(LongFunction.class, java.sql.Date.class);
+        d = sqlDateFunction.apply(999_999L);
+        assertEquals(0L, d.getTime());
+
+        LongFunction<Timestamp> timestampFunction = (LongFunction<Timestamp>) i.createProviderFor(LongFunction.class, Timestamp.class);
+        d = timestampFunction.apply(999_999);
+        assertEquals(0L, d.getTime());
+
+        LongFunction<Time> timeFunction = (LongFunction<Time>) i.createProviderFor(LongFunction.class, Time.class);
+        d = timeFunction.apply(999_999L);
+        assertEquals(999_999L, d.getTime());
     }
 }

@@ -1837,7 +1837,7 @@ public final class Methods {
             }
             Object o = object instanceof Class ?
                 // Then inject a new instance now
-                Instantiator.getDefault().instantiate((Class<?>) object) : object;
+                Instantiator.withDefaults(publicLookup()).instantiate((Class<?>) object) : object;
             return h.bindTo(o);
         });
     }

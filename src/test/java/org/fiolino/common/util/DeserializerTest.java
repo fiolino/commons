@@ -128,7 +128,7 @@ class DeserializerTest {
     @Test
     @Disabled
     void testBuilder() throws Throwable {
-        DeserializerBuilder builder = new DeserializerBuilder(Instantiator.getDefault());
+        DeserializerBuilder builder = new DeserializerBuilder();
         MethodHandle factory = builder.getDeserializer(B.class);
         B b = (B) factory.invokeExact("Hello World!:222:500:DAYS:9999999999999999:50.9:1,2,3:MILLISECONDS,NANOSECONDS");
         assertEquals((Integer) 500, b.getIntegerValue());
@@ -147,7 +147,7 @@ class DeserializerTest {
     @Test
     @Disabled
     void testContainer() throws Throwable {
-        DeserializerBuilder b = new DeserializerBuilder(Instantiator.getDefault());
+        DeserializerBuilder b = new DeserializerBuilder();
         MethodHandle factory = b.getDeserializer(C.class);
         C c = (C) factory.invokeExact("My name:(\"Hello World!\":222:500:DAYS):Some text");
         assertEquals("My name", c.getName());
@@ -162,9 +162,9 @@ class DeserializerTest {
 
     @Test
     void testContainer2() throws Throwable {
-        Deserializer forA = new Deserializer(Instantiator.getDefault().findProviderHandle(A.class));
+        Deserializer forA = new Deserializer(Instantiator.forLookup(lookup()).findProviderHandle(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
-        Deserializer forC = new Deserializer(Instantiator.getDefault().findProviderHandle(C.class));
+        Deserializer forC = new Deserializer(Instantiator.forLookup(lookup()).findProviderHandle(C.class));
         addFieldsTo(forC, C.class, "name", "text");
         forC.setEmbeddedField(MethodLocator.forLocal(lookup(), C.class).findSetter("a", A.class), forA.createDeserializer(), 2, () -> "a");
         MethodHandle factory = forC.createDeserializer();
@@ -180,9 +180,9 @@ class DeserializerTest {
 
     @Test
     void testContainerWithParenthesis() throws Throwable {
-        Deserializer forA = new Deserializer(Instantiator.getDefault().findProviderHandle(A.class));
+        Deserializer forA = new Deserializer(Instantiator.forLookup(lookup()).findProviderHandle(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
-        Deserializer forC = new Deserializer(Instantiator.getDefault().findProviderHandle(C.class));
+        Deserializer forC = new Deserializer(Instantiator.forLookup(lookup()).findProviderHandle(C.class));
         addFieldsTo(forC, C.class, "name", "text");
         forC.setEmbeddedField(MethodLocator.forLocal(lookup(), C.class).findSetter("a", A.class), forA.createDeserializer(), 2, () -> "a");
         MethodHandle factory = forC.createDeserializer();

@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
 
+import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
 
 /**
@@ -18,6 +19,10 @@ public final class DeserializerBuilder {
 
     private final Instantiator instantiator;
     private final Map<Class<?>, MethodHandle> deserializers = new HashMap<>();
+
+    public DeserializerBuilder() {
+        this(Instantiator.withDefaults(lookup()));
+    }
 
     public DeserializerBuilder(Instantiator instantiator) {
         this.instantiator = instantiator;

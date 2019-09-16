@@ -19,6 +19,9 @@ import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.time.*;
+import java.time.temporal.TemporalField;
+import java.time.temporal.TemporalUnit;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -56,7 +59,17 @@ public final class Instantiator {
     private static final Class<?>[] NO_SPECIAL_CLASSES = {};
 
     static {
-        Instantiator inst = Instantiator.withProviders(lookup().dropLookupMode(MethodHandles.Lookup.MODULE),
+        MethodHandle getTime, numberToString, dateToInstant, instantToDate;
+        try {
+            getTime = publicLookup().findVirtual(Date.class, "getTime", methodType(long.class));
+            numberToString = publicLookup().findVirtual(Number.class, "toString", methodType(String.class));
+            dateToInstant = publicLookup().findVirtual(Date.class, "toInstant", methodType(Instant.class));
+            instantToDate = publicLookup().findStatic(Date.class, "from", methodType(Date.class, Instant.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new AssertionError("getTime", ex);
+        }
+
+        DEFAULT = Instantiator.withProviders(lookup().dropLookupMode(MethodHandles.Lookup.MODULE),
                 (MethodHandleProvider)(i, t) -> i.getLookup().findStatic(t.returnType(), "valueOf", t),
 
                 (MethodHandleProvider)(i, t) -> {
@@ -87,7 +100,10 @@ public final class Instantiator {
                     return null;
                 },
 
-                getTimeHandle(),
+                getTime,
+                numberToString,
+                dateToInstant,
+                instantToDate,
 
                 new Object() {
                     @Provider @SuppressWarnings("unused")
@@ -102,7 +118,7 @@ public final class Instantiator {
                     }
 
                     @Provider @SuppressWarnings("unused")
-                    java.sql.Time sqlTimeFromDate(Date origin) {
+                    java.sql.Time sqlTimeFromDate(Date origin) {<
                         return new java.sql.Time(origin.getTime());
                     }
 
@@ -110,17 +126,17 @@ public final class Instantiator {
                     java.sql.Timestamp sqlTimestampFromDate(Date origin) {
                         return new java.sql.Timestamp(origin.getTime());
                     }
+
+                    @Provider @SuppressWarnings("unused")
+                    LocalDateTime localDateFor(Date date) {
+                        return LocalDateTime.ofInstant(Instant.ofEpochMilli(date.getTime()), ZoneId.systemDefault());
+                    }
+
+                    @Provider @SuppressWarnings("unused")
+                    Date dateFrom(LocalDateTime dateTime) {
+                        return Date.from(dateTime.toInstant(ZoneOffset.UTC));
+                    }
                 });
-
-        DEFAULT = inst;
-    }
-
-    private static MethodHandle getTimeHandle() {
-        try {
-            return publicLookup().findVirtual(Date.class, "getTime", methodType(long.class));
-        } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new AssertionError("getTime", ex);
-        }
     }
 
     /**
@@ -182,7 +198,17 @@ public final class Instantiator {
 
         @Override
         boolean argumentsMatch(Class<?>[] argumentTypes) {
-            return Arrays.equals(argumentTypes, handle.type().parameterArray());
+            Class<?>[] params = parametersToCheck();
+            int n = params.length;
+            if (n != argumentTypes.length) return false;
+            for (int i = n-1; i >=0; i--) {
+                if (!params[i].isAssignableFrom(argumentTypes[i])) return false;
+            }
+            return true;
+        }
+
+        Class<?>[] parametersToCheck() {
+            return handle.type().parameterArray();
         }
 
         @Override
@@ -309,8 +335,8 @@ public final class Instantiator {
         }
 
         @Override
-        boolean argumentsMatch(Class<?>[] argumentTypes) {
-            return Arrays.equals(expectedArguments, argumentTypes);
+        Class<?>[] parametersToCheck() {
+            return expectedArguments;
         }
 
         @Override

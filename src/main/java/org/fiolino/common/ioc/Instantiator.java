@@ -17,11 +17,10 @@ import java.lang.invoke.MethodType;
 import java.lang.reflect.*;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.sql.Time;
-import java.sql.Timestamp;
-import java.time.*;
-import java.time.temporal.TemporalField;
-import java.time.temporal.TemporalUnit;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -118,7 +117,7 @@ public final class Instantiator {
                     }
 
                     @Provider @SuppressWarnings("unused")
-                    java.sql.Time sqlTimeFromDate(Date origin) {<
+                    java.sql.Time sqlTimeFromDate(Date origin) {
                         return new java.sql.Time(origin.getTime());
                     }
 

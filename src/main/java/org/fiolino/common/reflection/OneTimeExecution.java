@@ -34,7 +34,7 @@ public interface OneTimeExecution extends Cache {
     }
 
     /**
-     * Creates a registry builder for parameter-less handles where updates are expected to happen frequently.
+     * Creates a registry builder for parameter-less handles where updates or resets are expected to happen frequently.
      *
      * @param execution The task which will be executed on the first run
      * @return A registry builder for that target

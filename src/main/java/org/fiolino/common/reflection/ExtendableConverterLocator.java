@@ -1,6 +1,6 @@
 package org.fiolino.common.reflection;
 
-import org.fiolino.common.ioc.Instantiator;
+import org.fiolino.common.ioc.FactoryFinder;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -231,10 +231,10 @@ public abstract class ExtendableConverterLocator implements ConverterLocator {
      */
     public ExtendableConverterLocator register(MethodHandles.Lookup lookup, Object converterMethods) {
         MethodLocator locator;
-        Supplier<Object> supplier;
+        Supplier<?> supplier;
         if (converterMethods instanceof Class) {
-            Instantiator i = Instantiator.forLookup(lookup);
-            supplier = () -> i.instantiate((Class<?>) converterMethods);
+            FactoryFinder i = FactoryFinder.forLookup(lookup);
+            supplier = i.createSupplierFor((Class<?>) converterMethods);
             locator = MethodLocator.forLocal(lookup, (Class<?>) converterMethods);
         } else {
             supplier = () -> converterMethods;

@@ -1,6 +1,6 @@
 package org.fiolino.common.util;
 
-import org.fiolino.common.ioc.Instantiator;
+import org.fiolino.common.ioc.FactoryFinder;
 import org.fiolino.common.reflection.MethodLocator;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -162,9 +162,9 @@ class DeserializerTest {
 
     @Test
     void testContainer2() throws Throwable {
-        Deserializer forA = new Deserializer(Instantiator.forLookup(lookup()).findProviderHandle(A.class));
+        Deserializer forA = new Deserializer(FactoryFinder.forLookup(lookup()).findOrFail(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
-        Deserializer forC = new Deserializer(Instantiator.forLookup(lookup()).findProviderHandle(C.class));
+        Deserializer forC = new Deserializer(FactoryFinder.forLookup(lookup()).findOrFail(C.class));
         addFieldsTo(forC, C.class, "name", "text");
         forC.setEmbeddedField(MethodLocator.forLocal(lookup(), C.class).findSetter("a", A.class), forA.createDeserializer(), 2, () -> "a");
         MethodHandle factory = forC.createDeserializer();
@@ -180,9 +180,9 @@ class DeserializerTest {
 
     @Test
     void testContainerWithParenthesis() throws Throwable {
-        Deserializer forA = new Deserializer(Instantiator.forLookup(lookup()).findProviderHandle(A.class));
+        Deserializer forA = new Deserializer(FactoryFinder.forLookup(lookup()).findOrFail(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
-        Deserializer forC = new Deserializer(Instantiator.forLookup(lookup()).findProviderHandle(C.class));
+        Deserializer forC = new Deserializer(FactoryFinder.forLookup(lookup()).findOrFail(C.class));
         addFieldsTo(forC, C.class, "name", "text");
         forC.setEmbeddedField(MethodLocator.forLocal(lookup(), C.class).findSetter("a", A.class), forA.createDeserializer(), 2, () -> "a");
         MethodHandle factory = forC.createDeserializer();

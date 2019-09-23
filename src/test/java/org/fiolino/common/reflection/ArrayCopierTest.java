@@ -1,6 +1,6 @@
 package org.fiolino.common.reflection;
 
-import org.fiolino.common.ioc.Instantiator;
+import org.fiolino.common.ioc.FactoryFinder;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Array;
@@ -57,7 +57,7 @@ class ArrayCopierTest {
     void testObjectArrayFactory() {
         testArrayFactory(Object.class, Object[]::new);
         testArrayFactory(String.class, String[]::new);
-        testArrayFactory(Instantiator.class, Instantiator[]::new);
+        testArrayFactory(FactoryFinder.class, FactoryFinder[]::new);
     }
 
     @Test

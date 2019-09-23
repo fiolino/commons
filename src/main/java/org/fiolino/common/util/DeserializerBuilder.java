@@ -1,6 +1,6 @@
 package org.fiolino.common.util;
 
-import org.fiolino.common.ioc.Instantiator;
+import org.fiolino.common.ioc.FactoryFinder;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -17,15 +17,15 @@ import static java.lang.invoke.MethodHandles.publicLookup;
 public final class DeserializerBuilder {
     private static final Logger logger = Logger.getLogger(DeserializerBuilder.class.getName());
 
-    private final Instantiator instantiator;
+    private final FactoryFinder factoryFinder;
     private final Map<Class<?>, MethodHandle> deserializers = new HashMap<>();
 
     public DeserializerBuilder() {
-        this(Instantiator.withDefaults(lookup()));
+        this(FactoryFinder.withDefaults(lookup()));
     }
 
-    public DeserializerBuilder(Instantiator instantiator) {
-        this.instantiator = instantiator;
+    public DeserializerBuilder(FactoryFinder factoryFinder) {
+        this.factoryFinder = factoryFinder;
     }
 
     /**
@@ -36,7 +36,7 @@ public final class DeserializerBuilder {
         return deserializers.computeIfAbsent(type, t -> {
             MethodHandles.Lookup lookup = // instantiator.getLookup().in(t);
                     publicLookup().in(t);
-            MethodHandle constructor = instantiator.findProviderHandle(type);
+            MethodHandle constructor = factoryFinder.findOrFail(type);
             Deserializer deserializer = new Deserializer(constructor);
             analyze(lookup, t, deserializer);
             return deserializer.createDeserializer();

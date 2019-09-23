@@ -3,7 +3,7 @@ package org.fiolino.common.util;
 import org.fiolino.annotations.SerialFieldIndex;
 import org.fiolino.annotations.SerializeEmbedded;
 import org.fiolino.common.analyzing.ClassWalker;
-import org.fiolino.common.ioc.Instantiator;
+import org.fiolino.common.ioc.FactoryFinder;
 import org.fiolino.common.reflection.*;
 
 import java.lang.invoke.MethodHandle;
@@ -112,12 +112,12 @@ public class SerializerBuilder {
     }
 
     private static <T extends Collection<MethodHandle>> T addAppendersFrom(MethodHandles.Lookup lookup, T appenders, Class<?> appenderContainer) {
-        Instantiator i = Instantiator.forLookup(lookup);
+        FactoryFinder i = FactoryFinder.forLookup(lookup);
         MethodLocator.forLocal(lookup, appenderContainer).methods()
                 .filter(info -> info.getMethod().getReturnType() == void.class)
                 .filter(info -> info.getMethod().getParameterCount() == 2)
                 .filter(info -> info.getMethod().getParameterTypes()[0].equals(StringBuilder.class))
-                .map(info -> info.getStaticHandle(() -> Instantiator.forLookup(lookup).instantiate(appenderContainer)))
+                .map(info -> info.getStaticHandle(() -> FactoryFinder.forLookup(lookup).transform(appenderContainer)))
                 .forEach(appenders::add);
         return appenders;
     }

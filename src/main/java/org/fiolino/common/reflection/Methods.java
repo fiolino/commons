@@ -1,6 +1,6 @@
 package org.fiolino.common.reflection;
 
-import org.fiolino.common.ioc.Instantiator;
+import org.fiolino.common.ioc.FactoryFinder;
 import org.fiolino.common.util.Types;
 
 import javax.annotation.Nullable;
@@ -1837,7 +1837,7 @@ public final class Methods {
             }
             Object o = object instanceof Class ?
                 // Then inject a new instance now
-                Instantiator.withDefaults(publicLookup()).instantiate((Class<?>) object) : object;
+                FactoryFinder.withDefaults(publicLookup()).transform((Class<?>) object) : object;
             return h.bindTo(o);
         });
     }

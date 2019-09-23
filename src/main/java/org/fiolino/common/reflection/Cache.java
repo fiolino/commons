@@ -14,6 +14,9 @@ public interface Cache extends Registry {
      */
     CallSite getCallSite();
 
+    /**
+     * Gets the accessor handle, i.e. the handle the invokes the underlying handle exactly once.
+     */
     default MethodHandle getAccessor() {
         return getCallSite().dynamicInvoker();
     }

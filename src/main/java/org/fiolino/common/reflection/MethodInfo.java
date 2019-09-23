@@ -43,7 +43,7 @@ public interface MethodInfo extends AnnotatedElement, Member {
      * @param instanceFactory Used to get the instance for instance methods
      * @return The static handle
      */
-    default MethodHandle getStaticHandle(Supplier<Object> instanceFactory) {
+    default MethodHandle getStaticHandle(Supplier<?> instanceFactory) {
         if (Modifier.isStatic(getModifiers())) {
             return getHandle();
         }

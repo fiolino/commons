@@ -1,6 +1,8 @@
 package org.fiolino.common.ioc;
 
-import org.fiolino.common.reflection.*;
+import org.fiolino.common.reflection.MethodLocator;
+import org.fiolino.common.reflection.Methods;
+import org.fiolino.common.reflection.NoMatchingConverterException;
 import org.junit.jupiter.api.Test;
 
 import java.lang.annotation.ElementType;
@@ -9,14 +11,13 @@ import java.lang.invoke.MethodHandles;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Date;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class FactoryFinderBuilderTest {
     private void checkIsLambda(Object func) {
@@ -287,11 +288,9 @@ class FactoryFinderBuilderTest {
         MethodHandle appendCharSeq = publicLookup().findVirtual(StringBuilder.class, "append",
                 methodType(StringBuilder.class, CharSequence.class));
         // First try something that doesn't need to be converted
-        MethodHandle appendString = Converters.convertArgumentTypesTo(appendCharSeq, Converters.defaultConverters,
-                1, String.class);
+        MethodHandle appendString = FactoryFinder.full().convertArgumentTypesTo(appendCharSeq, 1, String.class);
         // then with a converter
-        MethodHandle appendInt = Converters.convertArgumentTypesTo(appendString, Converters.defaultConverters,
-                1, int.class);
+        MethodHandle appendInt = FactoryFinder.full().convertArgumentTypesTo(appendString, 1, int.class);
         StringBuilder sb = new StringBuilder("The ");
         sb = (StringBuilder) appendCharSeq.invokeExact(sb, (CharSequence) "number ");
         sb = (StringBuilder) appendString.invokeExact(sb, "is ");
@@ -299,24 +298,18 @@ class FactoryFinderBuilderTest {
         assertEquals("The number is 42", sb.toString());
     }
 
-    public void testCantConvert() throws NoMatchingConverterException {
-        Converter converter = Converters.defaultConverters.find(Date.class, String.class);
-        assertEquals(ConversionRank.NEEDS_CONVERSION, converter.getRank());
-        assertNull(converter.getConverter());
-    }
-
     // Can't convert from any primitive to another wrapper
     @Test
     void testWrongPrimitive() throws NoMatchingConverterException {
-        Converter converter = Converters.defaultConverters.find(long.class, Integer.class);
-        assertFalse(converter.isConvertable());
+        Optional<MethodHandle> converter = FactoryFinder.full().find(long.class, Integer.class);
+        assertFalse(converter.isPresent());
     }
 
     // But can convert from any wrapper to some primitive as long as there's an xxxValue() method
     @Test
     void testConvertablePrimitive() throws Throwable {
-        Converter c = Converters.defaultConverters.find(Integer.class, long.class);
-        long val = (long) c.getConverter().invokeExact((Integer) 12345);
+        Optional<MethodHandle> converter = FactoryFinder.full().find(Integer.class, long.class);
+        long val = (long) converter.get().invokeExact((Integer) 12345);
         assertEquals(12345L, val);
     }
 
@@ -345,7 +338,7 @@ class FactoryFinderBuilderTest {
         MethodHandles.Lookup l = lookup();
         MethodHandle concat = l.findStatic(l.lookupClass(), "concat", methodType(
                 String.class, String.class, long.class, Date.class, boolean.class));
-        MethodHandle different = Converters.convertTo(concat, Converters.defaultConverters,
+        MethodHandle different = FactoryFinder.full().convertTo(concat,
                 methodType(StringWrapper.class, BigDecimal.class, Long.class, long.class, char.class));
 
         long now = System.currentTimeMillis();
@@ -363,13 +356,13 @@ class FactoryFinderBuilderTest {
         MethodHandle concat = l.findStatic(l.lookupClass(), "concat", methodType(
                 String.class, String.class, long.class, Date.class, boolean.class));
         Date now = new Date();
-        MethodHandle lessArgs = Converters.convertTo(concat, Converters.defaultConverters,
+        MethodHandle lessArgs = FactoryFinder.full().convertTo(concat,
                 methodType(StringWrapper.class, TimeUnit.class), now, now, true);
         StringWrapper result = (StringWrapper) lessArgs.invokeExact(TimeUnit.HOURS);
         long ms = now.getTime();
         assertEquals("HOURS" + ms + " " + ms, result.val);
 
-        lessArgs = Converters.convertTo(concat, Converters.defaultConverters,
+        lessArgs = FactoryFinder.full().convertTo(concat,
                 methodType(StringWrapper.class), ElementType.FIELD, null, null, null);
         result = (StringWrapper) lessArgs.invokeExact();
         assertEquals("FIELD0", result.val);
@@ -378,7 +371,7 @@ class FactoryFinderBuilderTest {
     @Test
     void testMoreArguments() throws Throwable {
         MethodHandle max = lookup().findStatic(Math.class, "max", methodType(int.class, int.class, int.class));
-        MethodHandle more = Converters.convertTo(max, Converters.defaultConverters,
+        MethodHandle more = FactoryFinder.full().convertTo(max,
                 methodType(String.class, Float.class, BigInteger.class, Date.class, TimeUnit.class));
         String result = (String) more.invokeExact((Float) 2.0f, new BigInteger("1000"), new Date(), TimeUnit.MICROSECONDS);
         assertEquals("1000", result);

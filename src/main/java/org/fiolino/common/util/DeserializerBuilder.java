@@ -21,7 +21,7 @@ public final class DeserializerBuilder {
     private final Map<Class<?>, MethodHandle> deserializers = new HashMap<>();
 
     public DeserializerBuilder() {
-        this(FactoryFinder.withDefaults(lookup()));
+        this(FactoryFinder.full().using(lookup()));
     }
 
     public DeserializerBuilder(FactoryFinder factoryFinder) {

@@ -5,17 +5,23 @@ import org.fiolino.annotations.PostProcessor;
 import org.fiolino.annotations.Provider;
 import org.fiolino.annotations.Requested;
 import org.fiolino.common.reflection.*;
+import org.fiolino.common.util.CharSet;
 import org.fiolino.common.util.Types;
 
 import javax.annotation.Nullable;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.invoke.VarHandle;
 import java.lang.reflect.*;
+import java.text.DateFormat;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
+import java.time.temporal.Temporal;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 import static java.lang.invoke.MethodHandles.*;
 import static java.lang.invoke.MethodType.methodType;
@@ -63,6 +69,34 @@ public abstract class FactoryFinder {
      */
     public static FactoryFinder instantiator() {
         return USE_CONSTRUCTOR;
+    }
+
+    /**
+     * Returns an instance that converts the following types:
+     * <ul>
+     *     <li>If there is a matching static {@code valueOf} method, then this will be used;</li>
+     *     <li>Strings will be parsed to numbers and vice versa</li>
+     *     <li>wrapper types can be converted to any primitive</li>
+     *     <li>Enums and Strings are convertible as well using the enum's names</li>
+     *     <li>in any other case, the consctructor is called</li>
+     * </ul>
+     */
+    public static FactoryFinder minimal() {
+        return Defaults.MINIMAL;
+    }
+
+    /**
+     * Returns an instance that converts all types like the minimal instance, plus the  following:
+     * <ul>
+     *     <li>{@code Date} instances are converted to their millisecond values</li>
+     *     <li>{@code Date} instances are converted to {@code Instant} or {@code LocalDateTime} instances (using UTC) and vice versa</li>
+     *     <li>{@code Date} instances are converted to all three java.sql date types</li>
+     *     <li>Strings are converted to char primitives using their first character</li>
+     *     <li>a char of 't', 'y', 'w' (case insensitive) and '1' are {@code true}, all others are {@code false}</li>
+     * </ul>
+     */
+    public static FactoryFinder full() {
+        return Defaults.FULL;
     }
 
     /**
@@ -244,6 +278,114 @@ public abstract class FactoryFinder {
     }
 
     /**
+     * Returns a FactoryFinder that converts Strings to the given temporal type and vice versa using the given formatter.
+     *
+     * @param type Which temporal to convert - LocaleDate, LocaleTime, etc.
+     * @param formatter Use this
+     * @return The FactoryFinder that uses these converters on top of my already existing ones
+     */
+    public FactoryFinder formatting(Class<? extends Temporal> type, DateTimeFormatter formatter) {
+        MethodHandle parse, format;
+        try {
+            parse = publicLookup().findStatic(type, "parse", methodType(type, CharSequence.class, DateTimeFormatter.class));
+            format = publicLookup().findVirtual(type, "format", methodType(String.class, DateTimeFormatter.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new IllegalArgumentException(type.getName() + " cannot use the formatter", ex);
+        }
+
+        parse = insertArguments(parse, 1, formatter);
+        format = insertArguments(format, 1, formatter);
+        return withMethodHandle(parse).withMethodHandle(format);
+    }
+
+    /**
+     * Returns a FactoryFinder that converts Strings to the given temporal type and vice versa using the given format string.
+     *
+     * @param type Which tempporal to convert - LocaleDate, LocaleTime, etc.
+     * @param dateTimeFormat Use this
+     * @return The FactoryFinder that uses these converters on top of my already existing ones
+     */
+    public FactoryFinder formatting(Class<? extends Temporal> type, String dateTimeFormat) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dateTimeFormat);
+        return formatting(type, formatter);
+    }
+
+    /**
+     * Returns a FactoryFinder that converts Strings to the given temporal type and vice versa using the given format
+     * string and locale.
+     *
+     * @param type Which temporal to convert - LocaleDate, LocaleTime, etc.
+     * @param dateTimeFormat Use this
+     * @param locale Used to create the formatter
+     * @return The FactoryFinder that uses these converters on top of my already existing ones
+     */
+    public FactoryFinder formatting(Class<? extends Temporal> type, String dateTimeFormat, Locale locale) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dateTimeFormat, locale);
+        return formatting(type, formatter);
+    }
+
+    /**
+     * Returns a FactoryFinder that converts between Strings and legacy Dates using the given date format.
+     *
+     * @param dateFormat Use this
+     * @return The FactoryFinder that uses these converters on top of my already existing ones
+     */
+    public FactoryFinder formatting(DateFormat dateFormat) {
+        MethodHandle parse, format;
+        try {
+            parse = publicLookup().findVirtual(DateFormat.class, "parse", methodType(Date.class, String.class));
+            format = publicLookup().findVirtual(DateFormat.class, "format", methodType(String.class, Date.class));
+        } catch (NoSuchMethodException | IllegalAccessException ex) {
+            throw new AssertionError(ex);
+        }
+
+        return withMethodHandle(parse, dateFormat).withMethodHandle(format, dateFormat);
+    }
+
+    /**
+     * Returns a FactoryFinder that converts between Strings and all standard JDK date classes:
+     * <ul>
+     *     <li>{@link Date}</li>
+     *     <li>{@link LocalDate}</li>
+     *     <li>{@link LocalTime}</li>
+     *     <li>{@link LocalDateTime}</li>
+     * </ul>
+     *
+     * The default format depending on the given locale is used.
+     *
+     * @param style Which style to use for the format
+     * @param locale The locale
+     * @return The new FactoryFinder
+     */
+    public FactoryFinder formatting(FormatStyle style, Locale locale) {
+        FactoryFinder result = formatting(LocalDate.class, DateTimeFormatter.ofLocalizedDate(style).localizedBy(locale))
+            .formatting(LocalTime.class, DateTimeFormatter.ofLocalizedTime(style).localizedBy(locale))
+            .formatting(LocalDateTime.class, DateTimeFormatter.ofLocalizedDateTime(style).localizedBy(locale));
+
+        int oldStyle = FormatStyleConverter.oldDateFormatStyleFor(style);
+        DateFormat df = DateFormat.getDateTimeInstance(oldStyle, oldStyle, locale);
+        return result.formatting(df);
+    }
+
+    /**
+     * Returns a FactoryFinder that converts between Strings and all standard JDK date classes:
+     * <ul>
+     *     <li>{@link Date}</li>
+     *     <li>{@link LocalDate}</li>
+     *     <li>{@link LocalTime}</li>
+     *     <li>{@link LocalDateTime}</li>
+     * </ul>
+     *
+     * The default format based on the default locale is used.
+     *
+     * @param style Which style to use for the format
+     * @return The new FactoryFinder
+     */
+    public FactoryFinder formatting(FormatStyle style) {
+        return formatting(style, Locale.getDefault(Locale.Category.FORMAT));
+    }
+
+    /**
      * Tries to find a suitable transformer handle, and executes it with the given arguments.
      * Can be used to directly instantiate a type, or to convert some existing value to its target type.
      *
@@ -330,14 +472,17 @@ public abstract class FactoryFinder {
             if (newType == null || newType.equals(arg = type.parameterType(argumentNumber + i))) {
                 continue;
             }
+            Optional<MethodHandle> converter = find(arg, newType).map(h -> h.asType(methodType(newType, arg)));
+            if (converter.isPresent()) {
+                filters[i] = converter.get();
+                continue;
+            }
             if (typesAreConvertible(arg, newType)) {
                 if (casted == null) casted = type;
                 casted = casted.changeParameterType(argumentNumber + i, newType);
                 continue;
             }
-            MethodHandle converter = findOrFail(arg, newType);
-            converter = converter.asType(methodType(arg, newType));
-            filters[i] = converter;
+            throw new NoSuchProviderException(arg, new Class<?>[] { newType} , "Cannot convert parameter #" + i + " of " + target + " to " + newType.getName());
         }
         MethodHandle castedTarget = casted == null ? target : MethodHandles.explicitCastArguments(target, casted);
         return MethodHandles.filterArguments(castedTarget, argumentNumber, filters);
@@ -413,8 +558,8 @@ public abstract class FactoryFinder {
      * @return A lambda or proxy
      * @throws NoSuchProviderException If there is no provider that converts from the sources to the result type
      */
-    public <T> T lambdafy(Class<T> functionalInterface) {
-        return lambdafy(lookup(), functionalInterface);
+    public <T> T createLambda(Class<T> functionalInterface) {
+        return createLambda(lookup(), functionalInterface);
     }
 
     /**
@@ -427,7 +572,7 @@ public abstract class FactoryFinder {
      * @return A lambda or proxy
      * @throws NoSuchProviderException If there is no provider that converts from the sources to the result type
      */
-    public <T> T lambdafy(Lookup lookup, Class<T> functionalInterface) {
+    public <T> T createLambda(Lookup lookup, Class<T> functionalInterface) {
         Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalInterface);
         return lambdafyDirect(lookup, functionalInterface, lambdaMethod.getReturnType(), lambdaMethod.getParameterTypes());
     }
@@ -444,8 +589,8 @@ public abstract class FactoryFinder {
      * @return A lambda or proxy
      * @throws NoSuchProviderException If there is no provider that converts from the sources to the result type
      */
-    public <T> T lambdafy(Class<T> functionalInterface, Class<?> returnType, Class<?>... parameterTypes) {
-        return lambdafy(lookup(), functionalInterface, returnType, parameterTypes);
+    public <T> T createLambda(Class<T> functionalInterface, Class<?> returnType, Class<?>... parameterTypes) {
+        return createLambda(lookup(), functionalInterface, returnType, parameterTypes);
     }
 
     /**
@@ -462,7 +607,7 @@ public abstract class FactoryFinder {
      * @return A lambda or proxy
      * @throws NoSuchProviderException If there is no provider that converts from the sources to the result type
      */
-    public <T> T lambdafy(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>... parameterTypes) {
+    public <T> T createLambda(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>... parameterTypes) {
         Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalInterface);
 
         Class<?>[] lambdaTypes = lambdaMethod.getParameterTypes();
@@ -472,6 +617,33 @@ public abstract class FactoryFinder {
         }
         System.arraycopy(parameterTypes, 0, lambdaTypes, 0, parameterTypes.length);
         return lambdafyDirect(lookup, functionalInterface, returnType, lambdaTypes);
+    }
+
+    /**
+     * Creates a {@link Supplier} that will return a new instance on every call.
+     *
+     * @param type The type to instantiate; needs an empty public constructor
+     * @param <T>  The type
+     * @return The Supplier
+     */
+    public  <T> Supplier<T> createSupplierFor(Class<T> type) {
+        @SuppressWarnings("unchecked")
+        Supplier<T> supplier = createLambda(Supplier.class, type);
+        return supplier;
+    }
+
+    /**
+     * Creates a {@link Function} that will return a new instance on every call.
+     *
+     * @param type The type to instantiate; needs a public constructor with exactly one argument
+     *             of type argumentType, or an empty one as an alternative
+     * @param <T>  The type
+     * @return The Function that accepts the only parameter and returns a freshly intantiated object
+     */
+    public <T, P> Function<P, T> createFunctionFor(Class<T> type, Class<P> argumentType) {
+        @SuppressWarnings("unchecked")
+        Function<P, T> function = createLambda(Function.class, type, argumentType);
+        return function;
     }
 
     abstract Lookup lookup();
@@ -960,7 +1132,7 @@ public abstract class FactoryFinder {
     }
 
     private boolean typesAreConvertible(Class<?> t1, Class<?> t2) {
-        return Types.isAssignableFrom(t1, t2) || Types.isAssignableFrom(t2, t1);
+        return t1.isPrimitive() && t2.isPrimitive() || Types.isAssignableFrom(t1, t2) || Types.isAssignableFrom(t2, t1);
     }
 
     private static final class RequestedClass {
@@ -970,6 +1142,120 @@ public abstract class FactoryFinder {
         RequestedClass(int parameterIndex, Class<?> upperBound) {
             this.parameterIndex = parameterIndex;
             this.upperBound = upperBound;
+        }
+    }
+
+    private static class FormatStyleConverter {
+        private static final Map<FormatStyle, Integer> styleMapping = new EnumMap<>(FormatStyle.class);
+
+        static {
+            Lookup l = publicLookup().in(DateFormat.class);
+            try {
+                for (FormatStyle fs : FormatStyle.values()) {
+                    VarHandle constant = l.findStaticVarHandle(DateFormat.class, fs.name(), int.class);
+                    int value = (int) constant.get();
+                    styleMapping.put(fs, value);
+                }
+            } catch (NoSuchFieldException | IllegalAccessException ex) {
+                throw new AssertionError(ex);
+            }
+        }
+
+        static int oldDateFormatStyleFor(FormatStyle fs) {
+            return styleMapping.get(fs);
+        }
+    }
+
+    static class Defaults {
+        static final FactoryFinder MINIMAL, FULL;
+
+        static {
+            MethodHandle getTime, numberToString, dateToInstant, instantToDate, contains;
+            try {
+                getTime = publicLookup().findVirtual(Date.class, "getTime", methodType(long.class));
+                numberToString = publicLookup().findVirtual(Number.class, "toString", methodType(String.class));
+                dateToInstant = publicLookup().findVirtual(Date.class, "toInstant", methodType(Instant.class));
+                instantToDate = publicLookup().findStatic(Date.class, "from", methodType(Date.class, Instant.class));
+                contains = publicLookup().findVirtual(CharSet.class, "contains", methodType(boolean.class, char.class));
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                throw new AssertionError("getTime", ex);
+            }
+
+            MINIMAL = FactoryFinder.instantiator().withMethodHandleProvider((l, ff, t) -> l.findStatic(t.returnType(), "valueOf", t))
+                    .withMethodHandleProvider((l, ff, t) -> {
+                        if (t.parameterCount() == 1) {
+                            Class<?> returnType = t.returnType();
+                            if (returnType.isPrimitive()) {
+                                Class<?> argumentType = t.parameterType(0);
+                                String name = returnType.getName();
+                                if (String.class.equals(argumentType)) {
+                                    // Finds something like Integer::parseInt
+                                    return l.findStatic(Types.toWrapper(returnType), "parse" + Character.toUpperCase(name.charAt(0)) + name.substring(1), t);
+                                } else if (Number.class.isAssignableFrom(argumentType)) {
+                                    // Finds something like Integer::longValue
+                                    return l.findVirtual(argumentType, name + "Value", methodType(returnType));
+                                }
+                            }
+                        }
+                        return null;
+                    }).withMethodHandleProvider((l, ff, t) -> {
+                        if (String.class.equals(t.returnType()) && t.parameterCount() == 1) {
+                            Class<?> argumentType = t.parameterType(0);
+                            if (argumentType.isEnum()) {
+                                return l.findVirtual(argumentType, "name", methodType(String.class));
+                            }
+                        }
+                        return null;
+                    }).withMethodHandle(numberToString);
+
+            FULL = MINIMAL.withMethodHandle(getTime)
+                    .withMethodHandle(dateToInstant)
+                    .withMethodHandle(instantToDate)
+                    .withMethodHandle(contains, CharSet.of("tTyYwW1"))
+                    .withProvidersFrom(MethodHandles.lookup(), new Object() {
+                        @Provider
+                        @SuppressWarnings("unused")
+                        char charFromString(String value) {
+                            if (value.isEmpty()) return (char) 0;
+                            return value.charAt(0);
+                        }
+
+                        @Provider
+                        @SuppressWarnings("unused")
+                        char charFromBool(boolean value) {
+                            return value ? 't' : 'f';
+                        }
+
+                        @Provider @SuppressWarnings("unused")
+                        java.sql.Date sqlDateFromDate(Date origin) {
+                            return new java.sql.Date(origin.getTime());
+                        }
+
+                        @Provider @SuppressWarnings("unused")
+                        java.sql.Time sqlTimeFromDate(Date origin) {
+                            return new java.sql.Time(origin.getTime());
+                        }
+
+                        @Provider @SuppressWarnings("unused")
+                        java.sql.Timestamp sqlTimestampFromDate(Date origin) {
+                            return new java.sql.Timestamp(origin.getTime());
+                        }
+
+                        @Provider @SuppressWarnings("unused")
+                        Date dateFromAnySQLTType(Date origin) {
+                            return new Date(origin.getTime());
+                        }
+
+                        @Provider @SuppressWarnings("unused")
+                        LocalDateTime localDateFor(Date date) {
+                            return LocalDateTime.ofInstant(Instant.ofEpochMilli(date.getTime()), ZoneId.systemDefault());
+                        }
+
+                        @Provider @SuppressWarnings("unused")
+                        Date dateFrom(LocalDateTime dateTime) {
+                            return Date.from(dateTime.toInstant(ZoneOffset.UTC));
+                        }
+                    });
         }
     }
 }

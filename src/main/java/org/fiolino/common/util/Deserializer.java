@@ -1,6 +1,6 @@
 package org.fiolino.common.util;
 
-import org.fiolino.common.reflection.Converters;
+import org.fiolino.common.ioc.FactoryFinder;
 import org.fiolino.common.reflection.Methods;
 
 import java.lang.invoke.MethodHandle;
@@ -15,7 +15,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static java.lang.invoke.MethodHandles.lookup;
-import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
 
 /**
@@ -195,7 +194,7 @@ public final class Deserializer {
     }
 
     private MethodHandle createSetterForValueType(MethodHandle setter, Class<?> valueType) {
-        MethodHandle pointerSetter = Converters.convertArgumentTypesTo(setter, Converters.defaultConverters, 1, String.class);
+        MethodHandle pointerSetter = FactoryFinder.full().convertArgumentTypesTo(setter, 1, String.class);
         if (valueType.isEnum()) {
             pointerSetter = Methods.wrapWithExceptionHandler(pointerSetter, IllegalArgumentException.class,
                     (ex, v) -> {

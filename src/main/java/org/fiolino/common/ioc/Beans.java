@@ -5,7 +5,6 @@ import org.fiolino.annotations.Factory;
 import org.fiolino.annotations.Inject;
 import org.fiolino.annotations.Property;
 import org.fiolino.common.processing.Processor;
-import org.fiolino.common.reflection.Converters;
 import org.fiolino.common.util.Types;
 import org.reflections.Reflections;
 
@@ -226,8 +225,7 @@ public class Beans {
             Object convertedValue;
             Object v = values[i];
             if (v instanceof String) {
-                Class<?> type = Types.toWrapper(parameterTypes[i]);
-                convertedValue = Converters.convertValue(Converters.defaultConverters, v, type);
+                convertedValue = FactoryFinder.full().transform(parameterTypes[i], v);
             } else {
                 convertedValue = v;
             }

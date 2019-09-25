@@ -49,7 +49,7 @@ class FactoryFinderTest {
 
     @Test
     void testNormal() {
-        Supplier<Normal> instantiator = FactoryFinder.forLookup(lookup()).createSupplierFor(Normal.class);
+        Supplier<Normal> instantiator = FactoryFinder.instantiator().createSupplierFor(Normal.class);
         checkIsLambda(instantiator);
         Normal result = instantiator.get();
 
@@ -66,7 +66,7 @@ class FactoryFinderTest {
 
     @Test
     void testPostProcessor() {
-        Supplier<WithPostProcessor> instantiator = FactoryFinder.forLookup(lookup()).createSupplierFor(WithPostProcessor.class);
+        Supplier<WithPostProcessor> instantiator = FactoryFinder.instantiator().createSupplierFor(WithPostProcessor.class);
         checkIsNotLambda(instantiator);
         Normal result = instantiator.get();
 
@@ -88,7 +88,7 @@ class FactoryFinderTest {
         WithVoidPostConstruct sample = new WithVoidPostConstruct();
         assertEquals("Initial", sample.content);
 
-        FactoryFinder i = FactoryFinder.forLookup(lookup());
+        FactoryFinder i = FactoryFinder.instantiator();
         Supplier<WithVoidPostConstruct> supplier = i.createSupplierFor(WithVoidPostConstruct.class);
         checkIsNotLambda(supplier);
         sample = supplier.get();
@@ -97,7 +97,7 @@ class FactoryFinderTest {
 
     @Test
     void testWithArgument() {
-        Supplier<WithPostProcessor> instantiator = FactoryFinder.forLookup(lookup()).createSupplierFor(WithPostProcessor.class);
+        Supplier<WithPostProcessor> instantiator = FactoryFinder.instantiator().createSupplierFor(WithPostProcessor.class);
         checkIsNotLambda(instantiator);
         Normal result = instantiator.get();
 
@@ -107,7 +107,7 @@ class FactoryFinderTest {
 
     @Test
     void testCorrectArgument() {
-        Function<String, StringBuilder> instantiator = FactoryFinder.forLookup(lookup()).createFunctionFor(StringBuilder.class, String.class);
+        Function<String, StringBuilder> instantiator = FactoryFinder.instantiator().createFunctionFor(StringBuilder.class, String.class);
         checkIsLambda(instantiator);
         StringBuilder result = instantiator.apply("Hello!");
 
@@ -140,7 +140,7 @@ class FactoryFinderTest {
 
     @Test
     void testPostConstructFunction() {
-        FactoryFinder i = FactoryFinder.forLookup(lookup());
+        FactoryFinder i = FactoryFinder.instantiator();
         Function<Integer, WithPostConstructAndConstructor> factory = i.createFunctionFor(WithPostConstructAndConstructor.class, int.class);
         checkIsNotLambda(factory);
         WithPostConstructAndConstructor sample = factory.apply(100);
@@ -168,7 +168,7 @@ class FactoryFinderTest {
 
     @Test
     void testModifiedPostConstruct() {
-        FactoryFinder i = FactoryFinder.forLookup(lookup());
+        FactoryFinder i = FactoryFinder.instantiator();
         Function<String, ModifiedPostConstruct> factory = i.createFunctionFor(ModifiedPostConstruct.class, String.class);
         checkIsNotLambda(factory);
         ModifiedPostConstruct sample = factory.apply("innocent");
@@ -199,7 +199,7 @@ class FactoryFinderTest {
 
     @Test
     void testModifiedPostConstructStatic() {
-        FactoryFinder i = FactoryFinder.forLookup(lookup());
+        FactoryFinder i = FactoryFinder.instantiator();
         Function<String, ModifiedPostConstructWithStatic> factory = i.createFunctionFor(ModifiedPostConstructWithStatic.class, String.class);
         checkIsNotLambda(factory);
         ModifiedPostConstruct sample = factory.apply("hit");
@@ -219,7 +219,7 @@ class FactoryFinderTest {
 
     @Test
     void testPrimitiveInsteadOfObject() {
-        Function<Number, ExpectNumber> instantiator = FactoryFinder.forLookup(lookup()).createFunctionFor(ExpectNumber.class, Number.class);
+        Function<Number, ExpectNumber> instantiator = FactoryFinder.instantiator().createFunctionFor(ExpectNumber.class, Number.class);
         checkIsLambda(instantiator);
         ExpectNumber result = instantiator.apply(123);
 
@@ -234,7 +234,7 @@ class FactoryFinderTest {
 
     @Test
     void testNotMandatory() {
-        Function<String, WithOptionalArgument> instantiator = FactoryFinder.forLookup(lookup()).createFunctionFor(WithOptionalArgument.class, String.class);
+        Function<String, WithOptionalArgument> instantiator = FactoryFinder.instantiator().createFunctionFor(WithOptionalArgument.class, String.class);
         checkIsLambda(instantiator);
         WithOptionalArgument result = instantiator.apply(null);
 
@@ -253,7 +253,7 @@ class FactoryFinderTest {
 
     @Test
     void testPrivateAccess() {
-        FactoryFinder i = FactoryFinder.forLookup(Hidden.lookup());
+        FactoryFinder i = FactoryFinder.instantiator().using(Hidden.lookup());
         Supplier<Hidden> supplier = i.createSupplierFor(Hidden.class);
         Hidden result = supplier.get();
         assertNotNull(result);
@@ -271,12 +271,12 @@ class FactoryFinderTest {
 
     @Test
     void testPrivateAccessWithArgument() {
-        FactoryFinder i = FactoryFinder.forLookup(Hidden.lookup());
+        FactoryFinder i = FactoryFinder.instantiator().using(Hidden.lookup());
         Supplier<Hidden> function1 = i.createSupplierFor(Hidden.class);
         Hidden result1 = function1.get();
         assertNotNull(result1);
 
-        FactoryFinder i2 = FactoryFinder.forLookup(HiddenWithArgument.lookup());
+        FactoryFinder i2 = FactoryFinder.instantiator().using(HiddenWithArgument.lookup());
         Function<String, HiddenWithArgument> function2 = i2.createFunctionFor(HiddenWithArgument.class, String.class);
         HiddenWithArgument result2 = function2.apply("Hello!");
         assertNotNull(result2);
@@ -297,7 +297,7 @@ class FactoryFinderTest {
 
     @Test
     void testFactory() {
-        FactoryFinder i = FactoryFinder.withProviders(lookup(), StringFactory.class);
+        FactoryFinder i = FactoryFinder.instantiator().withProvidersFrom(lookup(), StringFactory.class);
         Supplier<String> hello = i.createSupplierFor(String.class);
         checkIsLambda(hello);
         assertEquals("Hello!", hello.get());
@@ -306,7 +306,7 @@ class FactoryFinderTest {
         checkIsLambda(helloWithName);
         assertEquals("Hello John!", helloWithName.apply("John"));
 
-        i = i.addProviders(new Object() {
+        i = i.withProvidersFrom(new Object() {
             @Provider @SuppressWarnings("unused")
             Object newObject(@Requested Class<? extends Number> type, String value) throws Throwable {
                 MethodHandle valueOf = publicLookup().findStatic(type, "valueOf", methodType(type, String.class));
@@ -338,7 +338,7 @@ class FactoryFinderTest {
 
     @Test
     void testFactoryInstance() {
-        FactoryFinder i = FactoryFinder.withProviders(lookup(), Counter.class);
+        FactoryFinder i = FactoryFinder.instantiator().withProvidersFrom(lookup(), Counter.class);
         Supplier<AtomicInteger> source = i.createSupplierFor(AtomicInteger.class);
         checkIsLambda(source);
         for (int x = 1; x < 100; x++) {
@@ -356,9 +356,9 @@ class FactoryFinderTest {
 
     @Test
     void testNotOptional() {
-        FactoryFinder i = FactoryFinder.withProviders(lookup(), new NotOptionalFactory());
+        FactoryFinder i = FactoryFinder.instantiator().withProvidersFrom(lookup(), new NotOptionalFactory());
         @SuppressWarnings("unchecked")
-        IntFunction<AtomicInteger> func = i.lambdafy(IntFunction.class, AtomicInteger.class);
+        IntFunction<AtomicInteger> func = i.createLambda(IntFunction.class, AtomicInteger.class);
         checkIsLambda(func);
         AtomicInteger r1 = func.apply(2);
         assertNotNull(r1);
@@ -378,9 +378,9 @@ class FactoryFinderTest {
 
     @Test
     void testOptional() {
-        FactoryFinder i = FactoryFinder.withProviders(lookup(), new OptionalFactory());
+        FactoryFinder i = FactoryFinder.instantiator().withProvidersFrom(lookup(), new OptionalFactory());
         @SuppressWarnings("unchecked")
-        IntFunction<AtomicInteger> func = i.lambdafy(IntFunction.class, AtomicInteger.class);
+        IntFunction<AtomicInteger> func = i.createLambda(IntFunction.class, AtomicInteger.class);
         checkIsNotLambda(func); // Because it's nullable
         AtomicInteger r1 = func.apply(2);
         assertNotNull(r1);
@@ -401,9 +401,9 @@ class FactoryFinderTest {
     void testHandle() throws NoSuchMethodException, IllegalAccessException {
         MethodHandles.Lookup lookup = lookup();
         MethodHandle provider = lookup.findStatic(lookup.lookupClass(), "getConstant", MethodType.methodType(AtomicInteger.class, int.class));
-        FactoryFinder i = FactoryFinder.withProviders(lookup, OptionalFactory.class, provider);
+        FactoryFinder i = FactoryFinder.instantiator().withProvidersFrom(lookup, OptionalFactory.class).withMethodHandle(provider);
         @SuppressWarnings("unchecked")
-        IntFunction<AtomicInteger> func = i.lambdafy(IntFunction.class, AtomicInteger.class);
+        IntFunction<AtomicInteger> func = i.createLambda(IntFunction.class, AtomicInteger.class);
         checkIsLambda(func);
 
         AtomicInteger r0 = func.apply(-100);
@@ -443,35 +443,35 @@ class FactoryFinderTest {
 
     @Test
     void testGeneric() {
-        FactoryFinder i = FactoryFinder.withProviders(lookup(), new GenericFactory());
+        FactoryFinder i = FactoryFinder.instantiator().withProvidersFrom(lookup(), new GenericFactory());
         @SuppressWarnings("unchecked")
-        BiFunction<String, Integer, String> func = i.lambdafy(BiFunction.class, String.class, String.class, int.class);
+        BiFunction<String, Integer, String> func = i.createLambda(BiFunction.class, String.class, String.class, int.class);
         checkIsLambda(func);
         String s = func.apply("test", 3);
         assertNotNull(s);
         assertEquals("testtesttest", s);
 
         @SuppressWarnings("unchecked")
-        BiFunction<String, Integer, StringBuilder> func2 = i.lambdafy(BiFunction.class, StringBuilder.class, String.class, int.class);
+        BiFunction<String, Integer, StringBuilder> func2 = i.createLambda(BiFunction.class, StringBuilder.class, String.class, int.class);
         checkIsLambda(func2);
         StringBuilder sb = func2.apply("bla", 4);
         assertNotNull(sb);
         assertEquals("blablablabla", sb.toString());
 
         @SuppressWarnings("unchecked")
-        BiFunction<String, Integer, StringBuffer> func3 = i.lambdafy(BiFunction.class, StringBuffer.class, String.class, int.class);
+        BiFunction<String, Integer, StringBuffer> func3 = i.createLambda(BiFunction.class, StringBuffer.class, String.class, int.class);
         checkIsLambda(func3);
         StringBuffer sb2 = func3.apply("blubb", 5);
         assertNull(sb2); // Because GenericFactory is not @Nullable
 
         @SuppressWarnings("unchecked")
-        BiFunction<String, Integer, Integer> func4 = i.lambdafy(BiFunction.class, Integer.class, String.class, Integer.class);
+        BiFunction<String, Integer, Integer> func4 = i.createLambda(BiFunction.class, Integer.class, String.class, Integer.class);
         checkIsLambda(func4);
         int integer = func4.apply("19", 6);
         assertEquals(19, integer);
 
         @SuppressWarnings("unchecked")
-        BiFunction<String, Integer, HasConstructor> func5 = i.lambdafy(BiFunction.class, HasConstructor.class, String.class, Integer.class);
+        BiFunction<String, Integer, HasConstructor> func5 = i.createLambda(BiFunction.class, HasConstructor.class, String.class, Integer.class);
         checkIsLambda(func5);
         HasConstructor x = func5.apply("x", 6);
         assertNotNull(x);
@@ -479,8 +479,8 @@ class FactoryFinderTest {
 
     @Test
     void testFail() {
-        FactoryFinder i = FactoryFinder.withProviders(lookup(), new GenericFactory(), new OptionalFactory());
-        assertThrows(NoSuchProviderException.class, () -> i.lambdafy(BiFunction.class, Rectangle.class, Date.class, TimeUnit.class));
+        FactoryFinder i = FactoryFinder.instantiator().withProvidersFrom(lookup(), new GenericFactory()).withProvidersFrom(new OptionalFactory());
+        assertThrows(NoSuchProviderException.class, () -> i.createLambda(BiFunction.class, Rectangle.class, Date.class, TimeUnit.class));
     }
 
     @FunctionalInterface
@@ -490,34 +490,34 @@ class FactoryFinderTest {
 
     @Test
     void testOwnFunctionalInterface() {
-        FactoryFinder i = FactoryFinder.withProviders(lookup(), new Object() {
+        FactoryFinder i = FactoryFinder.instantiator().withProvidersFrom(lookup(), new Object() {
             @Provider @SuppressWarnings("unused")
             BigDecimal create(String value, int scale) {
                 return new BigDecimal(value).setScale(scale, RoundingMode.HALF_UP);
             }
         });
-        MyFunction func = i.lambdafy(MyFunction.class);
+        MyFunction func = i.createLambda(MyFunction.class);
         BigDecimal dec = func.withScale("145.66", 1);
         assertEquals("145.7", dec.toString());
     }
 
     @Test
     void testDynamicProvider() {
-        FactoryFinder inst = FactoryFinder.forLookup(lookup()).addMethodHandleProvider((i, t) -> i.getLookup().findStatic(t.returnType(), "valueOf", t));
+        FactoryFinder inst = FactoryFinder.instantiator().withMethodHandleProvider((l, ff, t) -> l.findStatic(t.returnType(), "valueOf", t));
         Function<String, Integer> intFunction = inst.createFunctionFor(Integer.class, String.class);
         checkIsLambda(intFunction);
         Integer integer = intFunction.apply("1234");
         assertEquals(1234, (int) integer);
 
         @SuppressWarnings("unchecked")
-        IntFunction<String> stringFunction = inst.lambdafy(IntFunction.class, String.class);
+        IntFunction<String> stringFunction = inst.createLambda(IntFunction.class, String.class);
         checkIsLambda(stringFunction);
         String string = stringFunction.apply(9876);
         assertEquals("9876", string);
 
         // Now without valueOf() call
         @SuppressWarnings("unchecked")
-        IntFunction<AtomicInteger> atomicFunction = inst.lambdafy(IntFunction.class, AtomicInteger.class);
+        IntFunction<AtomicInteger> atomicFunction = inst.createLambda(IntFunction.class, AtomicInteger.class);
         checkIsLambda(atomicFunction);
         AtomicInteger atomic = atomicFunction.apply(8848);
         assertEquals(8848, atomic.get());
@@ -526,9 +526,9 @@ class FactoryFinderTest {
     @Test
     void testToPrimitive() throws NoSuchMethodException, IllegalAccessException {
         MethodHandle h = publicLookup().findStatic(Integer.class, "parseInt", methodType(int.class, String.class));
-        FactoryFinder i = FactoryFinder.withProviders(lookup(), h);
+        FactoryFinder i = FactoryFinder.instantiator().withMethodHandle(h);
         @SuppressWarnings("unchecked")
-        ToIntFunction<String> func = i.lambdafy(ToIntFunction.class, int.class, String.class);
+        ToIntFunction<String> func = i.createLambda(ToIntFunction.class, int.class, String.class);
         checkIsLambda(func);
         int value = func.applyAsInt("-550055");
         assertEquals(-550055, value);
@@ -551,21 +551,21 @@ class FactoryFinderTest {
 
     @Test @SuppressWarnings("unchecked")
     void testOnlyExactType() {
-        FactoryFinder i = FactoryFinder.withProviders(lookup(), new DateFactory());
-        LongFunction<Date> dateFunction = (LongFunction<Date>) i.lambdafy(LongFunction.class, Date.class);
+        FactoryFinder i = FactoryFinder.instantiator().withProvidersFrom(lookup(), new DateFactory());
+        LongFunction<Date> dateFunction = (LongFunction<Date>) i.createLambda(LongFunction.class, Date.class);
         Date d = dateFunction.apply(999_999L);
         assertEquals(0L, d.getTime());
 
-        LongFunction<Timestamp> timestampFunction = (LongFunction<Timestamp>) i.lambdafy(LongFunction.class, Timestamp.class);
+        LongFunction<Timestamp> timestampFunction = (LongFunction<Timestamp>) i.createLambda(LongFunction.class, Timestamp.class);
         Timestamp timestamp = timestampFunction.apply(999_999);
         assertEquals(999_999L, timestamp.getTime());
 
-        i = FactoryFinder.withProviders(lookup(), new DateAndSubclassesFactory());
-        dateFunction = (LongFunction<Date>) i.lambdafy(LongFunction.class, Date.class);
+        i = FactoryFinder.instantiator().withProvidersFrom(lookup(), new DateAndSubclassesFactory());
+        dateFunction = (LongFunction<Date>) i.createLambda(LongFunction.class, Date.class);
         d = dateFunction.apply(999_999);
         assertEquals(0L, d.getTime());
 
-        timestampFunction = (LongFunction<Timestamp>) i.lambdafy(LongFunction.class, Timestamp.class);
+        timestampFunction = (LongFunction<Timestamp>) i.createLambda(LongFunction.class, Timestamp.class);
         timestamp = timestampFunction.apply(999_999);
         assertEquals(0L, timestamp.getTime());
     }
@@ -586,7 +586,7 @@ class FactoryFinderTest {
 
     @Test @SuppressWarnings("unchecked")
     void testOnlySpecifiedTypes() {
-        FactoryFinder i = FactoryFinder.withProviders(lookup(), new FactoryForCertainTypes());
+        FactoryFinder i = FactoryFinder.instantiator().withProvidersFrom(lookup(), new FactoryForCertainTypes());
         Supplier<Object> objectSupplier = i.createSupplierFor(Object.class);
         Object o = objectSupplier.get();
         assertEquals(Object.class, o.getClass());
@@ -600,19 +600,19 @@ class FactoryFinderTest {
         assertEquals("This is a string", seq);
 
 
-        LongFunction<Date> dateFunction = (LongFunction<Date>) i.lambdafy(LongFunction.class, Date.class);
+        LongFunction<Date> dateFunction = (LongFunction<Date>) i.createLambda(LongFunction.class, Date.class);
         Date d = dateFunction.apply(999_999L);
         assertEquals(999_999L, d.getTime());
 
-        LongFunction<java.sql.Date> sqlDateFunction = (LongFunction<java.sql.Date>) i.lambdafy(LongFunction.class, java.sql.Date.class);
+        LongFunction<java.sql.Date> sqlDateFunction = (LongFunction<java.sql.Date>) i.createLambda(LongFunction.class, java.sql.Date.class);
         d = sqlDateFunction.apply(999_999L);
         assertEquals(0L, d.getTime());
 
-        LongFunction<Timestamp> timestampFunction = (LongFunction<Timestamp>) i.lambdafy(LongFunction.class, Timestamp.class);
+        LongFunction<Timestamp> timestampFunction = (LongFunction<Timestamp>) i.createLambda(LongFunction.class, Timestamp.class);
         d = timestampFunction.apply(999_999);
         assertEquals(0L, d.getTime());
 
-        LongFunction<Time> timeFunction = (LongFunction<Time>) i.lambdafy(LongFunction.class, Time.class);
+        LongFunction<Time> timeFunction = (LongFunction<Time>) i.createLambda(LongFunction.class, Time.class);
         d = timeFunction.apply(999_999L);
         assertEquals(999_999L, d.getTime());
     }
@@ -626,8 +626,8 @@ class FactoryFinderTest {
     void testHandleWithInitializers() throws Throwable {
         MethodHandles.Lookup l = lookup();
         MethodHandle h = l.findStatic(l.lookupClass(), "combine", methodType(String.class, long.class, String.class, TimeUnit.class));
-        FactoryFinder i = FactoryFinder.forLookup(l);
-        FactoryFinder i2 = i.addHandleWithInitializers(h, 334L, "Test");
+        FactoryFinder i = FactoryFinder.instantiator().using(l);
+        FactoryFinder i2 = i.withMethodHandle(h, 334L, "Test");
 
         MethodHandle exec = i2.find(String.class, TimeUnit.class).orElseThrow();
         String result = (String) exec.invokeExact(TimeUnit.SECONDS);
@@ -642,7 +642,7 @@ class FactoryFinderTest {
         result = f.apply(TimeUnit.MINUTES);
         assertEquals("Test: " + 60*334000, result);
 
-        i2 = i.addHandleWithInitializers(h, 77776644232L, "Bigger");
+        i2 = i.withMethodHandle(h, 77776644232L, "Bigger");
 
         exec = i2.find(String.class, TimeUnit.class).orElseThrow();
         result = (String) exec.invokeExact(TimeUnit.SECONDS);
@@ -660,7 +660,7 @@ class FactoryFinderTest {
 
     @Test
     void testTransformationOfValues() {
-        FactoryFinder i = FactoryFinder.withDefaults(lookup());
+        FactoryFinder i = FactoryFinder.full();
 
         AtomicInteger instantiated = i.transform(AtomicInteger.class);
         assertEquals(0, instantiated.get());
@@ -670,7 +670,7 @@ class FactoryFinderTest {
         int converted = i.transform(int.class, "-813");
         assertEquals(-813, instantiated.get());
 
-        i = i.addProviders(new Object() {
+        i = i.withProvidersFrom(new Object() {
             @Provider String concatenate(CharSequence v1, long v2, TimeUnit v3) {
                 return v1 + ": " + v3.toMillis(v2) + " ms";
             }

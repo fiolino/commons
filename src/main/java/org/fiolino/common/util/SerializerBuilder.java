@@ -4,7 +4,8 @@ import org.fiolino.annotations.SerialFieldIndex;
 import org.fiolino.annotations.SerializeEmbedded;
 import org.fiolino.common.analyzing.ClassWalker;
 import org.fiolino.common.ioc.FactoryFinder;
-import org.fiolino.common.reflection.*;
+import org.fiolino.common.reflection.MethodLocator;
+import org.fiolino.common.reflection.Registry;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -112,12 +113,12 @@ public class SerializerBuilder {
     }
 
     private static <T extends Collection<MethodHandle>> T addAppendersFrom(MethodHandles.Lookup lookup, T appenders, Class<?> appenderContainer) {
-        FactoryFinder i = FactoryFinder.forLookup(lookup);
+        FactoryFinder i = FactoryFinder.full().using(lookup);
         MethodLocator.forLocal(lookup, appenderContainer).methods()
                 .filter(info -> info.getMethod().getReturnType() == void.class)
                 .filter(info -> info.getMethod().getParameterCount() == 2)
                 .filter(info -> info.getMethod().getParameterTypes()[0].equals(StringBuilder.class))
-                .map(info -> info.getStaticHandle(() -> FactoryFinder.forLookup(lookup).transform(appenderContainer)))
+                .map(info -> info.getStaticHandle(() -> i.transform(appenderContainer)))
                 .forEach(appenders::add);
         return appenders;
     }
@@ -132,16 +133,16 @@ public class SerializerBuilder {
 
     private MethodHandle[] getters = new MethodHandle[0];
     private final MethodHandles.Lookup lookup;
-    private final ConverterLocator converterLocator;
+    private final FactoryFinder factoryFinder;
     private final List<MethodHandle> appenders;
 
     private SerializerBuilder(MethodHandles.Lookup lookup) {
-        this(lookup, Converters.defaultConverters.register(DATE_GETTIME));
+        this(lookup, FactoryFinder.full().withMethodHandle(DATE_GETTIME));
     }
 
-    private SerializerBuilder(MethodHandles.Lookup lookup, ConverterLocator converterLocator) {
+    private SerializerBuilder(MethodHandles.Lookup lookup, FactoryFinder factoryFinder) {
         this.lookup = lookup;
-        this.converterLocator = converterLocator;
+        this.factoryFinder = factoryFinder;
 
         appenders = new ArrayList<>(INITIAL_APPENDERS);
     }
@@ -226,45 +227,49 @@ public class SerializerBuilder {
         return new Serializer(type, buildSerializingHandle());
     }
 
+    private static final Class<?>[] TARGET_TYPES = {String.class, int.class, long.class, double.class, float.class, boolean.class};
+
     private MethodHandle findHandleFor(Class<?> type) {
-        try {
-            Converter converter = converterLocator.find(type, String.class, int.class, long.class, double.class, float.class, boolean.class);
-            MethodHandle append = findAppendMethod(converter.getTargetType());
-            MethodHandle c = converter.getConverter();
-            if (c == null) {
-                return append;
+        return findAppendMethod(type).orElseGet(() -> {
+            for (Class<?> t : TARGET_TYPES) {
+                Optional<MethodHandle> converter = factoryFinder.find(t, type);
+                if (converter.isPresent()) {
+                    Optional<MethodHandle> append = findAppendMethod(t);
+                    if (append.isPresent()) {
+                        return MethodHandles.filterArguments(append.get(), 1, converter.get());
+                    }
+                }
             }
-            return MethodHandles.filterArguments(append, 1, c);
-        } catch (NoMatchingConverterException ex) {
-            return findAppendMethod(Object.class);
-        }
+
+            return findAppendMethod(Object.class).get();
+        });
     }
 
-    private MethodHandle findAppendMethod(Class<?> printedType) {
+    private Optional<MethodHandle> findAppendMethod(Class<?> printedType) {
         MethodHandle found = null;
         int d = Integer.MAX_VALUE;
         for (MethodHandle a : appenders) {
             Class<?> appenderType = a.type().parameterType(1);
             int distance = Types.distanceOf(appenderType, printedType);
             if (distance == 0) {
-                return a;
+                return Optional.of(a);
             }
             if (distance > 0 && distance < d) {
                 d = distance;
                 found = a;
             }
         }
-        return found == null ? findDirectAppendMethod(printedType) : found;
+        return found == null ? findDirectAppendMethod(printedType) : Optional.of(found);
     }
 
-    private MethodHandle findDirectAppendMethod(Class<?> printedType) {
+    private Optional<MethodHandle> findDirectAppendMethod(Class<?> printedType) {
         MethodHandle sbAppend;
         try {
             sbAppend = publicLookup().findVirtual(StringBuilder.class, "append", methodType(StringBuilder.class, printedType));
         } catch (NoSuchMethodException | IllegalAccessException ex) {
-            throw new InternalError("Missing StringBuilder.append(" + printedType.getName() + ")", ex);
+            return Optional.empty();
         }
-        return sbAppend.asType(methodType(void.class, StringBuilder.class, printedType));
+        return Optional.of(sbAppend.asType(methodType(void.class, StringBuilder.class, printedType)));
     }
 
     @SuppressWarnings("unused")

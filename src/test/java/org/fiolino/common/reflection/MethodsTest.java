@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.annotation.Nonnull;
 import javax.annotation.concurrent.ThreadSafe;
-import java.awt.event.ActionListener;
 import java.io.FileNotFoundException;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandleProxies;
@@ -695,105 +694,6 @@ class MethodsTest {
         MethodType prototype = methodType(Date.class);
         Comparison compare = Methods.compare(prototype, methodType(Date.class, float.class));
         assertEquals(Comparison.MORE_ARGUMENTS, compare);
-    }
-
-    @Test
-    void testFindSingleMethod() throws Throwable {
-        final AtomicReference<String> ref = new AtomicReference<>();
-        MethodHandle handle = Methods.findMethodHandleOfType(LOOKUP, new Object() {
-            @SuppressWarnings("unused")
-            void set(String value) {
-                ref.set(value);
-            }
-        }, methodType(void.class, String.class)).orElseThrow();
-        assertEquals(methodType(void.class, String.class), handle.type());
-        handle.invokeExact("Hello world.");
-        assertEquals("Hello world.", ref.get());
-
-        handle = Methods.findMethodHandleOfType(LOOKUP, new Object() {
-            @SuppressWarnings("unused")
-            void set(String value) {
-                ref.set(value);
-            }
-        }, methodType(void.class, Object.class)).orElseThrow();
-        assertEquals(methodType(void.class, Object.class), handle.type());
-        handle.invokeExact((Object) "Hello world.");
-        assertEquals("Hello world.", ref.get());
-    }
-
-    @Test
-    void testFindSingleMethodFailed() {
-        assertFalse(Methods.findMethodHandleOfType(LOOKUP, ActionListener.class, methodType(String.class)).isPresent());
-    }
-
-    @Test
-    void findSingleMethodWithNewInstance() throws Throwable {
-        MethodHandle handle = Methods.findMethodHandleOfType(publicLookup(), StringBuilder.class,
-                methodType(StringBuilder.class, String.class)).orElseThrow();
-        StringBuilder sb1 = (StringBuilder) handle.invokeExact("First");
-        assertEquals("First", sb1.toString());
-        StringBuilder sb2 = (StringBuilder) handle.invokeExact(" Second");
-        assertEquals("First Second", sb2.toString());
-        assertEquals(sb1, sb2);
-    }
-
-    @Test
-    void findSingleMethodWithSameInstanceOnEveryCall() throws Throwable {
-        StringBuilder sb = new StringBuilder("Initial ");
-        MethodHandle handle = Methods.findMethodHandleOfType(publicLookup(), sb,
-                methodType(StringBuilder.class, String.class)).orElseThrow();
-        StringBuilder sb1 = (StringBuilder) handle.invokeExact("First");
-        assertSame(sb1, sb);
-        assertEquals("Initial First", sb1.toString());
-        StringBuilder sb2 = (StringBuilder) handle.invokeExact(" Second");
-        assertEquals("Initial First Second", sb2.toString());
-        assertEquals(sb1, sb2);
-    }
-
-    @SuppressWarnings("unused")
-    static class WithThreeMethods {
-        static String returnHello() {
-            return "Hello";
-        }
-
-        private WithThreeMethods(boolean dontAllowEmptyConstructor) {
-
-        }
-
-        String returnString(String input) {
-            return input + " string";
-        }
-
-        CharSequence returnCharSequence(CharSequence input) {
-            return input;
-        }
-    }
-
-    @Test
-    void findSingleBestMatchingMethod() throws Throwable {
-        // Also checks that no new instance ist created because returnHello() is static
-        MethodHandle handle = Methods.findMethodHandleOfType(LOOKUP, WithThreeMethods.class, methodType(String.class)).orElseThrow();
-        String s = (String) handle.invokeExact();
-        assertEquals("Hello", s);
-
-        // First find the exact match
-        handle = Methods.findMethodHandleOfType(LOOKUP, new WithThreeMethods(true),
-                methodType(String.class, String.class)).orElseThrow();
-        s = (String) handle.invokeExact("My");
-        assertEquals("My string", s);
-
-        // then find the more generic one
-        handle = Methods.findMethodHandleOfType(LOOKUP, new WithThreeMethods(true),
-                methodType(Object.class, CharSequence.class)).orElseThrow();
-        Object o = handle.invokeExact((CharSequence) "My");
-        assertEquals("My", o);
-    }
-
-    @Test
-    void testFindSingleMethodAmbiguous() {
-        // Both possible methods are more generic
-        assertThrows(AmbiguousMethodException.class,
-                () -> Methods.findMethodHandleOfType(LOOKUP, WithThreeMethods.class, methodType(CharSequence.class, String.class)));
     }
 
     @Test

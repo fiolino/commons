@@ -1,6 +1,5 @@
 package org.fiolino.common.reflection;
 
-import org.fiolino.common.ioc.FactoryFinder;
 import org.fiolino.common.util.Types;
 
 import javax.annotation.Nullable;
@@ -1748,98 +1747,6 @@ public final class Methods {
 
         permutations[fromIndex] = toIndex;
         return permuteArguments(target, methodType(type.returnType(), newArguments), permutations);
-    }
-
-    /**
-     * Finds the method handle to the only unique method that fits to the given method type.
-     * <p>
-     * A method is a unique method if it is the only one with the given type within one class. If there are more
-     * in its super classes, then it doesn't matter.
-     * <p>
-     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
-     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
-     * if there is one method that is more generic, and another one is more specific, then uniqueness still
-     * is given and the more generic one is chosen.
-     * <p>
-     * The object to look up may either be an instance: Then its class type will be searched. If the found method then
-     * is static, it will simply be used, otherwise the given instance is bound to it.
-     * <p>
-     * If the object is a Class, and the found method is an instance method, then an empty constructor is expected
-     * and a new instance is created now.
-     * <p>
-     * As a result, the returned handle will have exactly the given reference method type, without any additional
-     * object instance.
-     *
-     * @param object    The object (Class or some instance) to investigate
-     * @param reference The method type to look for
-     * @return The found method handle, or Optional.epmty()
-     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
-     * @throws NoSuchMethodError        If no method was found
-     */
-    public static Optional<MethodHandle> findMethodHandleOfType(Object object, MethodType reference) {
-        return findMethodHandleOfType(null, object, reference);
-    }
-
-    /**
-     * Finds the method handle to the only unique method that fits to the given method type.
-     * <p>
-     * A method is a unique method if it is the only one with the given type within one class. If there are more
-     * in its super classes, then it doesn't matter.
-     * <p>
-     * A method matches if their arguments are either equal to the given method type, or more generic, or more specific,
-     * in that order. A method is unique if it is unique within the best matching comparison. For instance,
-     * if there is one method that is more generic, and another one is more specific, then uniqueness still
-     * is given and the more generic one is chosen.
-     * <p>
-     * The object to look up may either be an instance: Then its class type will be searched. If the found method then
-     * is static, it will simply be used, otherwise the given instance is bound to it.
-     * <p>
-     * If the object is a Class, and the found method is an instance method, then an empty constructor is expected
-     * and a new instance is created now.
-     * <p>
-     * As a result, the returned handle will have exactly the given reference method type, without any additional
-     * object instance.
-     *
-     * @param lookup    The lookup
-     * @param object    The object (Class or some instance) to investigate
-     * @param reference The method type to look for
-     * @return The found method handle, or Optional.empty()
-     * @throws AmbiguousMethodException If there are multiple methods matching the searched type
-     */
-    public static Optional<MethodHandle> findMethodHandleOfType(@Nullable Lookup lookup, Object object, MethodType reference) {
-        return findSingleMethodHandle(lookup, object, reference).map(h -> h.asType(reference));
-    }
-
-    private static Optional<MethodHandle> findSingleMethodHandle(Lookup lookup, Object object, MethodType reference) {
-        Class<?> type;
-        if (object instanceof Class) {
-            type = (Class<?>) object;
-        } else {
-            if (MethodHandleProxies.isWrapperInstance(object)) {
-                MethodHandle h = MethodHandleProxies.wrapperInstanceTarget(object);
-                if (compare(reference, h.type()).isConvertible()) {
-                    return Optional.of(h);
-                }
-                return Optional.empty();
-            }
-            type = object.getClass();
-        }
-        MethodLocator locator = lookup == null ? MethodLocator.forPublic(type) : MethodLocator.forLocal(lookup, type);
-        return locator.findMethod(reference).map(m -> {
-            MethodHandle h;
-            try {
-                h = locator.lookup().unreflect(m);
-            } catch (IllegalAccessException ex) {
-                throw new AssertionError(m + " should be visible.", ex);
-            }
-            if (Modifier.isStatic(m.getModifiers())) {
-                return h;
-            }
-            Object o = object instanceof Class ?
-                // Then inject a new instance now
-                FactoryFinder.withDefaults(publicLookup()).transform((Class<?>) object) : object;
-            return h.bindTo(o);
-        });
     }
 
     /**

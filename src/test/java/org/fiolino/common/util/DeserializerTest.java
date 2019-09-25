@@ -162,9 +162,9 @@ class DeserializerTest {
 
     @Test
     void testContainer2() throws Throwable {
-        Deserializer forA = new Deserializer(FactoryFinder.forLookup(lookup()).findOrFail(A.class));
+        Deserializer forA = new Deserializer(FactoryFinder.instantiator().using(lookup()).findOrFail(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
-        Deserializer forC = new Deserializer(FactoryFinder.forLookup(lookup()).findOrFail(C.class));
+        Deserializer forC = new Deserializer(FactoryFinder.instantiator().using(lookup()).findOrFail(C.class));
         addFieldsTo(forC, C.class, "name", "text");
         forC.setEmbeddedField(MethodLocator.forLocal(lookup(), C.class).findSetter("a", A.class), forA.createDeserializer(), 2, () -> "a");
         MethodHandle factory = forC.createDeserializer();
@@ -180,9 +180,9 @@ class DeserializerTest {
 
     @Test
     void testContainerWithParenthesis() throws Throwable {
-        Deserializer forA = new Deserializer(FactoryFinder.forLookup(lookup()).findOrFail(A.class));
+        Deserializer forA = new Deserializer(FactoryFinder.instantiator().using(lookup()).findOrFail(A.class));
         addFieldsTo(forA, A.class, "intValue", "string");
-        Deserializer forC = new Deserializer(FactoryFinder.forLookup(lookup()).findOrFail(C.class));
+        Deserializer forC = new Deserializer(FactoryFinder.instantiator().using(lookup()).findOrFail(C.class));
         addFieldsTo(forC, C.class, "name", "text");
         forC.setEmbeddedField(MethodLocator.forLocal(lookup(), C.class).findSetter("a", A.class), forA.createDeserializer(), 2, () -> "a");
         MethodHandle factory = forC.createDeserializer();

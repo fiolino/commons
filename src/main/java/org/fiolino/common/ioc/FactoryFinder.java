@@ -154,13 +154,24 @@ public abstract class FactoryFinder {
     }
 
     /**
-     * Creates a handle that instantiates the given type.
+     * Creates a handle that converts the given type.
      *
      * @param methodType Some type which returns an instantiable class
      * @return A handle of the requested type, if the constructor or factory method was found
      */
     public final Optional<MethodHandle> find(MethodType methodType) {
         return find(methodType.returnType(), methodType.parameterArray());
+    }
+
+    /**
+     * Creates a handle that converts the given type.
+     *
+     * @param lookup Use this to find method handles. Has no effect on visibility of provider methods.
+     * @param methodType Some type which returns an instantiable class
+     * @return A handle of the requested type, if the constructor or factory method was found
+     */
+    public final Optional<MethodHandle> find(Lookup lookup, MethodType methodType) {
+        return find(lookup, methodType.returnType(), methodType.parameterArray());
     }
 
     /**
@@ -177,18 +188,19 @@ public abstract class FactoryFinder {
      * Returns an instance that checks the given method handle if it matches the type, and then continues with my already existing setup.
      * Adds initializers as the first arguments.
      *
-     * @param provider Will be called if the given type is compatible
+     * @param handle Will be called if the given type is compatible
      * @param initializers These will be bound to the handle as its first parameters
      * @return The new {@link FactoryFinder} with that extended setup
      */
-    public FactoryFinder withMethodHandle(MethodHandle provider, Object... initializers) {
+    public FactoryFinder withMethodHandle(MethodHandle handle, Object... initializers) {
+        MethodHandle provider = withPostProcessor(lookup(), handle);
         if (initializers.length == 0) {
             return new FixedHandle(this, provider);
         }
         if (initializers.length > provider.type().parameterCount()) {
             throw new IllegalArgumentException("Too many initializers: " + Arrays.toString(initializers) + " for " + provider.type());
         }
-        return new WithHandleAndInitializers(this, provider, initializers);
+        return new WithHandleAndInitializers(this, provider, NO_SPECIAL_CLASSES, null, initializers);
     }
 
     /**
@@ -711,9 +723,10 @@ public abstract class FactoryFinder {
 
         @Override
         <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
-            throw new NoSuchProviderException(returnType, argumentTypes, Arrays.stream(argumentTypes).map(Class::getName).reduce(
-                    new StringJoiner(",", "No handle for (", ")" + returnType.getName()), StringJoiner::add, StringJoiner::merge
-            ).toString());
+            throw new NoSuchProviderException(returnType, argumentTypes,
+                    Arrays.stream(argumentTypes).map(Class::getName).reduce(
+                            new StringJoiner(", ", "No handle for (", ")" + returnType.getName()), StringJoiner::add, StringJoiner::merge)
+                            .toString());
         }
     };
 
@@ -859,18 +872,76 @@ public abstract class FactoryFinder {
         boolean defaultReturnTypeMatches(Class<?> returnType) {
             return super.returnTypeMatches(returnType);
         }
+    }
+
+    private static class GenericHandleFinder extends FixedHandleForSpecificTypes {
+        final RequestedClass requestedClass;
+        private final Class<?>[] expectedArguments;
+
+        GenericHandleFinder(FactoryFinder wrapped, MethodHandle handle, Class<?>[] acceptedClasses, RequestedClass requestedClass) {
+            super(wrapped, handle, acceptedClasses);
+            this.requestedClass = requestedClass;
+
+            if (requestedClass == null) {
+                expectedArguments = handle.type().parameterArray();
+            } else {
+                int argCount = handle.type().parameterCount() - 1;
+                expectedArguments = new Class<?>[argCount];
+                for (int i=0, j=0; j < argCount; i++) {
+                    if (i == requestedClass.parameterIndex) continue;
+                    expectedArguments[j++] = handle.type().parameterType(i);
+                }
+            }
+        }
+
+        @Override
+        boolean defaultReturnTypeMatches(Class<?> returnType) {
+            if (requestedClass == null) {
+                return super.defaultReturnTypeMatches(returnType);
+            }
+            return requestedClass.upperBound.isAssignableFrom(returnType);
+        }
+
+        @Override
+        Class<?>[] parametersToCheck() {
+            return expectedArguments;
+        }
 
         @Override
         MethodHandle getHandle(Lookup lookup, Class<?> returnType, Class<?>[] argumentTypes) {
+            MethodHandle h = getBasicHandle(lookup, returnType, argumentTypes);
+            return requestedClass == null ? h : insertArguments(h, requestedClass.parameterIndex, returnType);
+        }
+
+        MethodHandle getBasicHandle(Lookup lookup, Class<?> returnType, Class<?>[] argumentTypes) {
             return handle;
+        }
+
+        @Override
+        final <T> T lambdafyVerified(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
+            if (requestedClass == null) {
+                return lambdafyWithoutReturnType(lookup, functionalInterface, returnType);
+            }
+            if (requestedClass.parameterIndex == 0) {
+                return lambdafyWithReturnType(lookup, functionalInterface, returnType);
+            }
+            return super.lambdafyVerified(lookup, functionalInterface, returnType, argumentTypes);
+        }
+
+        <T> T lambdafyWithoutReturnType(Lookup lookup, Class<T> functionalInterface, Class<?> returnType) {
+            return Methods.lambdafy(lookup, handle, functionalInterface);
+        }
+
+        <T> T lambdafyWithReturnType(Lookup lookup, Class<T> functionalInterface, Class<?> returnType) {
+            return Methods.lambdafy(lookup, handle, functionalInterface, returnType);
         }
     }
 
-    private static class WithHandleAndInitializers extends FixedHandle {
+    private static class WithHandleAndInitializers extends GenericHandleFinder {
         private final Object[] initializers;
 
-        WithHandleAndInitializers(FactoryFinder wrapped, MethodHandle handle, Object[] initializers) {
-            super(wrapped, handle);
+        WithHandleAndInitializers(FactoryFinder wrapped, MethodHandle handle, Class<?>[] acceptedClasses, RequestedClass requestedClass, Object... initializers) {
+            super(wrapped, handle, acceptedClasses, requestedClass);
             this.initializers = initializers;
         }
 
@@ -880,22 +951,30 @@ public abstract class FactoryFinder {
         }
 
         @Override
-        MethodHandle getHandle(Lookup lookup, Class<?> returnType, Class<?>[] argumentTypes) {
+        MethodHandle getBasicHandle(Lookup lookup, Class<?> returnType, Class<?>[] argumentTypes) {
             return insertArguments(handle, 0, initializers);
         }
 
         @Override
-        <T> T lambdafyVerified(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
+        <T> T lambdafyWithoutReturnType(Lookup lookup, Class<T> functionalInterface, Class<?> returnType) {
             return Methods.lambdafy(lookup, handle, functionalInterface, initializers);
+        }
+
+        @Override
+        <T> T lambdafyWithReturnType(Lookup lookup, Class<T> functionalInterface, Class<?> returnType) {
+            int n = initializers.length;
+            Object[] allInitializers = Arrays.copyOf(initializers, n+1);
+            allInitializers[n] = returnType;
+            return Methods.lambdafy(lookup, handle, functionalInterface, allInitializers);
         }
     }
 
-    private static class FixedHandleWithFactory extends FixedHandleForSpecificTypes {
+    private static class FixedHandleWithFactory extends GenericHandleFinder {
         // ()<ProviderType>
         private final MethodHandle providerFactory;
 
-        FixedHandleWithFactory(FactoryFinder wrapped, MethodHandle handle, Class<?>[] acceptedClasses, MethodHandle providerFactory) {
-            super(wrapped, handle, acceptedClasses);
+        FixedHandleWithFactory(FactoryFinder wrapped, MethodHandle handle, Class<?>[] acceptedClasses, RequestedClass requestedClass, MethodHandle providerFactory) {
+            super(wrapped, handle, acceptedClasses, requestedClass);
             this.providerFactory = providerFactory;
         }
 
@@ -909,89 +988,33 @@ public abstract class FactoryFinder {
             return argumentsMatch(argumentTypes, 1);
         }
 
-        @Override
-        <T> T lambdafyVerified(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
+
+        private Object createFactoryInstance() {
             Object provider;
             try {
                 provider = providerFactory.invoke();
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
-                throw new UndeclaredThrowableException(t, "Instantiation of " + providerName() + " failed");
+                throw new UndeclaredThrowableException(t, "Instantiation of " + providerFactory.type().returnType().getName()
+                        + " failed");
             }
             if (provider == null) {
-                throw new NullPointerException(providerName());
+                throw new NullPointerException(providerFactory.type().returnType().getName());
             }
-            return lambdafyWithArguments(lookup, functionalInterface, provider, returnType);
-        }
-
-        <T> T lambdafyWithArguments(MethodHandles.Lookup lookup, Class<T> functionalInterface, Object provider, Class<?> requestedType) {
-            return Methods.lambdafy(lookup, handle, functionalInterface, provider);
-        }
-
-        private String providerName() {
-            return providerFactory.type().returnType().getName();
-        }
-    }
-
-    private static class FixedHandleWithFactoryAndRequestedType extends FixedHandleWithFactory {
-        private final Class<?> upperBound;
-
-        FixedHandleWithFactoryAndRequestedType(FactoryFinder wrapped, MethodHandle handle, Class<?>[] acceptedClasses, MethodHandle providerFactory, Class<?> upperBound) {
-            super(wrapped, handle, acceptedClasses, providerFactory);
-            this.upperBound = upperBound;
+            return provider;
         }
 
         @Override
-        boolean defaultReturnTypeMatches(Class<?> returnType) {
-            return upperBound.isAssignableFrom(returnType);
+        <T> T lambdafyWithoutReturnType(Lookup lookup, Class<T> functionalInterface, Class<?> returnType) {
+            Object instance = createFactoryInstance();
+            return Methods.lambdafy(lookup, handle, functionalInterface, instance);
         }
 
         @Override
-        boolean argumentsMatch(Class<?>[] argumentTypes) {
-            return argumentsMatch(argumentTypes, 2);
-        }
-
-        @Override
-        <T> T lambdafyWithArguments(MethodHandles.Lookup lookup, Class<T> functionalInterface, Object provider, Class<?> requestedType) {
-            return Methods.lambdafy(lookup, handle, functionalInterface, provider, requestedType);
-        }
-    }
-
-    private static class GenericHandleFinder extends FixedHandleForSpecificTypes {
-        private final int argumentIndex;
-        private final Class<?> subscribedClass;
-        private final Class<?>[] expectedArguments;
-
-        GenericHandleFinder(FactoryFinder wrapped, MethodHandle handle, Class<?>[] acceptedClasses, int argumentIndex, Class<?> subscribedClass) {
-            super(wrapped, handle, acceptedClasses);
-            this.argumentIndex = argumentIndex;
-            this.subscribedClass = subscribedClass;
-
-            int argCount = handle.type().parameterCount() - 1;
-            expectedArguments = new Class<?>[argCount];
-            for (int i=0, j=0; j < argCount; i++) {
-                if (i == argumentIndex) continue;
-                expectedArguments[j++] = handle.type().parameterType(i);
-            }
-        }
-
-        @Override
-        boolean returnTypeMatches(Class<?> returnType) {
-            return subscribedClass.isAssignableFrom(returnType);
-        }
-
-        @Override
-        Class<?>[] parametersToCheck() {
-            return expectedArguments;
-        }
-
-        @Override
-        <T> T lambdafyVerified(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
-            if (argumentIndex == 0) {
-                return Methods.lambdafy(lookup, handle, functionalInterface, returnType);
-            }
-            return super.lambdafyVerified(lookup, functionalInterface, returnType, argumentTypes);
+        <T> T lambdafyWithReturnType(Lookup lookup, Class<T> functionalInterface, Class<?> returnType) {
+            Object instance = createFactoryInstance();
+            return Methods.lambdafy(lookup, handle, functionalInterface, instance, returnType);
         }
     }
 
@@ -1006,11 +1029,16 @@ public abstract class FactoryFinder {
         @Override
         public Optional<MethodHandle> find(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
             MethodType type = methodType(returnType, argumentTypes);
+            MethodHandle h;
             try {
-                return Optional.ofNullable(handleProvider.createFor(lookup, wrapped, type));
+                h = handleProvider.createFor(lookup, wrapped, type);
+                if (h != null) {
+                    h = withPostProcessor(lookup, h);
+                }
             } catch (NoSuchMethodException | IllegalAccessException ex) {
-                return Optional.empty();
+                h = null;
             }
+            return h == null ? wrapped.find(lookup, returnType, argumentTypes) : Optional.of(h);
         }
 
         @Override
@@ -1048,7 +1076,7 @@ public abstract class FactoryFinder {
     private FactoryFinder staticNondirect(MethodHandle handle, boolean optional, RequestedClass requestedClass, Class<?>[] acceptedTypes) {
         if (optional) handle = makeOptional(handle);
         return requestedClass == null ? new FixedHandleForSpecificTypes(this, handle, acceptedTypes) :
-                new GenericHandleFinder(this, handle, acceptedTypes, requestedClass.parameterIndex, commonSubclassOf(handle.type().returnType(), requestedClass.upperBound));
+                new GenericHandleFinder(this, handle, acceptedTypes, requestedClass);
     }
 
     private Class<?> commonSubclassOf(Class<?> returnType, Class<?> parameterizedArgument) {
@@ -1081,10 +1109,12 @@ public abstract class FactoryFinder {
                 return staticNondirect(bindTo(lookup, h, method.getDeclaringClass(), providerInstanceOrNull), optional, requestedClass, acceptedTypes);
             } else {
                 // Might be direct
-                MethodHandle factory = providerInstanceOrNull == null ?
-                        OneTimeExecution.createFor(findOrFail(lookup, method.getDeclaringClass())).getAccessor() : identity(method.getDeclaringClass()).bindTo(providerInstanceOrNull);
-                return requestedClass == null ? new FixedHandleWithFactory(this, h, acceptedTypes, factory)
-                        : new FixedHandleWithFactoryAndRequestedType(this, h, acceptedTypes, factory, commonSubclassOf(handle.type().returnType(), requestedClass.upperBound));
+                if (providerInstanceOrNull == null) {
+                    MethodHandle factory = OneTimeExecution.createFor(findOrFail(lookup, method.getDeclaringClass())).getAccessor();
+                    return new FixedHandleWithFactory(this, h, acceptedTypes, requestedClass, factory);
+                } else {
+                    return new WithHandleAndInitializers(this, h, acceptedTypes, requestedClass, providerInstanceOrNull);
+                }
             }
         }
     }
@@ -1124,31 +1154,24 @@ public abstract class FactoryFinder {
                     throw new AssertionError("Parameter #" + i + " of " + m + " is annotated with @Requested but of wrong type " + t);
                 }
                 Class<?> upperBound = t instanceof ParameterizedType ? Types.erasedArgument(t, Class.class, 0, Types.Bounded.UPPER) : Object.class;
-                return new RequestedClass(i, upperBound);
+                return new RequestedClass(i, commonSubclassOf(upperBound, m.getReturnType()));
             }
             i++;
         }
         return null;
     }
 
-    private MethodHandle withPostProcessor(Lookup lookup, MethodHandle handle) {
-        MethodHandle fullConstructor;
-        Class<?> type = handle.type().returnType();
-        if (PostProcessor.class.isAssignableFrom(type)) {
-            MethodHandle postConstruct;
-            try {
-                postConstruct = lookup.findVirtual(type, "postConstruct", methodType(void.class));
-            } catch (NoSuchMethodException | IllegalAccessException ex) {
-                throw new AssertionError("PostProcessor does not implement postConstruct?", ex);
-            }
-            MethodHandle returnItself = Methods.returnArgument(postConstruct, 0);
-            fullConstructor = MethodHandles.filterReturnValue(handle, returnItself);
-        } else {
-            fullConstructor = handle;
-        }
+    MethodHandle withPostProcessor(Lookup lookup, MethodHandle target) {
+        Class<?> type = target.type().returnType();
+        return runPostProcessor(lookup, type).map(pp -> filterReturnValue(target, pp)).orElse(target);
+    }
 
-        return MethodLocator.forLocal(lookup, type).methods().filter(m -> m.isAnnotationPresent(PostCreate.class)).
-                map(m -> {
+    private Optional<MethodHandle> runPostProcessor(Lookup lookup, Class<?> type) {
+        MethodType interfaceMethodType = methodType(void.class);
+        return MethodLocator.forLocal(lookup, type).methods()
+                .filter(m -> m.isAnnotationPresent(PostCreate.class) ||
+                        PostProcessor.class.isAssignableFrom(type) && m.getName().equals("postConstruct") && m.getType().equals(interfaceMethodType))
+                .map(m -> {
                     MethodHandle postProcessor = m.getHandle();
                     MethodType t = postProcessor.type();
                     if (t.parameterCount() != 1) {
@@ -1166,7 +1189,10 @@ public abstract class FactoryFinder {
                         }
                     }
                     return postProcessor;
-                }).filter(Objects::nonNull).map(h -> h.asType(methodType(type, type))).reduce(fullConstructor, MethodHandles::filterReturnValue);
+                })
+                .filter(Objects::nonNull)
+                .map(h -> h.asType(methodType(type, type)))
+                .reduce(MethodHandles::filterReturnValue);
     }
 
     private <T> T failIfEmpty(Optional<T> value, Class<?> returnType, Class<?>... parameterTypes) {

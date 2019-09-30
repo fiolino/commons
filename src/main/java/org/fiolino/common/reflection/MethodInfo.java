@@ -3,6 +3,7 @@ package org.fiolino.common.reflection;
 import org.fiolino.common.ioc.MethodHandleProvider;
 
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
@@ -35,6 +36,14 @@ public interface MethodInfo extends AnnotatedElement, Member {
      * @return The handle
      */
     MethodHandle getHandle();
+
+    /**
+     * Gets the type of the underlying method, i.e. the type that you would use to look up the handle in the declaring class.
+     * This is not the type of the returned handle, which will include the instance when the method is not static.
+     *
+     * @return The lookup type
+     */
+    MethodType getType();
 
     /**
      * Returns a handle that has a static context, i.e. if the method was already static, it just returns,

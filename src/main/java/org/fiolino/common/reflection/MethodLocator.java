@@ -613,6 +613,11 @@ public final class MethodLocator {
         }
 
         @Override
+        public MethodType getType() {
+            return methodType(method.getReturnType(), method.getParameterTypes());
+        }
+
+        @Override
         public MethodHandle getHandle() {
             try {
                 return lookup.unreflect(method);

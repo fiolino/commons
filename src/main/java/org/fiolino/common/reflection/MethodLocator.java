@@ -846,4 +846,22 @@ public final class MethodLocator {
         return true;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        MethodLocator that = (MethodLocator) o;
+        return lookup.equals(that.lookup) &&
+                type.equals(that.type);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(lookup, type);
+    }
+
+    @Override
+    public String toString() {
+        return (lookup().hasPrivateAccess() && lookup().lookupClass().equals(getType()) ? "Private" : "Public") + " locator on " + getType().getName();
+    }
 }

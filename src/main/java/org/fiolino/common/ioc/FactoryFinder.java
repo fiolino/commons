@@ -126,7 +126,10 @@ public abstract class FactoryFinder {
      * @param parameterTypes Some parameter types
      * @return A handle accepting the given parameter types, and returning the type
      */
-    public abstract Optional<MethodHandle> find(Lookup lookup, Class<?> returnType, Class<?>... parameterTypes);
+    public final Optional<MethodHandle> find(Lookup lookup, Class<?> returnType, Class<?>... parameterTypes) {
+        return findDirect(lookup, returnType, parameterTypes)
+                .map(h -> runPostProcessor(lookup, returnType).map(f -> filterReturnValue(h, f)).orElse(h));
+    }
 
     /**
      * Creates a handle that converts to the given type.
@@ -193,14 +196,13 @@ public abstract class FactoryFinder {
      * @return The new {@link FactoryFinder} with that extended setup
      */
     public FactoryFinder withMethodHandle(MethodHandle handle, Object... initializers) {
-        MethodHandle provider = withPostProcessor(lookup(), handle);
         if (initializers.length == 0) {
-            return new FixedHandle(this, provider);
+            return new FixedHandle(this, handle);
         }
-        if (initializers.length > provider.type().parameterCount()) {
-            throw new IllegalArgumentException("Too many initializers: " + Arrays.toString(initializers) + " for " + provider.type());
+        if (initializers.length > handle.type().parameterCount()) {
+            throw new IllegalArgumentException("Too many initializers: " + Arrays.toString(initializers) + " for " + handle.type());
         }
-        return new WithHandleAndInitializers(this, provider, NO_SPECIAL_CLASSES, null, initializers);
+        return new WithHandleAndInitializers(this, handle, NO_SPECIAL_CLASSES, null, initializers);
     }
 
     /**
@@ -603,7 +605,16 @@ public abstract class FactoryFinder {
      */
     public <T> T createLambda(Lookup lookup, Class<T> functionalInterface) {
         Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalInterface);
-        return lambdafyDirect(lookup, functionalInterface, lambdaMethod.getReturnType(), lambdaMethod.getParameterTypes());
+        Class<?> returnType = lambdaMethod.getReturnType();
+        Class<?>[] parameterTypes = lambdaMethod.getParameterTypes();
+        return createLambdaUnchecked(lookup, functionalInterface, returnType, parameterTypes);
+    }
+
+    private <T> T createLambdaUnchecked(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] parameterTypes) {
+        return runPostProcessor(lookup, returnType)
+                .map(f -> failIfEmpty(findDirect(lookup, returnType, parameterTypes).map(h -> filterReturnValue(h, f)), returnType, parameterTypes))
+                .map(h -> Methods.lambdafy(lookup, h, functionalInterface))
+                .orElseGet(() -> lambdafyDirect(lookup, functionalInterface, returnType, parameterTypes));
     }
 
     /**
@@ -630,22 +641,22 @@ public abstract class FactoryFinder {
      *               Should be the caller's lookup.
      * @param functionalInterface Describes the provider/constructor to use. Its method signature specifies parts of the parameter values.
      * @param returnType          The expected return type
-     * @param parameterTypes      The expected parameter types; only the first ones that differ from the lambda method signature
+     * @param argumentTypes      The expected parameter types; only the first ones that differ from the lambda method signature
      *                            must be given
      * @param <T>                 The interface type
      * @return A lambda or proxy
      * @throws NoSuchProviderException If there is no provider that converts from the sources to the result type
      */
-    public <T> T createLambda(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>... parameterTypes) {
+    public <T> T createLambda(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>... argumentTypes) {
         Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalInterface);
 
         Class<?>[] lambdaTypes = lambdaMethod.getParameterTypes();
-        if (lambdaTypes.length < parameterTypes.length) {
-            throw new IllegalArgumentException("Given too many parameter types: Expected " +
-                    Arrays.toString(lambdaTypes) + ", given " + Arrays.toString(parameterTypes));
+        if (lambdaTypes.length < argumentTypes.length) {
+            throw new IllegalArgumentException(classArrayToNames("Given too many parameter types: Expected ", ",", lambdaTypes)
+                    + classArrayToNames(" given ", "", argumentTypes));
         }
-        System.arraycopy(parameterTypes, 0, lambdaTypes, 0, parameterTypes.length);
-        return lambdafyDirect(lookup, functionalInterface, returnType, lambdaTypes);
+        System.arraycopy(argumentTypes, 0, lambdaTypes, 0, argumentTypes.length);
+        return createLambdaUnchecked(lookup, functionalInterface, returnType, lambdaTypes);
     }
 
     /**
@@ -708,11 +719,13 @@ public abstract class FactoryFinder {
 
     abstract Lookup lookup();
 
+    abstract Optional<MethodHandle> findDirect(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes);
+
     abstract <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes);
 
     private static final FactoryFinder EMPTY = new FactoryFinder() {
         @Override
-        public Optional<MethodHandle> find(Lookup lookup, Class<?> returnType, Class<?>... parameterTypes) {
+        Optional<MethodHandle> findDirect(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
             return Optional.empty();
         }
 
@@ -723,10 +736,7 @@ public abstract class FactoryFinder {
 
         @Override
         <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
-            throw new NoSuchProviderException(returnType, argumentTypes,
-                    Arrays.stream(argumentTypes).map(Class::getName).reduce(
-                            new StringJoiner(", ", "No handle for (", ")" + returnType.getName()), StringJoiner::add, StringJoiner::merge)
-                            .toString());
+            throw exceptionFor(returnType, argumentTypes);
         }
     };
 
@@ -748,8 +758,8 @@ public abstract class FactoryFinder {
         }
 
         @Override
-        public Optional<MethodHandle> find(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
-            return wrapped.find(lookup, returnType, argumentTypes);
+        Optional<MethodHandle> findDirect(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
+            return wrapped.findDirect(lookup, returnType, argumentTypes);
         }
 
         <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
@@ -782,12 +792,12 @@ public abstract class FactoryFinder {
         }
 
         @Override
-        public Optional<MethodHandle> find(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
+        Optional<MethodHandle> findDirect(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
             if (returnTypeMatches(returnType) && argumentsMatch(argumentTypes)) {
                 MethodHandle h = getHandle(lookup, returnType, argumentTypes);
                 if (h != null) return Optional.of(h);
             }
-            return wrapped.find(lookup, returnType, argumentTypes);
+            return super.findDirect(lookup, returnType, argumentTypes);
         }
 
         abstract boolean returnTypeMatches(Class<?> returnType);
@@ -802,7 +812,7 @@ public abstract class FactoryFinder {
                     return result;
             }
 
-            return wrapped.lambdafyDirect(lookup, functionalInterface, returnType, argumentTypes);
+            return super.lambdafyDirect(lookup, functionalInterface, returnType, argumentTypes);
         }
 
         <T> T lambdafyVerified(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
@@ -1027,18 +1037,15 @@ public abstract class FactoryFinder {
         }
 
         @Override
-        public Optional<MethodHandle> find(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
+        public Optional<MethodHandle> findDirect(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
             MethodType type = methodType(returnType, argumentTypes);
             MethodHandle h;
             try {
                 h = handleProvider.createFor(lookup, wrapped, type);
-                if (h != null) {
-                    h = withPostProcessor(lookup, h);
-                }
             } catch (NoSuchMethodException | IllegalAccessException ex) {
                 h = null;
             }
-            return h == null ? wrapped.find(lookup, returnType, argumentTypes) : Optional.of(h);
+            return h == null ? wrapped.findDirect(lookup, returnType, argumentTypes) : Optional.of(h);
         }
 
         @Override
@@ -1073,8 +1080,8 @@ public abstract class FactoryFinder {
         return foldArguments(h, factory);
     }
 
-    private FactoryFinder staticNondirect(MethodHandle handle, boolean optional, RequestedClass requestedClass, Class<?>[] acceptedTypes) {
-        if (optional) handle = makeOptional(handle);
+    private FactoryFinder staticNondirect(Lookup lookup, MethodHandle handle, boolean optional, RequestedClass requestedClass, Class<?>[] acceptedTypes) {
+        if (optional) handle = makeOptional(lookup, handle);
         return requestedClass == null ? new FixedHandleForSpecificTypes(this, handle, acceptedTypes) :
                 new GenericHandleFinder(this, handle, acceptedTypes, requestedClass);
     }
@@ -1100,20 +1107,19 @@ public abstract class FactoryFinder {
         Class<?>[] acceptedTypes = annotation == null ? NO_SPECIAL_CLASSES : annotation.value();
         boolean optional = method.isAnnotationPresent(Nullable.class) || annotation != null && annotation.optional();
 
-        MethodHandle h = withPostProcessor(lookup, handle);
         if (Modifier.isStatic(method.getModifiers())) {
-            return staticNondirect(h, optional, requestedClass, acceptedTypes);
+            return staticNondirect(lookup, handle, optional, requestedClass, acceptedTypes);
         } else {
-            if (optional || requestedClass != null && requestedClass.parameterIndex > 1 || h != handle) {
+            if (optional || requestedClass != null && requestedClass.parameterIndex > 1) {
                 // Cannot be a direct lambda method
-                return staticNondirect(bindTo(lookup, h, method.getDeclaringClass(), providerInstanceOrNull), optional, requestedClass, acceptedTypes);
+                return staticNondirect(lookup, bindTo(lookup, handle, method.getDeclaringClass(), providerInstanceOrNull), optional, requestedClass, acceptedTypes);
             } else {
                 // Might be direct
                 if (providerInstanceOrNull == null) {
                     MethodHandle factory = OneTimeExecution.createFor(findOrFail(lookup, method.getDeclaringClass())).getAccessor();
-                    return new FixedHandleWithFactory(this, h, acceptedTypes, requestedClass, factory);
+                    return new FixedHandleWithFactory(this, handle, acceptedTypes, requestedClass, factory);
                 } else {
-                    return new WithHandleAndInitializers(this, h, acceptedTypes, requestedClass, providerInstanceOrNull);
+                    return new WithHandleAndInitializers(this, handle, acceptedTypes, requestedClass, providerInstanceOrNull);
                 }
             }
         }
@@ -1126,15 +1132,14 @@ public abstract class FactoryFinder {
      * @param provider Some handle that instantiates something
      * @return The wrapped handle
      */
-    private MethodHandle makeOptional(MethodHandle provider) {
+    private MethodHandle makeOptional(Lookup lookup, MethodHandle provider) {
         MethodType type = provider.type();
         Class<?> returnType = type.returnType();
         if (returnType.isPrimitive()) {
             // Cannot be nullable
             return provider;
         }
-        MethodHandle existing = find(returnType, type.parameterArray()).orElseThrow(() -> new NoSuchProviderException(
-                returnType, type.parameterArray(), "No default provider available for optional " + provider));
+        MethodHandle existing = findOrFail(lookup, returnType, type.parameterArray());
         existing = MethodHandles.dropArguments(existing, 0, returnType); // First argument would be null anyway
         MethodHandle identity = MethodHandles.identity(returnType);
         identity = Methods.acceptThese(identity, existing.type().parameterArray());
@@ -1159,11 +1164,6 @@ public abstract class FactoryFinder {
             i++;
         }
         return null;
-    }
-
-    MethodHandle withPostProcessor(Lookup lookup, MethodHandle target) {
-        Class<?> type = target.type().returnType();
-        return runPostProcessor(lookup, type).map(pp -> filterReturnValue(target, pp)).orElse(target);
     }
 
     private Optional<MethodHandle> runPostProcessor(Lookup lookup, Class<?> type) {
@@ -1195,8 +1195,19 @@ public abstract class FactoryFinder {
                 .reduce(MethodHandles::filterReturnValue);
     }
 
-    private <T> T failIfEmpty(Optional<T> value, Class<?> returnType, Class<?>... parameterTypes) {
-        return value.orElseThrow(() -> new NoSuchProviderException(returnType, parameterTypes, "Cannot transform " + Arrays.toString(parameterTypes) + " to " + returnType.getName()));
+    private <T> T failIfEmpty(Optional<T> value, Class<?> returnType, Class<?>... argumentTypes) {
+        return value.orElseThrow(() -> exceptionFor(returnType, argumentTypes));
+    }
+
+    NoSuchProviderException exceptionFor(Class<?> returnType, Class<?>... argumentTypes) {
+        return new NoSuchProviderException(returnType, argumentTypes,
+                classArrayToNames("No handle for (", ")" + returnType.getName(), argumentTypes));
+    }
+
+    private String classArrayToNames(String prefix, String suffix, Class<?>... argumentTypes) {
+        return Arrays.stream(argumentTypes).map(Class::getName).reduce(
+                new StringJoiner(", ", prefix, suffix), StringJoiner::add, StringJoiner::merge)
+                .toString();
     }
 
     private boolean typesAreConvertible(Class<?> t1, Class<?> t2) {

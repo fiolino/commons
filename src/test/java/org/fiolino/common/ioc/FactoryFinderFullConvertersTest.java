@@ -1,5 +1,6 @@
 package org.fiolino.common.ioc;
 
+import junit.framework.AssertionFailedError;
 import org.fiolino.common.reflection.MethodLocator;
 import org.fiolino.common.reflection.Methods;
 import org.fiolino.common.reflection.NoMatchingConverterException;
@@ -19,16 +20,20 @@ import static java.lang.invoke.MethodHandles.publicLookup;
 import static java.lang.invoke.MethodType.methodType;
 import static org.junit.jupiter.api.Assertions.*;
 
-class FactoryFinderBuilderTest {
+class FactoryFinderFullConvertersTest {
     private void checkIsLambda(Object func) {
         assertTrue(Methods.wasLambdafiedDirect(func), "Should be a lambda function");
     }
 
     private MethodHandle getHandle(Class<?> returnValue, Object provider) {
-        MethodHandle pHandle = MethodLocator.forLocal(lookup(), provider.getClass()).methods()
+        return MethodLocator.forLocal(lookup(), provider.getClass()).methods()
                 .filter(info -> info.getMethod().getDeclaringClass() != Object.class)
-                .map(info -> info.getStaticHandle(() -> provider)).findFirst().orElseThrow();
-        return pHandle;
+                .reduce((info1, info2) -> {
+                    throw new AssertionFailedError(provider + " should contain exactly one method");
+                })
+                .map(info -> info.getStaticHandle(() -> provider))
+                .map(h -> FactoryFinder.full().convertReturnTypeTo(h, returnValue))
+                .orElseThrow();
     }
 
     @Test
@@ -91,8 +96,8 @@ class FactoryFinderBuilderTest {
         };
         MethodHandle c = getHandle(Object.class, getEnum);
         assertNull((Object) c.invokeExact());
-        c = getHandle(String.class, getEnum);
-        assertNull((String) c.invokeExact());
+        MethodHandle fail = getHandle(String.class, getEnum).asType(methodType(void.class));
+        assertThrows(NullPointerException.class, fail::invokeExact);
     }
 
     public static class ValueOfTest {
@@ -102,6 +107,7 @@ class FactoryFinderBuilderTest {
             this.len = len;
         }
 
+        @SuppressWarnings("unused")
         public static ValueOfTest valueOf(String input) {
             return new ValueOfTest(input.length());
         }
@@ -129,7 +135,6 @@ class FactoryFinderBuilderTest {
         assertEquals("xx", (Object) c.invokeExact("xx"));
         c = getHandle(TimeUnit.class, getString);
         assertEquals(TimeUnit.MINUTES, (TimeUnit) c.invokeExact("MINUTES"));
-        assertNull((TimeUnit) c.invokeExact((String) null));
         c = getHandle(int.class, getString);
         assertEquals(188, (int) c.invokeExact("188"));
         c = getHandle(float.class, getString);
@@ -137,8 +142,8 @@ class FactoryFinderBuilderTest {
         c = getHandle(Long.class, getString);
         assertEquals((Long) 999999999999999L, (Long) c.invokeExact("999999999999999"));
         c = getHandle(boolean.class, getString);
-        assertTrue((boolean) c.invokeExact("trara with t"));
-        assertFalse((boolean) c.invokeExact("something without t"));
+        assertTrue((boolean) c.invokeExact("t"));
+        assertFalse((boolean) c.invokeExact("try something longer"));
         assertFalse((boolean) c.invokeExact(""));
         c = getHandle(ValueOfTest.class, getString);
         assertEquals(new ValueOfTest(7), (ValueOfTest) c.invokeExact("1234567"));
@@ -150,6 +155,7 @@ class FactoryFinderBuilderTest {
         assertEquals('~', (char) c.invokeExact("~/path"));
     }
 
+    @SuppressWarnings("unused")
     public static class ToPrimitiveTester {
         public int intValue() {
             return 33;
@@ -258,30 +264,25 @@ class FactoryFinderBuilderTest {
         }
     }
 
-/*
+
     @Test
     void testDirectConverter() throws Throwable {
         // Test unnecessary converter
-        Converter c = Converters.defaultConverters.find(Integer.class, Number.class);
-        assertNotNull(c);
-        assertNull(c.getConverter());
-        MethodHandle h = Converters.findConverter(Integer.class, Number.class);
+        Optional<MethodHandle> c = FactoryFinder.full().find(Number.class, Integer.class);
+        assertFalse(c.isPresent());
+        MethodHandle h = FactoryFinder.full().findOrFail(int.class, Number.class);
         assertNotNull(h);
-        assertEquals(methodType(Number.class, Integer.class), h.type());
-        Number n = (Number) h.invokeExact((Integer) 12);
+        assertEquals(methodType(int.class, Number.class), h.type());
+        int n = (int) h.invokeExact((Number) 12L);
         assertEquals(12, n);
 
-        // Test non-perfect converter
-        c = Converters.defaultConverters.find(TimeUnit.class, String.class);
-        assertNotNull(c);
-        assertNotNull(c.getConverter());
-        assertEquals(methodType(String.class, Enum.class), c.getConverter().type());
-        h = Converters.findConverter(TimeUnit.class, String.class);
+        // Test enum converter
+        h = FactoryFinder.full().findOrFail(String.class, TimeUnit.class);
         assertEquals(methodType(String.class, TimeUnit.class), h.type());
         String s = (String) h.invokeExact(TimeUnit.SECONDS);
         assertEquals("SECONDS", s);
     }
-*/
+
 
     @Test
     void testConvertParameter() throws Throwable {
@@ -301,18 +302,19 @@ class FactoryFinderBuilderTest {
     // Can't convert from any primitive to another wrapper
     @Test
     void testWrongPrimitive() throws NoMatchingConverterException {
-        Optional<MethodHandle> converter = FactoryFinder.full().find(long.class, Integer.class);
+        Optional<MethodHandle> converter = FactoryFinder.full().find(Integer.class, long.class);
         assertFalse(converter.isPresent());
     }
 
     // But can convert from any wrapper to some primitive as long as there's an xxxValue() method
     @Test
     void testConvertablePrimitive() throws Throwable {
-        Optional<MethodHandle> converter = FactoryFinder.full().find(Integer.class, long.class);
+        Optional<MethodHandle> converter = FactoryFinder.full().find(long.class, Integer.class);
         long val = (long) converter.get().invokeExact((Integer) 12345);
         assertEquals(12345L, val);
     }
 
+    @SuppressWarnings("unused")
     private static String concat(String first, long second, Date last, boolean butOnlyIfTrue) {
         if (butOnlyIfTrue) {
             return first + second + " " + last.getTime();

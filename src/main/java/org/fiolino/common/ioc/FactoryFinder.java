@@ -418,33 +418,33 @@ public abstract class FactoryFinder {
      * @throws NoSuchProviderException If there is no suitable transformer
      */
     public <R> R transform(Class<R> expectedType, Object... parameters) {
-        Class<R> resultType = Types.toWrapper(expectedType);
+        Class<R> castType = Types.toWrapper(expectedType);
         int n = parameters.length;
-        if (n == 1 && resultType.isInstance(parameters[0])) {
-            return resultType.cast(parameters[0]);
+        if (n == 1 && castType.isInstance(parameters[0])) {
+            return castType.cast(parameters[0]);
         }
         Class<?>[] parameterTypes = new Class<?>[n];
         for (int i=n-1; i >= 0; i--) {
             parameterTypes[i] = parameters[i].getClass();
         }
-        return failIfEmpty(find(resultType, parameterTypes)
+        return failIfEmpty(find(expectedType, parameterTypes)
                 .or(() -> {
                     Class<?> primitive;
                     if (parameterTypes.length == 1 && (primitive = Types.asPrimitive(parameterTypes[0])) != null) {
-                        return find(resultType, primitive);
+                        return find(expectedType, primitive);
                     } else {
                         return Optional.empty();
                     }
                 })
                 .map(h -> {
                     try {
-                        return resultType.cast(h.invokeWithArguments(parameters));
+                        return castType.cast(h.invokeWithArguments(parameters));
                     } catch (RuntimeException | Error e) {
                         throw e;
                     } catch (Throwable t) {
                         throw new UndeclaredThrowableException(t, "Transforming using " + h);
                     }
-                }), resultType, parameterTypes);
+                }), expectedType, parameterTypes);
     }
 
     /**
@@ -458,7 +458,7 @@ public abstract class FactoryFinder {
     public MethodHandle convertReturnTypeTo(MethodHandle target, Class<?> returnType) {
         MethodType type = target.type();
         Class<?> r = type.returnType();
-        if (typesAreConvertible(returnType, r)) {
+        if (typesAreInHierarchy(returnType, r)) {
             return MethodHandles.explicitCastArguments(target, type.changeReturnType(returnType));
         }
         if (returnType == void.class) {
@@ -503,12 +503,17 @@ public abstract class FactoryFinder {
             if (newType == null || newType.equals(arg = type.parameterType(argumentNumber + i))) {
                 continue;
             }
+            if (typesAreInHierarchy(arg, newType)) {
+                if (casted == null) casted = type;
+                casted = casted.changeParameterType(argumentNumber + i, newType);
+                continue;
+            }
             Optional<MethodHandle> converter = find(arg, newType).map(h -> h.asType(methodType(arg, newType)));
             if (converter.isPresent()) {
                 filters[i] = converter.get();
                 continue;
             }
-            if (typesAreConvertible(arg, newType)) {
+            if (arg.isPrimitive() && newType.isPrimitive()) {
                 if (casted == null) casted = type;
                 casted = casted.changeParameterType(argumentNumber + i, newType);
                 continue;
@@ -1210,8 +1215,8 @@ public abstract class FactoryFinder {
                 .toString();
     }
 
-    private boolean typesAreConvertible(Class<?> t1, Class<?> t2) {
-        return t1.isPrimitive() && t2.isPrimitive() || Types.isAssignableFrom(t1, t2) || Types.isAssignableFrom(t2, t1);
+    private boolean typesAreInHierarchy(Class<?> t1, Class<?> t2) {
+        return Types.isAssignableFrom(t1, t2) || Types.isAssignableFrom(t2, t1);
     }
 
     private static final class RequestedClass {
@@ -1270,7 +1275,7 @@ public abstract class FactoryFinder {
                                 if (String.class.equals(argumentType)) {
                                     // Finds something like Integer::parseInt
                                     return l.findStatic(Types.toWrapper(returnType), "parse" + Character.toUpperCase(name.charAt(0)) + name.substring(1), t);
-                                } else if (Number.class.isAssignableFrom(argumentType)) {
+                                } else {
                                     // Finds something like Integer::longValue
                                     return l.findVirtual(argumentType, name + "Value", methodType(returnType));
                                 }
@@ -1287,13 +1292,13 @@ public abstract class FactoryFinder {
                         return null;
                     }).withMethodHandle(numberToString);
 
+            CharSet trueValueChars = CharSet.of("tTyYwW1");
             FULL = MINIMAL.withMethodHandle(getTime)
                     .withMethodHandle(dateToInstant)
                     .withMethodHandle(instantToDate)
-                    .withMethodHandle(contains, CharSet.of("tTyYwW1"))
+                    .withMethodHandle(contains, trueValueChars)
                     .withProvidersFrom(MethodHandles.lookup(), new Object() {
-                        @Provider
-                        @SuppressWarnings("unused")
+                        @Provider @SuppressWarnings("unused")
                         char charFromString(String value) {
                             if (value.isEmpty()) return (char) 0;
                             return value.charAt(0);
@@ -1303,6 +1308,13 @@ public abstract class FactoryFinder {
                         @SuppressWarnings("unused")
                         char charFromBool(boolean value) {
                             return value ? 't' : 'f';
+                        }
+
+                        @Provider @SuppressWarnings("unused")
+                        boolean boolFromString(String value) {
+                            if (value == null || value.isEmpty()) return false;
+                            if (value.length() == 1) return trueValueChars.contains(value.charAt(0));
+                            return Boolean.valueOf(value);
                         }
 
                         @Provider @SuppressWarnings("unused")

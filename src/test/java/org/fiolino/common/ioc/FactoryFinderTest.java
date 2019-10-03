@@ -690,4 +690,41 @@ class FactoryFinderTest {
         String concatenated = ff.transform(String.class, "fff", 3636L, TimeUnit.SECONDS);
         assertEquals("fff: 3636000 ms", concatenated);
     }
+
+    @FunctionalInterface
+    interface StringProvider {
+        String value();
+    }
+
+    @Test
+    void testSecured() throws Throwable {
+        FactoryFinder unsafe = FactoryFinder.empty().using(lookup()).withProvidersFrom(new Object() {
+            @Provider @SuppressWarnings("unused")
+            String returnString() {
+                return "Hello Karla!";
+            }
+        });
+        FactoryFinder ff = unsafe.secured();
+        // The provider should have been registered
+        MethodHandle stringHandle = ff.findOrFail(String.class);
+        String result = (String) stringHandle.invokeExact();
+        assertEquals("Hello Karla!", result);
+
+        // The lookup shouldn't find this because the method is not public
+        ff = ff.withMethodHandleProvider((l, f, t) -> l.bind(new StringFactory(), "sayHelloTo", t));
+        assertFalse(ff.find(String.class, String.class).isPresent());
+
+        // But iyt should still be possible to create local lambdas
+        StringProvider sp = ff.createLambda(StringProvider.class);
+        result = sp.value();
+        assertEquals("Hello Karla!", result);
+
+        // Not the lookup should find it because we use the unsafe version
+        unsafe = unsafe.withMethodHandleProvider((l, f, t) -> l.bind(new StringFactory(), "sayHelloTo", t));
+        assertTrue(unsafe.find(String.class, String.class).isPresent());
+
+        // It should also work when we simply plug a new lookup into the cure one, making it unsecure again
+        ff = ff.using(lookup());
+        assertTrue(ff.find(String.class, String.class).isPresent());
+    }
 }

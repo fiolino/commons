@@ -21,6 +21,7 @@ import java.time.format.FormatStyle;
 import java.time.temporal.Temporal;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import static java.lang.invoke.MethodHandles.dropArguments;
@@ -140,7 +141,7 @@ public abstract class FactoryFinder {
      * @return A handle accepting the given parameter types, and returning the type
      */
     public final Optional<MethodHandle> find(@Nullable Lookup lookup, Class<?> returnType, Class<?>... parameterTypes) {
-        return findDirect(lookup, returnType, parameterTypes)
+        return findDirect(lookup, this, x -> true, returnType, parameterTypes)
                 .map(h -> runPostProcessor(lookup, returnType).map(f -> filterReturnValue(h, f)).orElse(h));
     }
 
@@ -767,13 +768,13 @@ public abstract class FactoryFinder {
     abstract Lookup lookupForProviders();
     abstract Lookup lookupForEvaluation();
 
-    abstract Optional<MethodHandle> findDirect(@Nullable Lookup lookup, Class<?> returnType, Class<?>... argumentTypes);
+    abstract Optional<MethodHandle> findDirect(@Nullable Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>... argumentTypes);
 
     abstract <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes);
 
     private static final FactoryFinder EMPTY = new FactoryFinder() {
         @Override
-        Optional<MethodHandle> findDirect(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
+        Optional<MethodHandle> findDirect(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>... argumentTypes) {
             return Optional.empty();
         }
 
@@ -794,7 +795,7 @@ public abstract class FactoryFinder {
     };
 
     private static final FactoryFinder USE_CONSTRUCTOR = EMPTY.withMethodHandleProvider(
-            (l, ff, t) -> l.findConstructor(t.returnType(), t.changeReturnType(void.class)));
+            (r, t) -> r.register(r.lookup().findConstructor(t.returnType(), t.changeReturnType(void.class))));
 
     private static final Class<?>[] NO_SPECIAL_CLASSES = {};
 
@@ -816,9 +817,19 @@ public abstract class FactoryFinder {
         }
 
         @Override
-        Optional<MethodHandle> findDirect(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
-            return wrapped.findDirect(lookup, returnType, argumentTypes);
+        final Optional<MethodHandle> findDirect(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>... argumentTypes) {
+            if (allowed.test(this)) {
+                Optional<MethodHandle> handle = findDirectX(lookup, starter, allowed, returnType, argumentTypes);
+                if (handle.isPresent()) return handle;
+            }
+            return nextFinder(lookup, starter, allowed, returnType, argumentTypes);
         }
+
+        Optional<MethodHandle> nextFinder(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>[] argumentTypes) {
+            return wrapped.findDirect(lookup, starter, allowed, returnType, argumentTypes);
+        }
+
+        abstract Optional<MethodHandle> findDirectX(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>... argumentTypes);
 
         <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
             return wrapped.lambdafyDirect(lookup, functionalInterface, returnType, argumentTypes);
@@ -849,9 +860,14 @@ public abstract class FactoryFinder {
         }
 
         @Override
-        Optional<MethodHandle> findDirect(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
+        Optional<MethodHandle> nextFinder(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>[] argumentTypes) {
             Lookup l = lookup == null ? lookupForEvaluation() : lookup;
-            return super.findDirect(l, returnType, argumentTypes);
+            return super.nextFinder(l, starter, allowed, returnType, argumentTypes);
+        }
+
+        @Override
+        Optional<MethodHandle> findDirectX(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>... argumentTypes) {
+            return Optional.empty();
         }
     }
 
@@ -869,6 +885,11 @@ public abstract class FactoryFinder {
         public FactoryFinder using(Lookup lookup) {
             return new LookupHolder(wrapped, lookup);
         }
+
+        @Override
+        Optional<MethodHandle> findDirectX(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>... argumentTypes) {
+            return Optional.empty();
+        }
     }
 
     private static abstract class ConditionalWrapper extends Wrapper {
@@ -877,12 +898,12 @@ public abstract class FactoryFinder {
         }
 
         @Override
-        Optional<MethodHandle> findDirect(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
+        Optional<MethodHandle> findDirectX(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>... argumentTypes) {
             if (returnTypeMatches(returnType) && argumentsMatch(argumentTypes)) {
                 MethodHandle h = getHandle(returnType, argumentTypes);
                 if (h != null) return Optional.of(h);
             }
-            return super.findDirect(lookup, returnType, argumentTypes);
+            return Optional.empty();
         }
 
         abstract boolean returnTypeMatches(Class<?> returnType);
@@ -1116,22 +1137,93 @@ public abstract class FactoryFinder {
     private static class DynamicHandleFinder extends Wrapper {
         private final MethodHandleProvider handleProvider;
 
+        private class MyRegistry implements MethodHandleRegistry {
+            private final Lookup lookup;
+            private final FactoryFinder starter;
+            private final Predicate<FactoryFinder> allowed;
+            private final MethodType methodType;
+            private MethodHandle registeredHandle;
+            private Object[] initializers;
+
+            MyRegistry(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, MethodType methodType) {
+                this.lookup = lookup;
+                this.starter = starter;
+                this.allowed = allowed.and(x -> x != DynamicHandleFinder.this);
+                this.methodType = methodType;
+            }
+
+            @Override
+            public void register(MethodHandle handle, Object... initializers) throws MismatchedMethodTypeException {
+                if (registeredHandle != null) {
+                    throw new IllegalStateException("handle alfready registered");
+                }
+                MethodType type = handle.type().dropParameterTypes(0, initializers.length);
+                if (!isConvertible(type, methodType)) {
+                    throw new MismatchedMethodTypeException(type + " does not match expected " + methodType);
+                }
+                registeredHandle = handle;
+                this.initializers = initializers;
+            }
+
+            private boolean isConvertible(Class<?> c1, Class<?> c2) {
+                return c1.isPrimitive() && c2.isPrimitive()
+                        || Types.toWrapper(c1).equals(Types.toWrapper(c2))
+                        || c1.isAssignableFrom(c2)
+                        || c2.isAssignableFrom(c1);
+            }
+
+            private boolean isConvertible(MethodType t1, MethodType t2) {
+                int n = t1.parameterCount();
+                if (n != t2.parameterCount()
+                        || !isConvertible(t1.returnType(), t2.returnType())) return false;
+
+                for (int i=0; i < n; i++) {
+                    if (!isConvertible(t1.parameterType(i), t2.parameterType(i))) return false;
+                }
+
+                return true;
+            }
+
+            @Override
+            public Lookup lookup() {
+                return lookup;
+            }
+
+            @Override
+            public Optional<MethodHandle> findExisting() {
+                return findExisting(methodType);
+            }
+
+            @Override
+            public Optional<MethodHandle> findExisting(MethodType methodType) {
+                return starter.findDirect(lookup, starter, allowed, methodType.returnType(), methodType.parameterArray());
+            }
+
+            MethodHandle getRegisteredHandle() {
+                return registeredHandle;
+            }
+
+            Object[] getInitializers() {
+                return initializers;
+            }
+        }
+
         DynamicHandleFinder(FactoryFinder wrapped, MethodHandleProvider handleProvider) {
             super(wrapped);
             this.handleProvider = handleProvider;
         }
 
         @Override
-        public Optional<MethodHandle> findDirect(Lookup lookup, Class<?> returnType, Class<?>... argumentTypes) {
+        public Optional<MethodHandle> findDirectX(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>... argumentTypes) {
             Lookup l = lookup == null ? lookupForProviders() : lookup;
             MethodType type = methodType(returnType, argumentTypes);
-            MethodHandle h;
+            MyRegistry reg = new MyRegistry(l, starter, allowed, type);
             try {
-                h = handleProvider.createFor(l, wrapped, type);
-            } catch (NoSuchMethodException | IllegalAccessException ex) {
-                h = null;
+                handleProvider.create(reg, type);
+            } catch (NoSuchMethodException | IllegalAccessException | MismatchedMethodTypeException ex) {
+                return Optional.empty();
             }
-            return h == null ? wrapped.findDirect(lookup, returnType, argumentTypes) : Optional.of(h);
+            return Optional.ofNullable(reg.getRegisteredHandle()).map(h -> insertArguments(h, 0, reg.initializers));
         }
 
         @Override
@@ -1343,8 +1435,8 @@ public abstract class FactoryFinder {
                 throw new AssertionError("getTime", ex);
             }
 
-            MINIMAL = FactoryFinder.instantiator().withMethodHandleProvider((l, ff, t) -> l.findStatic(t.returnType(), "valueOf", t))
-                    .withMethodHandleProvider((l, ff, t) -> {
+            MINIMAL = FactoryFinder.instantiator().withMethodHandleProvider((r, t) -> r.findStatic(t.returnType(), "valueOf"))
+                    .withMethodHandleProvider((r, t) -> {
                         if (t.parameterCount() == 1) {
                             Class<?> returnType = t.returnType();
                             if (returnType.isPrimitive()) {
@@ -1352,22 +1444,20 @@ public abstract class FactoryFinder {
                                 String name = returnType.getName();
                                 if (String.class.equals(argumentType)) {
                                     // Finds something like Integer::parseInt
-                                    return l.findStatic(Types.toWrapper(returnType), "parse" + Character.toUpperCase(name.charAt(0)) + name.substring(1), t);
+                                    r.findStatic(Types.toWrapper(returnType), "parse" + Character.toUpperCase(name.charAt(0)) + name.substring(1));
                                 } else {
                                     // Finds something like Integer::longValue
-                                    return l.findVirtual(argumentType, name + "Value", methodType(returnType));
+                                    r.findVirtual(name + "Value");
                                 }
                             }
                         }
-                        return null;
-                    }).withMethodHandleProvider((l, ff, t) -> {
+                    }).withMethodHandleProvider((r, t) -> {
                         if (String.class.equals(t.returnType()) && t.parameterCount() == 1) {
                             Class<?> argumentType = t.parameterType(0);
                             if (argumentType.isEnum()) {
-                                return l.findVirtual(argumentType, "name", methodType(String.class));
+                                r.findVirtual("name");
                             }
                         }
-                        return null;
                     }).withMethodHandle(numberToString);
 
             CharSet trueValueChars = CharSet.of("tTyYwW1");

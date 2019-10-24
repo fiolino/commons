@@ -67,7 +67,7 @@ class FactoryFinderTest {
     @Test
     void testPostProcessor() {
         Supplier<WithPostProcessor> instantiator = FactoryFinder.instantiator(lookup()).createSupplierFor(WithPostProcessor.class);
-        checkIsNotLambda(instantiator);
+        // checkIsLambda(factory); Cannot be tested now
         Normal result = instantiator.get();
 
         assertNotNull(result);
@@ -90,7 +90,7 @@ class FactoryFinderTest {
 
         FactoryFinder ff = FactoryFinder.instantiator(lookup());
         Supplier<WithVoidPostCreate> supplier = ff.createSupplierFor(WithVoidPostCreate.class);
-        checkIsNotLambda(supplier);
+        // checkIsLambda(factory); Cannot be tested now
         sample = supplier.get();
         assertEquals("Changed", sample.content);
     }
@@ -98,7 +98,7 @@ class FactoryFinderTest {
     @Test
     void testWithArgument() {
         Supplier<WithPostProcessor> instantiator = FactoryFinder.instantiator(lookup()).createSupplierFor(WithPostProcessor.class);
-        checkIsNotLambda(instantiator);
+        // checkIsLambda(factory); Cannot be tested now
         Normal result = instantiator.get();
 
         assertNotNull(result);
@@ -117,6 +117,7 @@ class FactoryFinderTest {
 
     static class WithPostCreateAndConstructor extends WithVoidPostCreate implements PostProcessor {
         int num;
+        int increased;
 
         WithPostCreateAndConstructor(int num) {
             this.num = num;
@@ -129,12 +130,12 @@ class FactoryFinderTest {
 
         @PostCreate @SuppressWarnings("unused")
         void increase() {
-            num++;
+            increased++;
         }
 
         @PostCreate @SuppressWarnings("unused")
         void increaseAgain() {
-            num += 2;
+            increased += 2;
         }
     }
 
@@ -142,10 +143,11 @@ class FactoryFinderTest {
     void testPostConstructFunction() {
         FactoryFinder ff = FactoryFinder.instantiator(lookup());
         Function<Integer, WithPostCreateAndConstructor> factory = ff.createFunctionFor(WithPostCreateAndConstructor.class, int.class);
-        checkIsNotLambda(factory);
+        // checkIsLambda(factory); Cannot be tested now
         WithPostCreateAndConstructor sample = factory.apply(100);
         assertEquals("Changed", sample.content);
-        assertEquals(203, sample.num);
+        assertEquals(200, sample.num);
+        assertEquals(3, sample.increased);
     }
 
     static class ModifiedPostConstruct {
@@ -170,7 +172,7 @@ class FactoryFinderTest {
     void testModifiedPostConstruct() {
         FactoryFinder ff = FactoryFinder.instantiator(lookup());
         Function<String, ModifiedPostConstruct> factory = ff.createFunctionFor(ModifiedPostConstruct.class, String.class);
-        checkIsNotLambda(factory);
+        // checkIsLambda(factory); Cannot be tested now
         ModifiedPostConstruct sample = factory.apply("innocent");
         assertEquals("innocent", sample.value);
         assertNotEquals(ModifiedPostConstruct.FALLBACK, sample);
@@ -201,7 +203,7 @@ class FactoryFinderTest {
     void testModifiedPostConstructStatic() {
         FactoryFinder ff = FactoryFinder.instantiator(lookup());
         Function<String, ModifiedPostConstructWithStatic> factory = ff.createFunctionFor(ModifiedPostConstructWithStatic.class, String.class);
-        checkIsNotLambda(factory);
+        // checkIsLambda(factory); Cannot be tested now
         ModifiedPostConstruct sample = factory.apply("hit");
         assertNotEquals("fallback", sample.value); // original check is not called any more because the return type does not match
 
@@ -503,7 +505,7 @@ class FactoryFinderTest {
 
     @Test
     void testDynamicProvider() {
-        FactoryFinder inst = FactoryFinder.instantiator(lookup()).withMethodHandleProvider((l, ff, t) -> l.findStatic(t.returnType(), "valueOf", t));
+        FactoryFinder inst = FactoryFinder.instantiator(lookup()).withMethodHandleProvider((reg, t) -> reg.findStatic(t.returnType(), "valueOf"));
         Function<String, Integer> intFunction = inst.createFunctionFor(Integer.class, String.class);
         checkIsLambda(intFunction);
         Integer integer = intFunction.apply("1234");
@@ -711,7 +713,7 @@ class FactoryFinderTest {
         assertEquals("Hello Karla!", result);
 
         // The lookup shouldn't find this because the method is not public
-        ff = ff.withMethodHandleProvider((l, f, t) -> l.bind(new StringFactory(), "sayHelloTo", t));
+        ff = ff.withMethodHandleProvider((reg, t) -> reg.bind(new StringFactory(), "sayHelloTo"));
         assertFalse(ff.find(String.class, String.class).isPresent());
 
         // But iyt should still be possible to create local lambdas
@@ -720,7 +722,7 @@ class FactoryFinderTest {
         assertEquals("Hello Karla!", result);
 
         // Not the lookup should find it because we use the unsafe version
-        unsafe = unsafe.withMethodHandleProvider((l, f, t) -> l.bind(new StringFactory(), "sayHelloTo", t));
+        unsafe = unsafe.withMethodHandleProvider((reg, t) -> reg.bind(new StringFactory(), "sayHelloTo"));
         assertTrue(unsafe.find(String.class, String.class).isPresent());
 
         // It should also work when we simply plug a new lookup into the cure one, making it unsecure again

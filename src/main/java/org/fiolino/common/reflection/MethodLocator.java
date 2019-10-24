@@ -575,6 +575,14 @@ public final class MethodLocator {
         }
     }
 
+    /**
+     * Returns a stream of {@link MethodInfo} objects describing each method in the locator's type which is
+     * visible from the locator's lookup instance.
+     *
+     * The resulting stream visits both static and instance methods.
+     *
+     * @return A non-parallel stream of all visible methods
+     */
     public Stream<MethodInfo> methods() {
         return StreamSupport.stream(type.isInterface() ? new MethodSpliterator() {
             private final Set<Class<?>> classesToIterate = new HashSet<>();
@@ -810,20 +818,20 @@ public final class MethodLocator {
     }
 
     private Method findSingleMethodOf(MethodType reference) {
-        return hierarchy().reduce(new MethodLocatorInvariant(), (i, c) -> {
+        return hierarchy().reduce(new MethodLocatorInvariant(), (inv, c) -> {
             Method[] methods = Methods.getDeclaredMethodsFrom(c);
             for (Method m : methods) {
                 if (!wouldBeVisible(m)) {
                     continue;
                 }
                 Comparison compare = Methods.compare(reference, m);
-                if (i.accept(m, compare)) break;
+                if (inv.accept(m, compare)) break;
             }
 
-            if (i.ambiguous) {
+            if (inv.ambiguous) {
                 throw new AmbiguousMethodException("Multiple methods found with type " + reference + " in " + type.getName());
             }
-            return i;
+            return inv;
         }, MethodLocatorInvariant::chooseMatching).bestMatch;
     }
 

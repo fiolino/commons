@@ -20,9 +20,8 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.time.temporal.Temporal;
 import java.util.*;
-import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
+import java.util.function.*;
+import java.util.stream.Stream;
 
 import static java.lang.invoke.MethodHandles.dropArguments;
 import static java.lang.invoke.MethodHandles.filterReturnValue;
@@ -658,9 +657,29 @@ public abstract class FactoryFinder {
         return createLambdaUnchecked(lookup, functionalInterface, returnType, parameterTypes);
     }
 
+    /**
+     * Creates the lambda. Assumes that the parameters are already validated.
+     */
     private <T> T createLambdaUnchecked(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] parameterTypes) {
-        return runPostProcessor(lookup, returnType)
-                .map(f -> findDirect(lookup, returnType, parameterTypes).map(h -> filterReturnValue(h, f)).orElseThrow(() -> exceptionFor(returnType, parameterTypes)))
+        if (functionalInterface.equals(Function.class)) {
+            var lambda = lambdafyDirect(lookup, functionalInterface, returnType, parameterTypes);
+            @SuppressWarnings("unchecked")
+            var lambdaFunction = (T) runPostProcessor(lookup, returnType, (Function<?, ?>) lambda);
+            return lambdaFunction;
+        }
+        if (functionalInterface.equals(Supplier.class)) {
+            var lambda = lambdafyDirect(lookup, functionalInterface, returnType, parameterTypes);
+            @SuppressWarnings("unchecked")
+            var lambdaFunction = (T) runPostProcessor(lookup, returnType, (Supplier<?>) lambda);
+            return lambdaFunction;
+        }
+        Optional<MethodHandle> postProcessor = runPostProcessor(lookup, returnType);
+        if (postProcessor.isEmpty()) {
+            // No post processor
+            return lambdafyDirect(lookup, functionalInterface, returnType, parameterTypes);
+        }
+        return postProcessor
+                .map(f -> findDirect(lookup, this, x -> true, returnType, parameterTypes).map(h -> filterReturnValue(h, f)).orElseThrow(() -> exceptionFor(returnType, parameterTypes)))
                 .map(h -> Methods.lambdafy(lookup, h, functionalInterface))
                 .orElseGet(() -> lambdafyDirect(lookup, functionalInterface, returnType, parameterTypes));
     }
@@ -770,7 +789,11 @@ public abstract class FactoryFinder {
 
     abstract Optional<MethodHandle> findDirect(@Nullable Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>... argumentTypes);
 
-    abstract <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes);
+    final <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
+        return lambdafyDirect(lookup, functionalInterface, this, x -> true, returnType, argumentTypes);
+    }
+
+    abstract <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>[] argumentTypes);
 
     private static final FactoryFinder EMPTY = new FactoryFinder() {
         @Override
@@ -789,7 +812,7 @@ public abstract class FactoryFinder {
         }
 
         @Override
-        <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
+        <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>[] argumentTypes) {
             throw exceptionFor(returnType, argumentTypes);
         }
     };
@@ -831,8 +854,8 @@ public abstract class FactoryFinder {
 
         abstract Optional<MethodHandle> findDirectX(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>... argumentTypes);
 
-        <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
-            return wrapped.lambdafyDirect(lookup, functionalInterface, returnType, argumentTypes);
+        <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>[] argumentTypes) {
+            return wrapped.lambdafyDirect(lookup, functionalInterface, starter, allowed, returnType, argumentTypes);
         }
     }
 
@@ -911,14 +934,14 @@ public abstract class FactoryFinder {
         @Nullable abstract MethodHandle getHandle(Class<?> returnType, Class<?>[] argumentTypes);
 
         @Override
-        <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
+        <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>[] argumentTypes) {
             if (returnTypeMatches(returnType) && argumentsMatch(argumentTypes)) {
                 T result = lambdafyVerified(lookup, functionalInterface, returnType, argumentTypes);
                 if (result != null)
                     return result;
             }
 
-            return super.lambdafyDirect(lookup, functionalInterface, returnType, argumentTypes);
+            return super.lambdafyDirect(lookup, functionalInterface, starter, allowed, returnType, argumentTypes);
         }
 
         <T> T lambdafyVerified(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
@@ -1190,6 +1213,11 @@ public abstract class FactoryFinder {
             }
 
             @Override
+            public MethodType type() {
+                return methodType;
+            }
+
+            @Override
             public Optional<MethodHandle> findExisting() {
                 return findExisting(methodType);
             }
@@ -1208,6 +1236,34 @@ public abstract class FactoryFinder {
             }
         }
 
+        private class MyLambdaRegistry<T> extends MyRegistry implements LambdaRegistry<T> {
+
+            private final Class<T> functionalType;
+            private T lambda;
+
+            MyLambdaRegistry(Lookup lookup, FactoryFinder starter, Predicate<FactoryFinder> allowed, MethodType methodType, Class<T> functionalType) {
+                super(lookup, starter, allowed, methodType);
+                this.functionalType = functionalType;
+            }
+
+            @Override
+            public Class<T> functionalType() {
+                return functionalType;
+            }
+
+            @Override
+            public void register(T lambda) throws MismatchedMethodTypeException {
+                if (!functionalType.isInstance(lambda)) {
+                    throw new MismatchedMethodTypeException("Expected " + functionalType.getName() + " but got " + lambda);
+                }
+                this.lambda = lambda;
+            }
+
+            T getLambda() {
+                return lambda;
+            }
+        }
+
         DynamicHandleFinder(FactoryFinder wrapped, MethodHandleProvider handleProvider) {
             super(wrapped);
             this.handleProvider = handleProvider;
@@ -1223,20 +1279,27 @@ public abstract class FactoryFinder {
             } catch (NoSuchMethodException | IllegalAccessException | MismatchedMethodTypeException ex) {
                 return Optional.empty();
             }
-            return Optional.ofNullable(reg.getRegisteredHandle()).map(h -> insertArguments(h, 0, reg.initializers));
+            return Optional.ofNullable(reg.getRegisteredHandle()).map(h -> insertArguments(h, 0, reg.getInitializers()));
         }
 
         @Override
-        <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] argumentTypes) {
+        <T> T lambdafyDirect(Lookup lookup, Class<T> functionalInterface, FactoryFinder starter, Predicate<FactoryFinder> allowed, Class<?> returnType, Class<?>[] argumentTypes) {
+            Lookup l = lookup == null ? lookupForProviders() : lookup;
             MethodType type = methodType(returnType, argumentTypes);
+            MyLambdaRegistry<T> reg = new MyLambdaRegistry<>(l, starter, allowed, type, functionalInterface);
             try {
-                T result = handleProvider.lambdafy(lookup, wrapped, functionalInterface, type);
-                if (result != null) return result;
-            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                handleProvider.lambdafy(reg, functionalInterface, type);
+            } catch (NoSuchMethodException | IllegalAccessException | MismatchedMethodTypeException ex) {
                 // default to next finder
             }
-
-            return wrapped.lambdafyDirect(lookup, functionalInterface, returnType, argumentTypes);
+            T lambda = reg.lambda;
+            if (lambda == null) {
+                MethodHandle handle = reg.getRegisteredHandle();
+                if (handle != null) {
+                    return Methods.lambdafy(l, handle, functionalInterface, reg.getInitializers());
+                }
+            }
+            return wrapped.lambdafyDirect(lookup, functionalInterface, starter, allowed, returnType, argumentTypes);
         }
     }
 
@@ -1345,21 +1408,43 @@ public abstract class FactoryFinder {
     }
 
     private Optional<MethodHandle> runPostProcessor(@Nullable Lookup lookup, Class<?> type) {
-        MethodType interfaceMethodType = methodType(void.class);
         Lookup l = lookup == null ? lookupForEvaluation() : lookup;
-        return MethodLocator.forLocal(l, type).methods()
+        return streamPostProcessors(l, type)
+                .map(h -> h.type().returnType() == void.class ? Methods.returnArgument(h, 0) : h)
+                .map(h -> h.asType(methodType(type, type)))
+                .reduce(MethodHandles::filterReturnValue);
+    }
+
+    private <T, R> Function<T, R> runPostProcessor(@Nullable Lookup lookup, Class<?> type, Function<T, R> factory) {
+        Lookup l = lookup == null ? lookupForEvaluation() : lookup;
+        return streamPostProcessors(l, type)
+                .reduce(factory, (f, h) -> f.andThen(createFunction(l, h)), (f1, f2) -> {
+                    throw new UnsupportedOperationException();
+                });
+    }
+
+    private <R> Supplier<R> runPostProcessor(@Nullable Lookup lookup, Class<?> type, Supplier<R> factory) {
+        Lookup l = lookup == null ? lookupForEvaluation() : lookup;
+        return streamPostProcessors(l, type)
+                .reduce(factory, (f, h) -> enrich(l, f, h), (f1, f2) -> {
+                    throw new UnsupportedOperationException();
+                });
+    }
+
+    private static final MethodType interfaceMethodType = methodType(void.class);
+
+    private Stream<MethodHandle> streamPostProcessors(Lookup lookup, Class<?> type) {
+        return MethodLocator.forLocal(lookup, type).methods()
                 .filter(m -> m.isAnnotationPresent(PostCreate.class) ||
                         PostProcessor.class.isAssignableFrom(type) && m.getName().equals("postConstruct") && m.getType().equals(interfaceMethodType))
                 .map(m -> {
                     MethodHandle postProcessor = m.getHandle();
                     MethodType t = postProcessor.type();
                     if (t.parameterCount() != 1) {
-                        throw new AssertionError(m + " is annotated with @" + PostCreate.class.getSimpleName() + " but has too many parameters.");
+                        throw new AssertionError(m + " is annotated with @" + PostCreate.class.getSimpleName() + " but should have exactly one parameter");
                     }
                     Class<?> returnType = t.returnType();
-                    if (returnType == void.class) {
-                        postProcessor = Methods.returnArgument(postProcessor, 0);
-                    } else if (!type.isAssignableFrom(returnType)) {
+                    if (returnType != void.class && !type.isAssignableFrom(returnType)) {
                         if (m.getMethod().getDeclaringClass().isAssignableFrom(returnType)) {
                             // Then this is a @PostConstruct method from a superclass with a type not matching any more - ignore it
                             return null;
@@ -1369,9 +1454,38 @@ public abstract class FactoryFinder {
                     }
                     return postProcessor;
                 })
-                .filter(Objects::nonNull)
-                .map(h -> h.asType(methodType(type, type)))
-                .reduce(MethodHandles::filterReturnValue);
+                .filter(Objects::nonNull);
+    }
+
+    private static <T> UnaryOperator<T> createFunction(Lookup lookup, MethodHandle handle) {
+        if (handle.type().returnType() == void.class) {
+            @SuppressWarnings("unchecked")
+            Consumer<T> consumer = (Consumer<T>) Methods.lambdafy(lookup, handle, Consumer.class);
+            return t -> {
+                consumer.accept(t);
+                return t;
+            };
+        }
+
+        @SuppressWarnings("unchecked")
+        UnaryOperator<T> f = (UnaryOperator<T>) Methods.lambdafy(lookup, handle, UnaryOperator.class);
+        return f;
+    }
+
+    private static <R> Supplier<R> enrich(Lookup lookup, Supplier<R> supplier, MethodHandle handle) {
+        if (handle.type().returnType() == void.class) {
+            @SuppressWarnings("unchecked")
+            Consumer<R> consumer = (Consumer<R>) Methods.lambdafy(lookup, handle, Consumer.class);
+            return () -> {
+                var result = supplier.get();
+                consumer.accept(result);
+                return result;
+            };
+        }
+
+        @SuppressWarnings("unchecked")
+        Function<R, R> f = (Function<R, R>) Methods.lambdafy(lookup, handle, Function.class);
+        return () -> f.apply(supplier.get());
     }
 
     NoSuchProviderException exceptionFor(Class<?> returnType, Class<?>... argumentTypes) {

@@ -11,22 +11,23 @@ import java.util.regex.Pattern;
 
 /**
  * Creates a {@link TemporalAdjuster} that sets a given {@link Temporal} to next next defined cron date.
- *
+ * <p></p>
  * You can parse cron formats analogue to the Unix cron format:
- *
+ * <p></p>
  * min(0-59) hour(0-23) dayOfMonth(1-31) month(1-12 or JAN,FEB,...) dayOfWeek(0-7 or MON,TUE,...)
- *
+ * <p></p>
  * In this case, the next date will be set to the beginning of the defined minute.
- *
+ * <p></p>
  * You can also specify a leading value for the seconds(0-59); in this case, you have to specify six elements.
  * Then the next date will be set to the beginning of the defined second.
- *
+ * <p></p>
  * You can also specify only the last three elements and get an adjuster only for dates; in this case, the fields for
  * hour, minute and second remain untouched, so the next returned date will not necessarily be at the beginning of a day
  * when the Temporal object is time based.
- *
+ * <p></p>
  * For each element, you have the following options:
- *
+ * <p></p>
+ * @TODO missing
  */
 public final class Cron implements Serializable, TemporalAdjuster {
     private static final List<String> MONTHS = Arrays.asList(null, "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec");

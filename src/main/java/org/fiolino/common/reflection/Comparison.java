@@ -2,8 +2,6 @@ package org.fiolino.common.reflection;
 
 /**
  * Comparison result for different methods types.
- * <p>
- * Created by Kuli on 6/1/2016.
  */
 public enum Comparison {
     /**

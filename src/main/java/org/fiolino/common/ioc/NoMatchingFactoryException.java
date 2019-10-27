@@ -4,31 +4,26 @@ package org.fiolino.common.ioc;
  * This exception is thrown if an {@link FactoryFinder} is asked for a provider
  * where it can't find an accessible factory handle with the given parameters.
  */
-public class NoSuchProviderException extends RuntimeException {
+public class NoMatchingFactoryException extends RuntimeException {
 
     private static final long serialVersionUID = -5416040085073505996L;
 
     private final Class<?> returnType;
     private final Class<?>[] parameterTypes;
 
-    public NoSuchProviderException(Class<?> returnType, Class<?>[] parameterTypes) {
-        this.returnType = returnType;
-        this.parameterTypes = parameterTypes;
-    }
-
-    public NoSuchProviderException(Class<?> returnType, Class<?>[] parameterTypes, String message) {
+    NoMatchingFactoryException(Class<?> returnType, Class<?>[] parameterTypes, String message) {
         super(message);
         this.returnType = returnType;
         this.parameterTypes = parameterTypes;
     }
 
-    public NoSuchProviderException(Class<?> returnType, Class<?>[] parameterTypes, String message, Throwable cause) {
+    NoMatchingFactoryException(Class<?> returnType, Class<?>[] parameterTypes, String message, Throwable cause) {
         super(message, cause);
         this.returnType = returnType;
         this.parameterTypes = parameterTypes;
     }
 
-    public NoSuchProviderException(Class<?> returnType, Class<?>[] parameterTypes, Throwable cause) {
+    NoMatchingFactoryException(Class<?> returnType, Class<?>[] parameterTypes, Throwable cause) {
         super(cause);
         this.returnType = returnType;
         this.parameterTypes = parameterTypes;

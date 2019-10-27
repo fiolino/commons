@@ -1,21 +1,16 @@
 package org.fiolino.common.reflection;
 
 /**
- * Created by kuli on 07.07.17.
+ * This is thrown from the {@link Reflection} class.
  */
 public class LimitExceededException extends RuntimeException {
-    public LimitExceededException() {
-    }
+    private static final long serialVersionUID = 3037987224819299430L;
 
-    public LimitExceededException(String message) {
+    LimitExceededException(String message) {
         super(message);
     }
 
-    public LimitExceededException(String message, Throwable cause) {
+    LimitExceededException(String message, Throwable cause) {
         super(message, cause);
-    }
-
-    public LimitExceededException(Throwable cause) {
-        super(cause);
     }
 }

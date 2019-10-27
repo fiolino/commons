@@ -4,17 +4,14 @@ import java.util.Arrays;
 import java.util.function.IntPredicate;
 
 /**
- * Encoding and decoding method for indexer to allow arbitrary names as Solr field names.
- *
+ * Can encode generic texts to a limited character set, and decode again.
+ * Useful to create names from generic texts.
+ * <p></p>
  * Names are encoded like this:
- *
+ * <p></p>
  * First come all valid characters;
  * if there were invalid ones, then a delimiter is added, and for each invalid character,
  * a hexadecimal value of its position plus a hexadecimal value of the character code follows.
- *
- *
- *
- * Created by kuli on 09.02.16.
  */
 public class Encoder {
 

@@ -482,7 +482,7 @@ class FactoryFinderTest {
     @Test
     void testFail() {
         FactoryFinder ff = FactoryFinder.instantiator(lookup()).withProvidersFrom(new GenericFactory()).withProvidersFrom(new OptionalFactory());
-        assertThrows(NoSuchProviderException.class, () -> ff.createLambda(BiFunction.class, Rectangle.class, Date.class, TimeUnit.class));
+        assertThrows(NoMatchingFactoryException.class, () -> ff.createLambda(BiFunction.class, Rectangle.class, Date.class, TimeUnit.class));
     }
 
     @FunctionalInterface

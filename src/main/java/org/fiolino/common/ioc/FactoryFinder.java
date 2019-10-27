@@ -150,7 +150,7 @@ public abstract class FactoryFinder {
      * @param returnType Some class to return
      * @param parameterTypes Some parameter types
      * @return A handle accepting the given parameter types, and returning the type
-     * @throws NoSuchProviderException If there is no provider found
+     * @throws NoMatchingFactoryException If there is no provider found
      */
     public final MethodHandle findOrFail(Class<?> returnType, Class<?>... parameterTypes) {
         return find(returnType, parameterTypes).orElseThrow(() -> exceptionFor(returnType, parameterTypes));
@@ -163,7 +163,7 @@ public abstract class FactoryFinder {
      * @param returnType Some class to return
      * @param parameterTypes Some parameter types
      * @return A handle accepting the given parameter types, and returning the type
-     * @throws NoSuchProviderException If there is no provider found
+     * @throws NoMatchingFactoryException If there is no provider found
      */
     public final MethodHandle findOrFail(Lookup lookup, Class<?> returnType, Class<?>... parameterTypes) {
         return find(lookup, returnType, parameterTypes).orElseThrow(() -> exceptionFor(returnType, parameterTypes));
@@ -457,7 +457,7 @@ public abstract class FactoryFinder {
      * @param parameters The input values. These must not be null, because they're used to identify the transformer
      * @param <R> The target type
      * @return The converted value
-     * @throws NoSuchProviderException If there is no suitable transformer
+     * @throws NoMatchingFactoryException If there is no suitable transformer
      */
     public <R> R transform(Class<R> expectedType, Object... parameters) {
         Class<R> castType = Types.toWrapper(expectedType);
@@ -560,7 +560,7 @@ public abstract class FactoryFinder {
                 casted = casted.changeParameterType(argumentNumber + i, newType);
                 continue;
             }
-            throw new NoSuchProviderException(arg, new Class<?>[] { newType} , "Cannot convert parameter #" + i + " of " + target + " to " + newType.getName());
+            throw new NoMatchingFactoryException(arg, new Class<?>[] { newType} , "Cannot convert parameter #" + i + " of " + target + " to " + newType.getName());
         }
         MethodHandle castedTarget = casted == null ? target : MethodHandles.explicitCastArguments(target, casted);
         return MethodHandles.filterArguments(castedTarget, argumentNumber, filters);
@@ -584,8 +584,8 @@ public abstract class FactoryFinder {
      *                         For every missing parameter, one value of these is converted, if necessary,
      *                         and then added in the constant pool of the resulting handle.
      * @return A handle of the same type as specified
-     * @throws NoMatchingConverterException      If one of the arguments or return type can't be converted
-     * @throws TooManyArgumentsExpectedException If the target handle expects more arguments than the new type,
+     * @throws NoMatchingFactoryException If one of the arguments or return type can't be converted
+     * @throws IllegalArgumentException   If the target handle expects more arguments than the new type,
      *                                           but there are not enough additional values given as constant replacements
      */
     public MethodHandle convertTo(MethodHandle target, MethodType type, Object... additionalValues) {
@@ -600,7 +600,7 @@ public abstract class FactoryFinder {
         if (reduceSize > 0) {
             // Original target expects more parameters
             if (additionalValues.length < reduceSize) {
-                throw new TooManyArgumentsExpectedException("Expects at least " + reduceSize + " additional values to map " + t
+                throw new IllegalArgumentException("Expects at least " + reduceSize + " additional values to map " + t
                         + " to" + type + ", but only " + additionalValues.length + " are given.");
             }
             Object[] add = new Object[reduceSize];
@@ -634,7 +634,7 @@ public abstract class FactoryFinder {
      * @param functionalInterface Describes the provider/constructor to use. Its method signature specifies the parameter values and return type.
      * @param <T>                 The interface type
      * @return A lambda or proxy
-     * @throws NoSuchProviderException If there is no provider that converts from the sources to the result type
+     * @throws NoMatchingFactoryException If there is no provider that converts from the sources to the result type
      */
     public <T> T createLambda(Class<T> functionalInterface) {
         return createLambda(lookupForEvaluation(), functionalInterface);
@@ -648,7 +648,7 @@ public abstract class FactoryFinder {
      * @param functionalInterface Describes the provider/constructor to use. Its method signature specifies the parameter values and return type.
      * @param <T>                 The interface type
      * @return A lambda or proxy
-     * @throws NoSuchProviderException If there is no provider that converts from the sources to the result type
+     * @throws NoMatchingFactoryException If there is no provider that converts from the sources to the result type
      */
     public <T> T createLambda(Lookup lookup, Class<T> functionalInterface) {
         Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalInterface);
@@ -662,15 +662,15 @@ public abstract class FactoryFinder {
      */
     private <T> T createLambdaUnchecked(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>[] parameterTypes) {
         if (functionalInterface.equals(Function.class)) {
-            var lambda = lambdafyDirect(lookup, functionalInterface, returnType, parameterTypes);
+            T lambda = lambdafyDirect(lookup, functionalInterface, returnType, parameterTypes);
             @SuppressWarnings("unchecked")
-            var lambdaFunction = (T) runPostProcessor(lookup, returnType, (Function<?, ?>) lambda);
+            T lambdaFunction = (T) runPostProcessor(lookup, returnType, (Function<?, ?>) lambda);
             return lambdaFunction;
         }
         if (functionalInterface.equals(Supplier.class)) {
-            var lambda = lambdafyDirect(lookup, functionalInterface, returnType, parameterTypes);
+            T lambda = lambdafyDirect(lookup, functionalInterface, returnType, parameterTypes);
             @SuppressWarnings("unchecked")
-            var lambdaFunction = (T) runPostProcessor(lookup, returnType, (Supplier<?>) lambda);
+            T lambdaFunction = (T) runPostProcessor(lookup, returnType, (Supplier<?>) lambda);
             return lambdaFunction;
         }
         Optional<MethodHandle> postProcessor = runPostProcessor(lookup, returnType);
@@ -694,7 +694,7 @@ public abstract class FactoryFinder {
      *                            must be given
      * @param <T>                 The interface type
      * @return A lambda or proxy
-     * @throws NoSuchProviderException If there is no provider that converts from the sources to the result type
+     * @throws NoMatchingFactoryException If there is no provider that converts from the sources to the result type
      */
     public <T> T createLambda(Class<T> functionalInterface, Class<?> returnType, Class<?>... parameterTypes) {
         return createLambda(lookupForEvaluation(), functionalInterface, returnType, parameterTypes);
@@ -712,7 +712,7 @@ public abstract class FactoryFinder {
      *                            must be given
      * @param <T>                 The interface type
      * @return A lambda or proxy
-     * @throws NoSuchProviderException If there is no provider that converts from the sources to the result type
+     * @throws NoMatchingFactoryException If there is no provider that converts from the sources to the result type
      */
     public <T> T createLambda(Lookup lookup, Class<T> functionalInterface, Class<?> returnType, Class<?>... argumentTypes) {
         Method lambdaMethod = Methods.findLambdaMethodOrFail(functionalInterface);
@@ -1330,7 +1330,7 @@ public abstract class FactoryFinder {
     private Class<?> commonSubclassOf(Class<?> returnType, Class<?> parameterizedArgument) {
         if (returnType.isAssignableFrom(parameterizedArgument)) return parameterizedArgument;
         if (parameterizedArgument.isAssignableFrom(returnType)) return returnType;
-        throw new AssertionError("Bad provider method: Return type " + returnType.getName() + " and argument type " + parameterizedArgument.getName() + " are not compatible.");
+        throw new AssertionError("Bad factory method: Return type " + returnType.getName() + " and argument type " + parameterizedArgument.getName() + " are not compatible.");
     }
 
     private FactoryFinder registerAllProvidersFrom(MethodLocator locator, Object providerInstanceOrNull) {
@@ -1477,7 +1477,7 @@ public abstract class FactoryFinder {
             @SuppressWarnings("unchecked")
             Consumer<R> consumer = (Consumer<R>) Methods.lambdafy(lookup, handle, Consumer.class);
             return () -> {
-                var result = supplier.get();
+                R result = supplier.get();
                 consumer.accept(result);
                 return result;
             };
@@ -1488,8 +1488,8 @@ public abstract class FactoryFinder {
         return () -> f.apply(supplier.get());
     }
 
-    NoSuchProviderException exceptionFor(Class<?> returnType, Class<?>... argumentTypes) {
-        return new NoSuchProviderException(returnType, argumentTypes,
+    NoMatchingFactoryException exceptionFor(Class<?> returnType, Class<?>... argumentTypes) {
+        return new NoMatchingFactoryException(returnType, argumentTypes,
                 classArrayToNames("No handle for (", ")" + returnType.getName(), argumentTypes));
     }
 

@@ -11,8 +11,6 @@ import static java.lang.invoke.MethodType.methodType;
 
 /**
  * Static class for various reflection based methods.
- *
- * Created by Kuli on 6/17/2016.
  */
 final class Reflection {
 

@@ -1,22 +1,12 @@
 package org.fiolino.common.util;
 
 /**
- * This is thrown if two types are being checked for
- * Created by kuli on 28.01.15.
+ * This is thrown if two types are not assignable by each other where it should be.
  */
 public class NotAssignableException extends RuntimeException {
-    public NotAssignableException() {
-    }
+    private static final long serialVersionUID = -1512289958073742778L;
 
-    public NotAssignableException(String message) {
+    NotAssignableException(String message) {
         super(message);
-    }
-
-    public NotAssignableException(String message, Throwable cause) {
-        super(message, cause);
-    }
-
-    public NotAssignableException(Throwable cause) {
-        super(cause);
     }
 }

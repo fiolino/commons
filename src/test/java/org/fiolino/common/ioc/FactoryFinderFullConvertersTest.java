@@ -25,8 +25,10 @@ class FactoryFinderFullConvertersTest {
         assertTrue(Methods.wasLambdafiedDirect(func), "Should be a lambda function");
     }
 
+    private final MethodHandles.Lookup l = lookup();
+    
     private MethodHandle getHandle(Class<?> returnValue, Object provider) {
-        return MethodLocator.forLocal(lookup(), provider.getClass()).methods()
+        return MethodLocator.forLocal(l, provider.getClass()).methods()
                 .filter(info -> info.getMethod().getDeclaringClass() != Object.class)
                 .reduce((info1, info2) -> {
                     throw new AssertionFailedError(provider + " should contain exactly one method");
@@ -35,6 +37,10 @@ class FactoryFinderFullConvertersTest {
                 .map(h -> FactoryFinder.full().convertReturnTypeTo(h, returnValue))
                 .orElseThrow();
     }
+
+    //private <T> T getLambda(Class<T> functionalType, Object prrovider) {
+
+    //}
 
     @Test
     void testFromInt() throws Throwable {
@@ -337,7 +343,6 @@ class FactoryFinderFullConvertersTest {
 
     @Test
     void testConvertType() throws Throwable {
-        MethodHandles.Lookup l = lookup();
         MethodHandle concat = l.findStatic(l.lookupClass(), "concat", methodType(
                 String.class, String.class, long.class, Date.class, boolean.class));
         MethodHandle different = FactoryFinder.full().convertTo(concat,
@@ -354,7 +359,6 @@ class FactoryFinderFullConvertersTest {
 
     @Test
     void testLessArguments() throws Throwable {
-        MethodHandles.Lookup l = lookup();
         MethodHandle concat = l.findStatic(l.lookupClass(), "concat", methodType(
                 String.class, String.class, long.class, Date.class, boolean.class));
         Date now = new Date();
@@ -372,7 +376,7 @@ class FactoryFinderFullConvertersTest {
 
     @Test
     void testMoreArguments() throws Throwable {
-        MethodHandle max = lookup().findStatic(Math.class, "max", methodType(int.class, int.class, int.class));
+        MethodHandle max = l.findStatic(Math.class, "max", methodType(int.class, int.class, int.class));
         MethodHandle more = FactoryFinder.full().convertTo(max,
                 methodType(String.class, Float.class, BigInteger.class, Date.class, TimeUnit.class));
         String result = (String) more.invokeExact((Float) 2.0f, new BigInteger("1000"), new Date(), TimeUnit.MICROSECONDS);

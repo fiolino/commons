@@ -498,18 +498,8 @@ public abstract class FactoryFinder {
      * is of the respected parameter
      */
     public MethodHandle convertReturnTypeTo(MethodHandle target, Class<?> returnType) {
-        MethodType type = target.type();
-        Class<?> r = type.returnType();
-        if (typesAreInHierarchy(returnType, r)) {
-            return MethodHandles.explicitCastArguments(target, type.changeReturnType(returnType));
-        }
-        if (returnType == void.class) {
-            return target.asType(type.changeReturnType(void.class));
-        }
-        return find(returnType, r)
-                .map(h -> h.asType(methodType(returnType, r)))
-                .map(h -> MethodHandles.filterReturnValue(target, h))
-                .orElseGet(() -> MethodHandles.explicitCastArguments(target, type.changeReturnType(returnType)));
+        return convertReturnTypeTo0(target, returnType)
+                .orElseGet(() -> MethodHandles.explicitCastArguments(target, target.type().changeReturnType(returnType)));
     }
 
     /**
@@ -529,10 +519,24 @@ public abstract class FactoryFinder {
         if (target.type().parameterCount() < argumentNumber + n) {
             throw new IllegalArgumentException(target + " does not accept " + (argumentNumber + n) + " parameters.");
         }
-        return convertArgumentTypesTo(target, argumentNumber, n, inputTypes);
+        return convertArgumentTypesTo(target, argumentNumber, n, inputTypes, true);
     }
 
-    private MethodHandle convertArgumentTypesTo(MethodHandle target, int argumentNumber, int numberOfConversions, Class<?>[] inputTypes) {
+    private Optional<MethodHandle> convertReturnTypeTo0(MethodHandle target, Class<?> returnType) {
+        MethodType type = target.type();
+        Class<?> r = type.returnType();
+        if (typesAreInHierarchy(returnType, r)) {
+            return Optional.empty();
+        }
+        if (returnType == void.class) {
+            return Optional.of(target.asType(type.changeReturnType(void.class)));
+        }
+        return find(returnType, r)
+                .map(h -> h.asType(methodType(returnType, r)))
+                .map(h -> MethodHandles.filterReturnValue(target, h));
+    }
+
+    private MethodHandle convertArgumentTypesTo(MethodHandle target, int argumentNumber, int numberOfConversions, Class<?>[] inputTypes, boolean castType) {
         if (numberOfConversions == 0) {
             return target;
         }
@@ -546,8 +550,10 @@ public abstract class FactoryFinder {
                 continue;
             }
             if (typesAreInHierarchy(arg, newType)) {
-                if (casted == null) casted = type;
-                casted = casted.changeParameterType(argumentNumber + i, newType);
+                if (castType) {
+                    if (casted == null) casted = type;
+                    casted = casted.changeParameterType(argumentNumber + i, newType);
+                }
                 continue;
             }
             Optional<MethodHandle> converter = find(arg, newType).map(h -> h.asType(methodType(arg, newType)));
@@ -582,7 +588,7 @@ public abstract class FactoryFinder {
      * @param type             This is the new type of the returned handle
      * @param additionalValues These are only used if the new type expects less arguments than the target handle.
      *                         For every missing parameter, one value of these is converted, if necessary,
-     *                         and then added in the constant pool of the resulting handle.
+     *                         and then added as trailing arguments to the resulting handle.
      * @return A handle of the same type as specified
      * @throws NoMatchingFactoryException If one of the arguments or return type can't be converted
      * @throws IllegalArgumentException   If the target handle expects more arguments than the new type,
@@ -595,7 +601,7 @@ public abstract class FactoryFinder {
         int expectedParameterSize = type.parameterCount();
         int actualParameterSize = t.parameterCount();
         int argSize = Math.min(actualParameterSize, expectedParameterSize);
-        MethodHandle result = convertArgumentTypesTo(casted, 0, argSize, type.parameterArray());
+        MethodHandle result = convertArgumentTypesTo(casted, 0, argSize, type.parameterArray(), true);
         int reduceSize = actualParameterSize - expectedParameterSize;
         if (reduceSize > 0) {
             // Original target expects more parameters
@@ -783,6 +789,10 @@ public abstract class FactoryFinder {
         Function<P, T> function = createLambda(lookup, Function.class, type, argumentType);
         return function;
     }
+
+//    public <T> T lambdafy(Lookup lookup, MethodHandle target, Class<T> functionalType, Object... initializers) {
+//
+//    }
 
     abstract Lookup lookupForProviders();
     abstract Lookup lookupForEvaluation();
@@ -1292,7 +1302,7 @@ public abstract class FactoryFinder {
             } catch (NoSuchMethodException | IllegalAccessException | MismatchedMethodTypeException ex) {
                 // default to next finder
             }
-            T lambda = reg.lambda;
+            T lambda = reg.getLambda();
             if (lambda == null) {
                 MethodHandle handle = reg.getRegisteredHandle();
                 if (handle != null) {

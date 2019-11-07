@@ -27,7 +27,6 @@ repositories {
 
 dependencies {
     compile ('org.fiolino:annotations:' +libAnnotationsVersion)
-   	compile	('org.reflections:reflections:'+libReflectionsVersion)
     compile ('com.google.code.findbugs:jsr305:3.0.2')
     // compile ('net.bytebuddy:byte-buddy:1.6.9')
 

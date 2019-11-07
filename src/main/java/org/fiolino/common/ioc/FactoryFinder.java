@@ -9,10 +9,7 @@ import org.fiolino.common.util.CharSet;
 import org.fiolino.common.util.Types;
 
 import javax.annotation.Nullable;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.lang.invoke.VarHandle;
+import java.lang.invoke.*;
 import java.lang.reflect.*;
 import java.text.DateFormat;
 import java.time.*;
@@ -1427,18 +1424,50 @@ public abstract class FactoryFinder {
 
     private <T, R> Function<T, R> runPostProcessor(@Nullable Lookup lookup, Class<?> type, Function<T, R> factory) {
         Lookup l = lookup == null ? lookupForEvaluation() : lookup;
+        if (MethodHandleProxies.isWrapperInstance(factory)) {
+            // Bug in MethodHandleProxies does not allow default methods on wrapper instance
+            MethodHandle result = foldFactoryWithPostProcessors(l, type, MethodHandleProxies.wrapperInstanceTarget(factory));
+            @SuppressWarnings("unchecked")
+            Function<T, R> func = (Function<T, R>) MethodHandleProxies.asInterfaceInstance(Function.class, result);
+            return func;
+        }
         return streamPostProcessors(l, type)
-                .reduce(factory, (f, h) -> f.andThen(createFunction(l, h)), (f1, f2) -> {
-                    throw new UnsupportedOperationException();
-                });
+                .reduce(factory,
+                        (f, pp) -> f.andThen(createFunction(l, pp)),
+                        (f1, f2) -> {
+                            throw new UnsupportedOperationException();
+                        });
     }
 
     private <R> Supplier<R> runPostProcessor(@Nullable Lookup lookup, Class<?> type, Supplier<R> factory) {
         Lookup l = lookup == null ? lookupForEvaluation() : lookup;
+        if (MethodHandleProxies.isWrapperInstance(factory)) {
+            // Bug in MethodHandleProxies does not allow default methods on wrapper instance
+            MethodHandle result = foldFactoryWithPostProcessors(l, type, MethodHandleProxies.wrapperInstanceTarget(factory));
+            @SuppressWarnings("unchecked")
+            Supplier<R> supplier = (Supplier<R>) MethodHandleProxies.asInterfaceInstance(Supplier.class, result);
+            return supplier;
+        }
         return streamPostProcessors(l, type)
                 .reduce(factory, (f, h) -> enrich(l, f, h), (f1, f2) -> {
                     throw new UnsupportedOperationException();
                 });
+    }
+
+    private MethodHandle foldFactoryWithPostProcessors(Lookup l, Class<?> type, MethodHandle factoryHandle) {
+        return streamPostProcessors(l, type)
+                .reduce(factoryHandle,
+                        (f, pp) -> {
+                            MethodHandle filter = pp.asType(pp.type().changeParameterType(0, f.type().returnType()));
+                            if (pp.type().returnType() == void.class) {
+                                return MethodHandles.filterReturnValue(f, Methods.returnArgument(filter, 0));
+                            } else {
+                                return MethodHandles.filterReturnValue(f, filter);
+                            }
+                        },
+                        (f1, f2) -> {
+                            throw new UnsupportedOperationException();
+                        });
     }
 
     private static final MethodType interfaceMethodType = methodType(void.class);

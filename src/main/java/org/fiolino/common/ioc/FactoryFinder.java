@@ -335,10 +335,11 @@ public abstract class FactoryFinder {
     /**
      * Returns a FactoryFinder that converts Strings to the given temporal type and vice versa using the given formatter.
      *
+     * @implNote The created lambdas for these converters will be proxy instances
+     *
      * @param type Which temporal to convert - LocaleDate, LocaleTime, etc.
      * @param formatter Use this
      * @return The FactoryFinder that uses these converters on top of my already existing ones
-     * @implNote The created lambdas for these converters will be proxy instances
      */
     public FactoryFinder formatting(Class<? extends Temporal> type, DateTimeFormatter formatter) {
         MethodHandle parse, format;
@@ -357,10 +358,11 @@ public abstract class FactoryFinder {
     /**
      * Returns a FactoryFinder that converts Strings to the given temporal type and vice versa using the given format string.
      *
+     * @implNote The created lambdas for these converters will be proxy instances
+     *
      * @param type Which tempporal to convert - LocaleDate, LocaleTime, etc.
      * @param dateTimeFormat Use this
      * @return The FactoryFinder that uses these converters on top of my already existing ones
-     * @implNote The created lambdas for these converters will be proxy instances
      */
     public FactoryFinder formatting(Class<? extends Temporal> type, String dateTimeFormat) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dateTimeFormat);
@@ -371,11 +373,12 @@ public abstract class FactoryFinder {
      * Returns a FactoryFinder that converts Strings to the given temporal type and vice versa using the given format
      * string and locale.
      *
+     * @implNote The created lambdas for these converters will be proxy instances
+     *
      * @param type Which temporal to convert - LocaleDate, LocaleTime, etc.
      * @param dateTimeFormat Use this
      * @param locale Used to create the formatter
      * @return The FactoryFinder that uses these converters on top of my already existing ones
-     * @implNote The created lambdas for these converters will be proxy instances
      */
     public FactoryFinder formatting(Class<? extends Temporal> type, String dateTimeFormat, Locale locale) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dateTimeFormat, locale);
@@ -385,9 +388,10 @@ public abstract class FactoryFinder {
     /**
      * Returns a FactoryFinder that converts between Strings and legacy Dates using the given date format.
      *
+     * @implNote The created lambdas will be direct ones
+     *
      * @param dateFormat Use this
      * @return The FactoryFinder that uses these converters on top of my already existing ones
-     * @implNote The created lambdas will be direct ones
      */
     public FactoryFinder formatting(DateFormat dateFormat) {
         MethodHandle parse, format;
@@ -412,10 +416,11 @@ public abstract class FactoryFinder {
      *
      * The default format depending on the given locale is used.
      *
+     * @implNote The created lambdas for the Temporal classes will be proxy instances, for the legacy Date class will be direct
+     *
      * @param style Which style to use for the format
      * @param locale The locale
      * @return The new FactoryFinder
-     * @implNote The created lambdas for the Temporal classes will be proxy instances, for the legacy Date class will be direct
      */
     public FactoryFinder formatting(FormatStyle style, Locale locale) {
         FactoryFinder result = formatting(LocalDate.class, DateTimeFormatter.ofLocalizedDate(style).localizedBy(locale))
@@ -438,9 +443,10 @@ public abstract class FactoryFinder {
      *
      * The default format based on the default locale is used.
      *
+     * @implNote The created lambdas for the Temporal classes will be proxy instances, for the legacy Date class will be direct
+     *
      * @param style Which style to use for the format
      * @return The new FactoryFinder
-     * @implNote The created lambdas for the Temporal classes will be proxy instances, for the legacy Date class will be direct
      */
     public FactoryFinder formatting(FormatStyle style) {
         return formatting(style, Locale.getDefault(Locale.Category.FORMAT));

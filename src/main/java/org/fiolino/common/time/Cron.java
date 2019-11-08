@@ -27,7 +27,6 @@ import java.util.regex.Pattern;
  * <p></p>
  * For each element, you have the following options:
  * <p></p>
- * @TODO missing
  */
 public final class Cron implements Serializable, TemporalAdjuster {
     private static final List<String> MONTHS = Arrays.asList(null, "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec");

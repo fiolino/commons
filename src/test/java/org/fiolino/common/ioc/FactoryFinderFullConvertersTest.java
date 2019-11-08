@@ -11,8 +11,11 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.Date;
-import java.util.Optional;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.FormatStyle;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import static java.lang.invoke.MethodHandles.lookup;
@@ -336,6 +339,7 @@ class FactoryFinderFullConvertersTest {
             this.val = val;
         }
 
+        @SuppressWarnings("unused")
         public static StringWrapper valueOf(String v) {
             return new StringWrapper(v);
         }
@@ -381,5 +385,45 @@ class FactoryFinderFullConvertersTest {
                 methodType(String.class, Float.class, BigInteger.class, Date.class, TimeUnit.class));
         String result = (String) more.invokeExact((Float) 2.0f, new BigInteger("1000"), new Date(), TimeUnit.MICROSECONDS);
         assertEquals("1000", result);
+    }
+
+    @Test
+    void testDateParser() {
+        FactoryFinder ff = FactoryFinder.full().formatting(FormatStyle.MEDIUM, Locale.GERMANY);
+        Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        cal.set(Calendar.YEAR, 2011);
+        cal.set(Calendar.MONTH, 6);
+        cal.set(Calendar.DAY_OF_MONTH, 30);
+        cal.set(Calendar.HOUR_OF_DAY, 17);
+        cal.set(Calendar.MINUTE, 15);
+        cal.set(Calendar.SECOND, 30);
+        cal.set(Calendar.MILLISECOND, 0);
+        Date date = cal.getTime();
+        String formatted = ff.transform(String.class, date);
+        assertEquals("30.07.2011, 19:15:30", formatted);
+
+        Date parsed = ff.transform(Date.class, "30.07.2011, 19:15:30");
+        assertEquals(date, parsed);
+
+        LocalDateTime dateTime = LocalDateTime.of(2011, 7, 30, 19, 15, 30);
+        formatted = ff.transform(String.class, dateTime);
+        assertEquals("30.07.2011, 19:15:30", formatted);
+
+        LocalDateTime parsedDateTime = ff.transform(LocalDateTime.class, "30.07.2011, 19:15:30");
+        assertEquals(dateTime, parsedDateTime);
+
+        LocalDate ldate = LocalDate.of(2011, 7, 30);
+        formatted = ff.transform(String.class, ldate);
+        assertEquals("30.07.2011", formatted);
+
+        LocalDate parsedDate = ff.transform(LocalDate.class, "30.07.2011");
+        assertEquals(ldate, parsedDate);
+
+        LocalTime ltime = LocalTime.of(19, 15, 30);
+        formatted = ff.transform(String.class, ltime);
+        assertEquals("19:15:30", formatted);
+
+        LocalTime parsedTime = ff.transform(LocalTime.class, "19:15:30");
+        assertEquals(ltime, parsedTime);
     }
 }

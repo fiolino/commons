@@ -16,6 +16,10 @@ task javadocJar(type: Jar) {
     from javadoc
 }
 
+javadoc {
+    options.tags = [ "implNote" ]
+}
+
 repositories {
     mavenLocal()
     mavenCentral()

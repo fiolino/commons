@@ -56,7 +56,7 @@ public abstract class FactoryFinder {
     private FactoryFinder() {}
 
     /**
-     * Returns an empty instance. This wil find no factory handle at all, but always return an empty Optional
+     * Returns an empty instance. This will find no factory handle at all, but always return an empty Optional
      * or throw an exception, depending on the used method.
      *
      * It's rather useless top directly use this instance as a finder. You can start with this and register

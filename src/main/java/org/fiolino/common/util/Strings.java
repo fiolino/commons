@@ -2,7 +2,6 @@ package org.fiolino.common.util;
 
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
-import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
 import java.util.function.IntUnaryOperator;
 import java.util.function.UnaryOperator;
@@ -17,6 +16,8 @@ import static java.util.concurrent.TimeUnit.*;
  * Created by kuli on 26.03.15.
  */
 public final class Strings {
+
+    private static final int DIFF_DIGIT_TO_LETTER = 'a' - '0' - 10;
 
     private Strings() {
         throw new AssertionError("Static class");
@@ -87,12 +88,163 @@ public final class Strings {
      * @return The result
      */
     public static String unquote(String value) {
-        Extract x = extractUntil(value, 0, c -> false);
-        if (x.wasQuoted()) {
-            return x.extraction;
+        if (value.isEmpty() || value.charAt(0) != '"') {
+            return value;
         }
-        // Was not quoted - there must be some unquoted text somewhere
-        return value;
+        return value.codePoints().skip(1).collect(() -> new CharFinderContainer('"', value.length()),
+                CharFinderContainer::append, CharFinderContainer::merge).toString();
+    }
+
+    private static class CharFinderContainer {
+        private CharFinder current;
+
+        CharFinderContainer(int stopper, int expectedLength) {
+            current = new DefaultCharFinder(stopper, expectedLength);
+        }
+
+        void append(int codePoint) {
+            current = current.append(codePoint);
+        }
+
+        void merge(CharFinderContainer other) {
+            current = current.merge(other.current);
+        }
+
+        @Override
+        public String toString() {
+            return current.toString();
+        }
+    }
+
+    private abstract static class CharFinder {
+        abstract CharFinder append(int codePoint);
+        abstract CharFinder merge(CharFinder other);
+    }
+
+    private static class FinishedCharFinder extends CharFinder {
+        private String result;
+
+        FinishedCharFinder(String result) {
+            this.result = result;
+        }
+
+        @Override
+        CharFinder append(int codePoint) {
+            // Ignore the rest
+            return this;
+        }
+
+        @Override
+        CharFinder merge(CharFinder other) {
+            result += other.toString();
+            return this;
+        }
+
+        @Override
+        public String toString() {
+            return result;
+        }
+    }
+
+    private static class DefaultCharFinder extends CharFinder {
+        private final int stopper;
+        private final StringBuilder sb;
+        private EscapedCharFinder escaped;
+
+        DefaultCharFinder(int stopper, int expectedLength) {
+            this.stopper = stopper;
+            sb = new StringBuilder(expectedLength);
+        }
+
+        CharFinder appendDirect(int codePoint) {
+            sb.appendCodePoint(codePoint);
+            return this;
+        }
+
+        @Override
+        CharFinder append(int codePoint) {
+            if (codePoint == stopper) {
+                return new FinishedCharFinder(sb.toString());
+            }
+            if (codePoint == '\\') {
+                if (escaped == null) {
+                    escaped = new EscapedCharFinder();
+                }
+                return escaped;
+            }
+            return appendDirect(codePoint);
+        }
+
+        CharFinder merge(CharFinder other) {
+            sb.append(other.toString());
+            return this;
+        }
+
+        @Override
+        public String toString() {
+            // Quote not closed
+            return "\"" + sb.toString();
+        }
+
+        private class EscapedCharFinder extends CharFinder {
+            @Override
+            CharFinder append(int codePoint) {
+                if (codePoint == 'u') {
+                    // Unicode
+                    return new UnicodeReader();
+                }
+                int ch = codePoint > 255 ? codePoint : escapedToSpecial[codePoint];
+                return appendDirect(ch);
+            }
+
+            @Override
+            CharFinder merge(CharFinder other) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public String toString() {
+                // Quote not closed and trailing backslash
+                return appendDirect('\\').toString();
+            }
+        }
+
+        private class UnicodeReader extends CharFinder {
+            private int digits = 4;
+            private int result;
+            private final int[] read = new int[4];
+
+            @Override
+            CharFinder append(int codePoint) {
+                read[--digits] = codePoint;
+                if (codePoint > 'f' || codePoint < '0') return cancel();
+                int ch = Character.toLowerCase(codePoint);
+                ch -= '0';
+                if (ch > 9) ch -= DIFF_DIGIT_TO_LETTER;
+                if (ch < 0 || ch > 15) return cancel();
+                result = (result << 4) | ch;
+
+                return digits == 0 ? appendDirect(result) : this;
+            }
+
+            private CharFinder cancel() {
+                CharFinder result = appendDirect('u');
+                for (int i=3; i >= digits; i--) {
+                    result = result.append(read[i]);
+                }
+                return result;
+            }
+
+            @Override
+            CharFinder merge(CharFinder other) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public String toString() {
+                return cancel().toString();
+            }
+        }
     }
 
     /**
@@ -659,273 +811,5 @@ public final class Strings {
 
         m.appendTail(sb);
         return sb.toString();
-    }
-
-    /**
-     * Result of method extractUtil().
-     *
-     * Contains the extracted text, the position of the following character, and the following character itself.
-     */
-    public static final class Extract {
-        public enum QuotationStatus {
-            /**
-             * The text was not quoted at all.
-             */
-            UNQUOTED {
-                @Override
-                String toString(Extract x) {
-                    return x.wasEOL() ? x.extraction + " EOL" : x.extraction + " --> '" + x.stopSign + "' at " + x.end;
-                }
-            },
-            /**
-             * The text was not quoted, but the last character in line was a backslash to indicate an escaped sequence,
-             * but no more lines follow.
-             */
-            UNQUOTED_OPEN {
-                @Override
-                String toString(Extract x) {
-                    return x.extraction + " \\";
-                }
-            },
-            /**
-             * The text is quoted at the beginning, and a closing quotation was found.
-             */
-            QUOTED {
-                @Override
-                String toString(Extract x) {
-                    return x.wasEOL() ? quote(x.extraction) + " EOL" : quote(x.extraction) + " --> '" + x.stopSign + "' at " + x.end;
-                }
-            },
-            /**
-             * The text is quoted, but no closing quotation is there.
-             */
-            QUOTED_OPEN {
-                @Override
-                String toString(Extract x) {
-                    return "\"" + x.extraction + " ...";
-                }
-            };
-
-            abstract String toString(Extract x);
-        }
-
-        /**
-         * The extracted text. Will never be null.
-         */
-        public final String extraction;
-        /**
-         * The position of the next following character, or -1 if the end of line was reached.
-         */
-        public final int end;
-        /**
-         * The character at the next position, or UNASSIGNED if the end of line was reached.
-         */
-        public final int stopSign;
-        /**
-         * Whether the extracted text was in quotated form.
-         */
-        public final QuotationStatus quotationStatus;
-
-        Extract(String extraction, QuotationStatus quotationStatus) {
-            this(extraction, -1, (char) Character.UNASSIGNED, quotationStatus);
-        }
-
-        Extract(String extraction, int end, int stopSign, QuotationStatus quotationStatus) {
-            this.extraction = extraction;
-            this.end = end;
-            this.stopSign = stopSign;
-            this.quotationStatus = quotationStatus;
-        }
-
-        /**
-         * Returns true if this was the remainder of the given input.
-         */
-        public boolean wasEOL() {
-            return stopSign == Character.UNASSIGNED;
-        }
-
-        /**
-         * Returns true if the result was quoted, either open or closed.
-         */
-        public boolean wasQuoted() {
-                return quotationStatus != QuotationStatus.UNQUOTED;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            return obj == this ||
-                    obj instanceof Extract && ((Extract) obj).quotationStatus == quotationStatus
-                    && ((Extract) obj).end == end
-                    && ((Extract) obj).stopSign == stopSign
-                    && ((Extract) obj).extraction.equals(extraction);
-        }
-
-        @Override
-        public int hashCode() {
-            return ((quotationStatus.hashCode() * 31
-                    + end) * 31
-                    + Integer.hashCode(stopSign)) * 31
-                    + extraction.hashCode();
-        }
-
-        @Override
-        public String toString() {
-            return quotationStatus.toString(this);
-        }
-    }
-
-    /**
-     * Extracts some text from an input string.
-     *
-     * It reads the text until one of these requirements is met:<p>
-     * <ol>
-     *     <li>One of the given characters from the stopper is reached</li>
-     *     <li>The end of the line was reached</li>
-     *     <li>The text was quoted (first character is a quote) and the quotation was closed; the stoppers are completely ignored then</li>
-     *     <li>The text was not quoted, but a quotation was found</li>
-     * </ol>
-     *
-     * The result is trimmed, except when it was quoted.
-     *
-     * @param input The input text
-     * @param start From which position to start
-     * @param stopper Set of characters that should act like delimiters
-     * @return The extracted status
-     */
-    public static Extract extractUntil(String input, int start, IntPredicate stopper) {
-        return extractUntil(input, start, stopper, () -> null);
-    }
-
-    /**
-     * Extracts some text from an input string.
-     *
-     * It reads the text until one of these requirements is met:<p>
-     * <ol>
-     *     <li>One of the given characters from the stopper is reached</li>
-     *     <li>The end of the line was reached</li>
-     *     <li>The text was quoted (first character is a quote) and the quotation was closed; the stoppers are completely ignored then</li>
-     *     <li>The text was not quoted, but a quotation was found</li>
-     * </ol>
-     *
-     * The result is trimmed, except when it was quoted.
-     *
-     * @param input The input text
-     * @param start From which position to start
-     * @param stopper Set of characters that should act like delimiters
-     * @param moreLines Used to retrieve more lines if the line ended openly
-     * @return The extracted status
-     */
-    public static <E extends Throwable> Extract extractUntil(String input, int start, IntPredicate stopper,
-                                                             SupplierWithException<String, E> moreLines) throws E {
-        int i = nextIndexFrom(input, start-1);
-        if (i == -1) return new Extract("", Extract.QuotationStatus.UNQUOTED);
-
-        StringBuilder sb = new StringBuilder(input.length() - start);
-        int ch = input.codePointAt(i);
-        boolean escaped = false;
-        if (ch == '"') {
-            // quoted
-            do {
-                int l = input.length();
-                while ((i += Character.charCount(ch)) < l) {
-                    ch = input.codePointAt(i);
-                    if (escaped) {
-                        escaped = false;
-                        i = appendEscapedSequence(input, sb, ch, i, l);
-                    } else if (ch == '"') {
-                        int end = nextIndexFrom(input, i);
-                        int stopSign = end == -1 ? Character.UNASSIGNED : input.codePointAt(end);
-                        return new Extract(sb.toString(), end, stopSign, Extract.QuotationStatus.QUOTED);
-                    } else if (ch == '\\') {
-                        escaped = true;
-                    } else {
-                        sb.appendCodePoint(ch);
-                    }
-                }
-
-                // EOL but quote still open
-                if (!escaped) {
-                    sb.append('\n');
-                }
-                escaped = false;
-                input = moreLines.get();
-                i = -1;
-            } while (input != null);
-
-            // No more lines
-            return new Extract(sb.toString(), Extract.QuotationStatus.QUOTED_OPEN);
-        }
-
-        // Not quoted
-        do {
-            int l = input.length();
-            while (i < l) {
-                ch = input.codePointAt(i);
-                if (escaped) {
-                    escaped = false;
-                    sb.appendCodePoint(ch);
-                } else if (stopper.test(ch) || ch == '"') {
-                    return new Extract(sb.toString().trim(), i, ch, Extract.QuotationStatus.UNQUOTED);
-                } else if (ch == '\\') {
-                    escaped = true;
-                } else {
-                    sb.appendCodePoint(ch);
-                }
-                i += Character.charCount(ch);
-            }
-            // EOL
-            if (!escaped) {
-                return new Extract(sb.toString().trim(), Extract.QuotationStatus.UNQUOTED);
-            }
-            escaped = false;
-            input = moreLines.get();
-            i = 0;
-        } while (input != null);
-
-        return new Extract(sb.toString().trim(), Extract.QuotationStatus.UNQUOTED_OPEN);
-    }
-
-    private static int appendEscapedSequence(String input, StringBuilder sb, int ch, int start, int end) {
-        int escapedChar;
-        if (ch == 'u' && next4CharactersAreHexadecimal(input, start + 1, end)) {
-            try {
-                escapedChar = Integer.parseInt(input, start + 1, start + 5, 16);
-                try {
-                    sb.appendCodePoint(escapedChar);
-                    return start + 4;
-                } catch (IllegalArgumentException ex2) {
-                    // It wasn't a valid unicode character
-                    sb.append('u');
-                    return start;
-                }
-            } catch (NumberFormatException ex) {
-                // Then keep ch as 'u' and don't increment i
-            }
-        }
-        sb.appendCodePoint(ch < 256 ? escapedToSpecial[ch] : ch);
-        return start;
-    }
-
-    private static int nextIndexFrom(String input, int start) {
-        int l = input.length();
-        int i = start;
-        do {
-            if (l <= ++i) {
-                return -1;
-            }
-        } while (Character.isWhitespace(input.charAt(i)));
-
-        return i;
-    }
-
-    private static final CharSet HEXADECIMAL = CharSet.of("0123456789abcdefABCDEF");
-
-    private static boolean next4CharactersAreHexadecimal(String input, int start, int end) {
-        if (start > end - 4) return false;
-        for (int i=0; i < 4; i++) {
-            if (!HEXADECIMAL.test(input.codePointAt(start + i))) return false;
-        }
-
-        return true;
     }
 }

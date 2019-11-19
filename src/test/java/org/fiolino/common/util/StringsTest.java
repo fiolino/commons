@@ -7,7 +7,8 @@ import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Created by kuli on 25.11.15.
@@ -58,11 +59,35 @@ class StringsTest {
         unquoted = Strings.unquote("\"Some quoted \" and unquoted.");
         assertEquals("Some quoted ", unquoted);
 
+        unquoted = Strings.unquote("\"Some \\\"double quoted\\\"\"");
+        assertEquals("Some \"double quoted\"", unquoted);
+
         unquoted = Strings.unquote("\"Text with \\n, \\t, and \\r and \\b; also \\f plus \\\\ and \\'. \"");
         assertEquals("Text with \n, \t, and \r and \b; also \f plus \\ and '. ", unquoted);
 
         unquoted = Strings.unquote("\"Text with strange \\x or \\0.\"");
         assertEquals("Text with strange x or 0.", unquoted);
+
+        unquoted = Strings.unquote("Totally unquoted.");
+        assertEquals("Totally unquoted.", unquoted);
+
+        unquoted = Strings.unquote("\"String with \\u0041 and \\uaffe\"");
+        assertEquals("String with A and \uaffe", unquoted);
+
+        unquoted = Strings.unquote("\"String with \\unicode\"");
+        assertEquals("String with unicode", unquoted);
+
+        unquoted = Strings.unquote("\"String with \\u123\"");
+        assertEquals("String with u123", unquoted);
+
+        unquoted = Strings.unquote("\"String with \\u123 oh no!\"");
+        assertEquals("String with u123 oh no!", unquoted);
+
+        unquoted = Strings.unquote("\"String with open quote");
+        assertEquals("\"String with open quote", unquoted);
+
+        unquoted = Strings.unquote("\"String with open escape character \\");
+        assertEquals("\"String with open escape character \\", unquoted);
     }
 
     @Test
@@ -228,61 +253,6 @@ class StringsTest {
     void testReplaceBeginning() {
         String replacement = Strings.replace("$a.b**$o...${}", x -> x.equals("a.b") ? "1" : null, x -> x.equals("o") ? "2" : null, x -> x.equals("") ? "3" : null);
         assertEquals("1**2...3", replacement);
-    }
-
-    @Test
-    void testExtractUntil() {
-        String text = " Some text # comment";
-        int sign = text.indexOf('#');
-        Strings.Extract x = Strings.extractUntil(text, 0, CharSet.of("#%!"));
-        assertEquals("Some text", x.extraction);
-        assertEquals(sign, x.end);
-        assertEquals('#', x.stopSign);
-        assertFalse(x.wasEOL());
-        assertEquals(Strings.Extract.QuotationStatus.UNQUOTED, x.quotationStatus);
-
-        x = Strings.extractUntil(text, sign, CharSet.of('#'));
-        assertEquals("", x.extraction);
-        assertEquals(sign, x.end);
-        assertEquals('#', x.stopSign);
-        assertFalse(x.wasEOL());
-        assertEquals(Strings.Extract.QuotationStatus.UNQUOTED, x.quotationStatus);
-
-        x = Strings.extractUntil(text, text.length(), CharSet.of('#'));
-        assertEquals("", x.extraction);
-        assertEquals(-1, x.end);
-        assertEquals(Character.UNASSIGNED, x.stopSign);
-        assertTrue(x.wasEOL());
-        assertEquals(Strings.Extract.QuotationStatus.UNQUOTED, x.quotationStatus);
-
-        text = " Begin with something \" Then quoted\\\\\\\"\" Then not again";
-        sign = " Begin with something ".length();
-        x = Strings.extractUntil(text, 0, CharSet.of('#'));
-        assertEquals("Begin with something", x.extraction);
-        assertEquals(sign, x.end);
-        assertEquals('"', x.stopSign);
-        assertFalse(x.wasEOL());
-        assertEquals(Strings.Extract.QuotationStatus.UNQUOTED, x.quotationStatus);
-
-        x = Strings.extractUntil(text, sign, CharSet.of('#'));
-        sign = " Begin with something \" Then quoted\\\\\\\"\" ".length();
-        assertEquals(" Then quoted\\\"", x.extraction);
-        assertEquals(sign, x.end);
-        assertEquals('T', x.stopSign);
-        assertFalse(x.wasEOL());
-        assertEquals(Strings.Extract.QuotationStatus.QUOTED, x.quotationStatus);
-
-        x = Strings.extractUntil("  \" Quoted ###  \"", 0, CharSet.of('#'));
-        assertEquals(" Quoted ###  ", x.extraction);
-        assertEquals(-1, x.end);
-        assertTrue(x.wasEOL());
-        assertEquals(Strings.Extract.QuotationStatus.QUOTED, x.quotationStatus);
-
-        x = Strings.extractUntil("\" Quotation left open  ", 0, CharSet.of('#'));
-        assertEquals(" Quotation left open  \n", x.extraction);
-        assertEquals(-1, x.end);
-        assertTrue(x.wasEOL());
-        assertEquals(Strings.Extract.QuotationStatus.QUOTED_OPEN, x.quotationStatus);
     }
 
     @Test

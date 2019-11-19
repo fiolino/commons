@@ -176,54 +176,6 @@ class StringsTest {
     }
 
     @Test
-    void testSplit() {
-        Strings.SplitItem[] splits = Strings.splitBy("Me and_my.monkey", CharSet.of(" ._-!"));
-        assertEquals(4, splits.length);
-        Strings.SplitItem item = splits[0];
-        assertEquals(0, item.index);
-        assertEquals("Me", item.text);
-        assertEquals(Character.UNASSIGNED, item.separator);
-        assertEquals(0, item.start);
-        assertEquals(2, item.end);
-
-        item = splits[1];
-        assertEquals(1, item.index);
-        assertEquals("and", item.text);
-        assertEquals(' ', item.separator);
-        assertEquals(3, item.start);
-        assertEquals(6, item.end);
-
-        item = splits[2];
-        assertEquals(2, item.index);
-        assertEquals("my", item.text);
-        assertEquals('_', item.separator);
-        assertEquals(7, item.start);
-        assertEquals(9, item.end);
-
-        item = splits[3];
-        assertEquals(3, item.index);
-        assertEquals("monkey", item.text);
-        assertEquals('.', item.separator);
-        assertEquals(10, item.start);
-        assertEquals(16, item.end);
-    }
-
-    @Test
-    void testOverlap() {
-        String overlap = Strings.combinationOf(x -> x == '_', "one_two_three_four", "two_three_foooour");
-        assertEquals("two_three", overlap);
-
-        overlap = Strings.combinationOf(CharSet.of("_!."), "one_two!three_four", "two.three_foooour", "bla!three!three");
-        assertEquals("three", overlap);
-    }
-
-    @Test
-    void testFailedOverlap() {
-        assertThrows(IllegalArgumentException.class,
-                () -> Strings.combinationOf(CharSet.of('_'), "one_two_three_four", "two_three_foooour", "two_two", "three_three"));
-    }
-
-    @Test
     void testReplace() {
         Map<String, String> map = new HashMap<>();
         map.put("Normal_value", "Normal-Replacement");

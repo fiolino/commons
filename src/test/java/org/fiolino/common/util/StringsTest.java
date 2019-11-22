@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntPredicate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -17,23 +18,33 @@ class StringsTest {
 
     @Test
     void testQuote() {
-        String quoted = Strings.quote("Hello World!");
+        String quoted = Quoter.quote("Hello World!");
         assertEquals("\"Hello World!\"", quoted);
 
-        quoted = Strings.quote("Here \"this\" is already quoted.");
+        quoted = Quoter.quote("Here \"this\" is already quoted.");
         assertEquals("\"Here \\\"this\\\" is already quoted.\"", quoted);
 
-        quoted = Strings.quote("\"Here the whole string is already quoted.\"");
+        quoted = Quoter.quote("\"Here the whole string is already quoted.\"");
         assertEquals("\"\\\"Here the whole string is already quoted.\\\"\"", quoted);
 
-        quoted = Strings.quote("\"Here the whole string is already quoted.\"");
-        assertEquals("\"\\\"Here the whole string is already quoted.\\\"\"", quoted);
-
-        quoted = Strings.quote("Now a string with \"parenthesises\", \\slashes\\, and \\\"quoted parenthesises\\\".");
+        quoted = Quoter.quote("Now a string with \"parenthesises\", \\slashes\\, and \\\"quoted parenthesises\\\".");
         assertEquals("\"Now a string with \\\"parenthesises\\\", \\\\slashes\\\\, and \\\\\\\"quoted parenthesises\\\\\\\".\"", quoted);
 
-        quoted = Strings.quote("Text with \n, \t, and \r and \b; also \f plus \\ and '. ");
-        assertEquals("\"Text with \\n, \\t, and \\r and \\b; also \\f plus \\\\ and \\'. \"", quoted);
+        quoted = Quoter.quote("Text with \n, \t, and \r and \b; also \f plus \\ and '. ");
+        assertEquals("\"Text with \\n, \\t, and \\r and \\b; also \\f plus \\\\ and '. \"", quoted);
+
+        quoted = Quoter.quote("OnlyText123");
+        assertEquals("OnlyText123", quoted);
+
+        Quoter q = Quoter.quoteWith('<', '>', '~', x -> x == '!', x -> x == 'A' || x > 255);
+        quoted = q.append("!!!").toString();
+        assertEquals("!!!", quoted);
+
+        quoted = q.reset().append("text").toString();
+        assertEquals("<text>", quoted);
+
+        quoted = q.reset().append("A > B").toString();
+        assertEquals("<~u0041 ~> B>", quoted);
     }
 
     @Test
